@@ -432,9 +432,19 @@ export default function Clients() {
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="bg-card border-border">
+                            <DropdownMenuItem onClick={() => setDetailsClient(client)} className="gap-2">
+                              <Eye className="h-4 w-4" /> Ver Detalhes
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => copyCredentials(client)} className="gap-2">
                               <Copy className="h-4 w-4" /> Copiar Credenciais
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => copyTemplate(client)} className="gap-2">
+                              <Copy className="h-4 w-4" /> Copiar Template
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => sendWhatsApp(client)} className="gap-2">
+                              <MessageCircle className="h-4 w-4" /> WhatsApp
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => openEdit(client)} className="gap-2">
                               <Pencil className="h-4 w-4" /> Editar
                             </DropdownMenuItem>
