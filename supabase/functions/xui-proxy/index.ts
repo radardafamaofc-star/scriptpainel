@@ -6,32 +6,36 @@ const corsHeaders = {
 };
 
 interface XuiServerConfig {
-  host: string;
-  port: number;
-  access_code: string;
+  url: string;
   api_key: string;
-  https?: boolean;
+  api_version?: string;
+  use_proxy?: boolean;
 }
 
 async function xuiRequest(
-  server: XuiServerConfig,
+  config: XuiServerConfig,
   action: string,
   params: Record<string, string> = {}
 ) {
-  const protocol = server.https ? 'https' : 'http';
-  const baseUrl = `${protocol}://${server.host}:${server.port}/${server.access_code}/`;
-  const url = new URL(baseUrl);
-  url.searchParams.set('api_key', server.api_key);
-  url.searchParams.set('action', action);
+  // URL format: http://host:port/subdir + api.php or direct
+  let baseUrl = config.url.replace(/\/+$/, '');
+  
+  // Build the API URL
+  const apiUrl = new URL(`${baseUrl}/api.php`);
+  apiUrl.searchParams.set('api_key', config.api_key);
+  apiUrl.searchParams.set('action', action);
+  if (config.api_version) {
+    apiUrl.searchParams.set('api_version', config.api_version);
+  }
   for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, v);
+    apiUrl.searchParams.set(k, v);
   }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
-    const response = await fetch(url.toString(), {
+    const response = await fetch(apiUrl.toString(), {
       method: 'GET',
       signal: controller.signal,
     });
@@ -45,7 +49,7 @@ async function xuiRequest(
     try {
       return JSON.parse(text);
     } catch {
-      throw new Error(`XUI API returned invalid JSON: ${text.substring(0, 200)}`);
+      throw new Error(`XUI API retornou resposta inválida: ${text.substring(0, 200)}`);
     }
   } catch (e) {
     clearTimeout(timeout);
@@ -87,7 +91,6 @@ Deno.serve(async (req) => {
 
     const userId = claimsData.claims.sub;
 
-    // Use service role to check admin
     const serviceClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -112,19 +115,16 @@ Deno.serve(async (req) => {
 
     // ── Test connection (server not saved yet) ──
     if (action === 'test_connection') {
-      if (!server_config?.host || !server_config?.access_code || !server_config?.api_key) {
-        return new Response(JSON.stringify({ error: 'host, access_code e api_key são obrigatórios' }), {
+      if (!server_config?.url || !server_config?.api_key) {
+        return new Response(JSON.stringify({ error: 'URL e API Key são obrigatórios' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       try {
-        const data = await xuiRequest(server_config, 'get_server_stats');
-        return new Response(JSON.stringify({
-          success: true,
-          data,
-        }), {
+        const data = await xuiRequest(server_config, 'user_info');
+        return new Response(JSON.stringify({ success: true, data }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (e) {
@@ -160,24 +160,22 @@ Deno.serve(async (req) => {
         });
       }
 
-      if (!server.access_code || !server.api_key) {
-        return new Response(JSON.stringify({ error: 'Access Code ou API Key não configurados neste servidor' }), {
+      if (!server.api_key) {
+        return new Response(JSON.stringify({ error: 'API Key não configurada neste servidor' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       const config: XuiServerConfig = {
-        host: server.host,
-        port: server.port,
-        access_code: server.access_code,
+        url: server.host,
         api_key: server.api_key,
+        api_version: server.access_code || '1',
       };
 
       try {
         const data = await xuiRequest(config, xui_action, xui_params || {});
 
-        // Auto-update server status on server_stats calls
         if (xui_action === 'get_server_stats' || xui_action === 'user_info') {
           await serviceClient
             .from('servers')
@@ -189,7 +187,6 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (e) {
-        // Mark server offline on connection failure
         await serviceClient
           .from('servers')
           .update({ status: 'offline' })
