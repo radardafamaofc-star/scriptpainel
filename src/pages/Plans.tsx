@@ -88,6 +88,7 @@ export default function Plans() {
         name: f.name,
         max_connections: f.max_connections,
         duration_days: durationToDays(f.duration_value, f.duration_unit),
+        is_test: f.is_test,
         price: f.price,
         bouquets: f.bouquets,
         server_id: f.server_id || null,
@@ -136,7 +137,7 @@ export default function Plans() {
       server_id: plan.server_id || "",
       order: 0,
       status: "active",
-      is_test: false,
+      is_test: Boolean(plan.is_test),
       price: Number(plan.price),
       credits: 1,
       duration_value: value,
@@ -366,11 +367,11 @@ export default function Plans() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
-                        plan.duration_days <= 1
+                        plan.is_test
                           ? "bg-warning/15 text-warning border border-warning/30"
                           : "bg-muted text-muted-foreground border border-border"
                       }`}>
-                        {plan.duration_days <= 1 ? "Sim" : "Não"}
+                        {plan.is_test ? "Sim" : "Não"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-foreground">

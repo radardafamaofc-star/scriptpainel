@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useToast } from "@/hooks/use-toast";
 import { renderTemplate, DEFAULT_TEMPLATE } from "@/lib/template";
 
@@ -29,8 +29,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testServerId, setTestServerId] = useState("");
-  const [testDuration, setTestDuration] = useState("4");
+  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationDays: number; serverName: string } | null>(null);
   const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
@@ -42,7 +41,7 @@ export default function Dashboard() {
         supabase.from("servers").select("id, name, status, created_at"),
         supabase.from("active_connections").select("id, client_id", { count: "exact" }),
         supabase.from("credit_transactions").select("amount, type, created_at"),
-        supabase.from("plans").select("id, name, server_id, servers(name)"),
+        supabase.from("plans").select("id, name, server_id, duration_days, is_test, servers(name)"),
       ]);
 
       const clients = clientsRes.data || [];
@@ -98,12 +97,16 @@ export default function Dashboard() {
         resellerGrowth.push({ name: dayStr, atual: Math.max(0, Math.round(Math.random() * 2)), anterior: Math.max(0, Math.round(Math.random() * 1.5)) });
       }
 
-      // Plans for quick test (plans that have test flag or all plans)
-      const testPlans = plans.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        serverName: p.servers?.name || "—",
-      }));
+      // Plans for quick test
+      const testPlans = plans
+        .filter((p: any) => p.is_test)
+        .map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          serverId: p.server_id,
+          durationDays: p.duration_days,
+          serverName: p.servers?.name || "—",
+        }));
 
       return {
         totalClients: clientsRes.count || 0,
@@ -151,21 +154,22 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (sId: string) => {
+    mutationFn: async (plan: { serverId: string | null; durationDays: number }) => {
       const username = "test_" + Math.random().toString(36).substring(2, 8);
       const password = Math.random().toString(36).substring(2, 10);
-      const hours = parseInt(testDuration);
+      const hours = Math.max(1, Math.round((plan.durationDays || 1) * 24));
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + hours);
 
+      const serverId = plan.serverId || "";
       const { error } = await supabase.from("test_lines").insert({
-        username, password, server_id: sId || null,
+        username, password, server_id: serverId || null,
         created_by: user!.id, duration_hours: hours,
         expires_at: expiresAt.toISOString(),
       });
       if (error) throw error;
 
-      const srv: any = servers4test.find((s: any) => s.id === sId);
+      const srv: any = servers4test.find((s: any) => s.id === serverId);
       const serverDns = srv?.dns || "";
       const serverHost = srv?.host || "";
       const fallbackUrl = serverHost.startsWith("http") ? serverHost : `http://${serverHost}:${srv?.port || 80}`;
@@ -195,9 +199,8 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = (sId: string) => {
-    setTestServerId(sId);
-    setTestDuration("4");
+  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationDays: number; serverName: string }) => {
+    setTestPlan(plan);
     setTestResult(null);
     setTestDialogOpen(true);
   };
@@ -350,14 +353,14 @@ export default function Dashboard() {
             <div className="glass-card p-4">
               <h3 className="text-sm font-bold text-foreground mb-3">Teste Rápido</h3>
               <div className="space-y-1">
-                {servers4test.filter(s => s.status === "online").length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">Nenhum servidor online. Adicione servidores para gerar testes.</p>
+                {(stats?.testPlans || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">Nenhum plano de teste encontrado. Marque um plano como teste em Planos.</p>
                 ) : (
-                  servers4test.filter(s => s.status === "online").map((srv: any) => (
-                    <div key={srv.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => handleQuickTest(srv.id)}>
-                      <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{srv.name}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">Gerar Teste</span>
+                  (stats?.testPlans || []).map((plan: any) => (
+                    <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
+                      onClick={() => handleQuickTest(plan)}>
+                      <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">{plan.durationDays} dia(s)</span>
                     </div>
                   ))
                 )}
@@ -365,7 +368,7 @@ export default function Dashboard() {
             </div>
 
             {/* Test Dialog */}
-            <Dialog open={testDialogOpen} onOpenChange={(v) => { setTestDialogOpen(v); if (!v) setTestResult(null); }}>
+            <Dialog open={testDialogOpen} onOpenChange={(v) => { setTestDialogOpen(v); if (!v) { setTestResult(null); setTestPlan(null); } }}>
               <DialogContent className="bg-background border-border sm:max-w-lg max-h-[85vh] flex flex-col">
                 <DialogHeader>
                   <DialogTitle className="text-foreground text-lg">Gerar Teste Rápido</DialogTitle>
@@ -373,28 +376,22 @@ export default function Dashboard() {
                 {!testResult ? (
                   <div className="space-y-4 mt-2">
                     <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">Duração</Label>
-                      <Select value={testDuration} onValueChange={setTestDuration}>
-                        <SelectTrigger className="bg-secondary border-border">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 hora</SelectItem>
-                          <SelectItem value="2">2 horas</SelectItem>
-                          <SelectItem value="4">4 horas</SelectItem>
-                          <SelectItem value="6">6 horas</SelectItem>
-                          <SelectItem value="12">12 horas</SelectItem>
-                          <SelectItem value="24">24 horas</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-muted-foreground text-xs">Plano selecionado</Label>
+                      <div className="rounded-md border border-border bg-secondary px-3 py-2.5">
+                        <p className="text-sm font-medium text-foreground">{testPlan?.serverName} • {testPlan?.name}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Duração: {testPlan?.durationDays || 1} dia(s)</p>
+                      </div>
                     </div>
                     <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
                       <p className="text-xs text-primary/80">Testes não consomem créditos. Use para demonstrar o serviço.</p>
                     </div>
                     <Button
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={() => createTestMutation.mutate(testServerId)}
-                      disabled={createTestMutation.isPending}
+                      onClick={() => {
+                        if (!testPlan) return;
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays });
+                      }}
+                      disabled={createTestMutation.isPending || !testPlan}
                     >
                       {createTestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                       Gerar Teste
