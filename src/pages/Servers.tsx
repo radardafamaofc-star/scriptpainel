@@ -388,7 +388,7 @@ export default function Servers() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{server.name}</h3>
-                      <p className="text-sm text-muted-foreground font-mono truncate max-w-[200px] sm:max-w-none">{server.host}</p>
+                      <p className="text-sm text-muted-foreground font-mono">••••••••••••</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 sm:gap-8 ml-12 sm:ml-0">
