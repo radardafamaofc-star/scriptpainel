@@ -1,5 +1,5 @@
 import { Layout } from "@/components/Layout";
-import { Server, Plus, Wifi, WifiOff, MoreVertical, TestTube, Trash2, RefreshCw, Pencil, Loader2 } from "lucide-react";
+import { Server, Plus, Wifi, WifiOff, MoreVertical, TestTube, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,14 +15,13 @@ interface ServerForm {
   name: string;
   host: string;
   port: number;
-  username: string;
-  password: string;
+  access_code: string;
   api_key: string;
   max_clients: number;
 }
 
 const emptyForm: ServerForm = {
-  name: "", host: "", port: 25461, username: "", password: "", api_key: "", max_clients: 500,
+  name: "", host: "", port: 25461, access_code: "", api_key: "", max_clients: 500,
 };
 
 export default function Servers() {
@@ -31,6 +30,7 @@ export default function Servers() {
   const [form, setForm] = useState<ServerForm>(emptyForm);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -46,26 +46,21 @@ export default function Servers() {
 
   const saveMutation = useMutation({
     mutationFn: async (formData: ServerForm) => {
+      const payload = {
+        name: formData.name,
+        host: formData.host,
+        port: formData.port,
+        access_code: formData.access_code,
+        api_key: formData.api_key,
+        max_clients: formData.max_clients,
+      };
+
       if (editId) {
-        const { error } = await supabase.from("servers").update({
-          name: formData.name,
-          host: formData.host,
-          port: formData.port,
-          username: formData.username,
-          password: formData.password,
-          api_key: formData.api_key || null,
-          max_clients: formData.max_clients,
-        }).eq("id", editId);
+        const { error } = await supabase.from("servers").update(payload).eq("id", editId);
         if (error) throw error;
       } else {
         const { error } = await supabase.from("servers").insert({
-          name: formData.name,
-          host: formData.host,
-          port: formData.port,
-          username: formData.username,
-          password: formData.password,
-          api_key: formData.api_key || null,
-          max_clients: formData.max_clients,
+          ...payload,
           created_by: user!.id,
         });
         if (error) throw error;
@@ -100,6 +95,7 @@ export default function Servers() {
     setEditId(null);
     setForm(emptyForm);
     setTestResult(null);
+    setShowApiKey(false);
   };
 
   const openEdit = (server: typeof servers[0]) => {
@@ -108,8 +104,7 @@ export default function Servers() {
       name: server.name,
       host: server.host,
       port: server.port,
-      username: server.username || "",
-      password: server.password || "",
+      access_code: (server as any).access_code || "",
       api_key: server.api_key || "",
       max_clients: server.max_clients,
     });
@@ -118,22 +113,21 @@ export default function Servers() {
   };
 
   const testConnection = async () => {
-    if (!form.host || !form.username || !form.password) {
-      toast({ title: "Preencha host, usuário e senha para testar", variant: "destructive" });
+    if (!form.host || !form.access_code || !form.api_key) {
+      toast({ title: "Preencha host, Access Code e API Key para testar", variant: "destructive" });
       return;
     }
     setTesting(true);
     setTestResult(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("xui-proxy", {
         body: {
           action: "test_connection",
           server_config: {
             host: form.host,
             port: form.port,
-            username: form.username,
-            password: form.password,
+            access_code: form.access_code,
+            api_key: form.api_key,
           },
         },
       });
@@ -142,9 +136,10 @@ export default function Servers() {
 
       const result = res.data;
       if (result.success) {
+        const stats = result.data;
         setTestResult({
           success: true,
-          message: `Conectado! v${result.server_info?.version || '?'} — ${result.server_info?.total_users || 0} usuários, ${result.server_info?.active_cons || 0} conexões ativas`,
+          message: `✅ Conectado ao XUI One com sucesso!`,
         });
       } else {
         setTestResult({ success: false, message: result.error || "Falha na conexão" });
@@ -159,22 +154,19 @@ export default function Servers() {
   const refreshServer = async (serverId: string) => {
     try {
       const res = await supabase.functions.invoke("xui-proxy", {
-        body: { action: "server_info", server_id: serverId },
+        body: { action: "xui_command", server_id: serverId, xui_action: "get_server_stats" },
       });
       if (res.error) throw new Error(res.error.message);
       if (res.data?.success) {
         queryClient.invalidateQueries({ queryKey: ["servers"] });
-        toast({ title: "Status atualizado!" });
+        toast({ title: "Servidor online! Status atualizado." });
       } else {
-        // Mark offline
-        await supabase.from("servers").update({ status: "offline" }).eq("id", serverId);
         queryClient.invalidateQueries({ queryKey: ["servers"] });
-        toast({ title: "Servidor offline", variant: "destructive" });
+        toast({ title: "Servidor offline", description: res.data?.error, variant: "destructive" });
       }
     } catch {
-      await supabase.from("servers").update({ status: "offline" }).eq("id", serverId);
       queryClient.invalidateQueries({ queryKey: ["servers"] });
-      toast({ title: "Servidor offline", variant: "destructive" });
+      toast({ title: "Erro ao verificar servidor", variant: "destructive" });
     }
   };
 
@@ -210,32 +202,46 @@ export default function Servers() {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="col-span-2 space-y-1.5">
                     <Label className="text-muted-foreground text-xs">IP ou Domínio</Label>
-                    <Input placeholder="192.168.1.100" className="bg-secondary border-border" value={form.host} onChange={e => handleChange("host", e.target.value)} />
+                    <Input placeholder="bestdomain.com" className="bg-secondary border-border" value={form.host} onChange={e => handleChange("host", e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-muted-foreground text-xs">Porta</Label>
                     <Input type="number" className="bg-secondary border-border" value={form.port} onChange={e => handleChange("port", parseInt(e.target.value) || 0)} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+
+                <div className="p-3 rounded-lg bg-muted/50 border border-border space-y-3">
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Credenciais da API — Obtidas em Management → Access Control → Access Codes e Perfil do Usuário
+                  </p>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Usuário do Painel XUI</Label>
-                    <Input placeholder="admin" className="bg-secondary border-border" value={form.username} onChange={e => handleChange("username", e.target.value)} />
+                    <Label className="text-muted-foreground text-xs">Access Code</Label>
+                    <Input placeholder="Ex: rnVKrSLe" className="bg-secondary border-border font-mono" value={form.access_code} onChange={e => handleChange("access_code", e.target.value)} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Senha do Painel XUI</Label>
-                    <Input type="password" placeholder="••••••" className="bg-secondary border-border" value={form.password} onChange={e => handleChange("password", e.target.value)} />
+                    <Label className="text-muted-foreground text-xs">API Key</Label>
+                    <div className="relative">
+                      <Input
+                        type={showApiKey ? "text" : "password"}
+                        placeholder="Ex: 1A2C5C80056A80F5AB6ECAD3937875DE"
+                        className="bg-secondary border-border font-mono pr-10"
+                        value={form.api_key}
+                        onChange={e => handleChange("api_key", e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(!showApiKey)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">API Key (opcional)</Label>
-                    <Input placeholder="Chave da API" className="bg-secondary border-border" value={form.api_key} onChange={e => handleChange("api_key", e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Máx. Clientes</Label>
-                    <Input type="number" className="bg-secondary border-border" value={form.max_clients} onChange={e => handleChange("max_clients", parseInt(e.target.value) || 0)} />
-                  </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs">Máx. Clientes</Label>
+                  <Input type="number" className="bg-secondary border-border" value={form.max_clients} onChange={e => handleChange("max_clients", parseInt(e.target.value) || 0)} />
                 </div>
 
                 {testResult && (
@@ -252,7 +258,7 @@ export default function Servers() {
                   <Button
                     className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
                     onClick={() => saveMutation.mutate(form)}
-                    disabled={saveMutation.isPending || !form.name || !form.host || !form.username || !form.password}
+                    disabled={saveMutation.isPending || !form.name || !form.host || !form.access_code || !form.api_key}
                   >
                     {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                     {editId ? "Salvar Alterações" : "Adicionar"}

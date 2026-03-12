@@ -8,30 +8,52 @@ const corsHeaders = {
 interface XuiServerConfig {
   host: string;
   port: number;
-  username: string;
-  password: string;
+  access_code: string;
+  api_key: string;
+  https?: boolean;
 }
 
-async function xuiRequest(server: XuiServerConfig, endpoint: string, params: Record<string, string> = {}) {
-  const baseUrl = `http://${server.host}:${server.port}/api.php`;
+async function xuiRequest(
+  server: XuiServerConfig,
+  action: string,
+  params: Record<string, string> = {}
+) {
+  const protocol = server.https ? 'https' : 'http';
+  const baseUrl = `${protocol}://${server.host}:${server.port}/${server.access_code}/`;
   const url = new URL(baseUrl);
-  url.searchParams.set('username', server.username);
-  url.searchParams.set('password', server.password);
-  url.searchParams.set('action', endpoint);
+  url.searchParams.set('api_key', server.api_key);
+  url.searchParams.set('action', action);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, v);
   }
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
 
-  if (!response.ok) {
-    throw new Error(`XUI API error: ${response.status} ${response.statusText}`);
+  try {
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`XUI API HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`XUI API returned invalid JSON: ${text.substring(0, 200)}`);
+    }
+  } catch (e) {
+    clearTimeout(timeout);
+    if (e.name === 'AbortError') {
+      throw new Error('Conexão expirou (timeout 15s)');
+    }
+    throw e;
   }
-
-  return await response.json();
 }
 
 Deno.serve(async (req) => {
@@ -41,7 +63,7 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('authorization');
-    if (!authHeader) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -50,24 +72,31 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Verify user token
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) {
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Check admin role
-    const { data: roleData } = await supabase
+    const userId = claimsData.claims.sub;
+
+    // Use service role to check admin
+    const serviceClient = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    const { data: roleData } = await serviceClient
       .from('user_roles')
       .select('role')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .eq('role', 'admin')
       .single();
 
@@ -79,28 +108,22 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action, server_id, server_config } = body;
+    const { action, server_id, server_config, xui_action, xui_params } = body;
 
-    // For test_connection, use provided config directly (server not saved yet)
+    // ── Test connection (server not saved yet) ──
     if (action === 'test_connection') {
-      if (!server_config) {
-        return new Response(JSON.stringify({ error: 'server_config is required' }), {
+      if (!server_config?.host || !server_config?.access_code || !server_config?.api_key) {
+        return new Response(JSON.stringify({ error: 'host, access_code e api_key são obrigatórios' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
       try {
-        const data = await xuiRequest(server_config, 'server');
+        const data = await xuiRequest(server_config, 'get_server_stats');
         return new Response(JSON.stringify({
           success: true,
-          server_info: {
-            version: data.server_info?.version || 'Unknown',
-            uptime: data.server_info?.uptime || 'N/A',
-            total_users: data.server_info?.total_users || 0,
-            active_cons: data.server_info?.active_cons || 0,
-            total_cons: data.server_info?.total_cons || 0,
-          },
+          data,
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -115,30 +138,30 @@ Deno.serve(async (req) => {
       }
     }
 
-    // For actions using a saved server
-    if (action === 'server_info' || action === 'get_users' || action === 'get_active_connections') {
-      if (!server_id) {
-        return new Response(JSON.stringify({ error: 'server_id is required' }), {
+    // ── Execute any XUI One API action on a saved server ──
+    if (action === 'xui_command') {
+      if (!server_id || !xui_action) {
+        return new Response(JSON.stringify({ error: 'server_id e xui_action são obrigatórios' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      const { data: server, error: srvError } = await supabase
+      const { data: server, error: srvError } = await serviceClient
         .from('servers')
         .select('*')
         .eq('id', server_id)
         .single();
 
       if (srvError || !server) {
-        return new Response(JSON.stringify({ error: 'Server not found' }), {
+        return new Response(JSON.stringify({ error: 'Servidor não encontrado' }), {
           status: 404,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
 
-      if (!server.username || !server.password) {
-        return new Response(JSON.stringify({ error: 'Server credentials missing' }), {
+      if (!server.access_code || !server.api_key) {
+        return new Response(JSON.stringify({ error: 'Access Code ou API Key não configurados neste servidor' }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -147,33 +170,42 @@ Deno.serve(async (req) => {
       const config: XuiServerConfig = {
         host: server.host,
         port: server.port,
-        username: server.username,
-        password: server.password,
+        access_code: server.access_code,
+        api_key: server.api_key,
       };
 
-      let endpoint = 'server';
-      if (action === 'get_users') endpoint = 'user';
-      if (action === 'get_active_connections') endpoint = 'active_cons';
+      try {
+        const data = await xuiRequest(config, xui_action, xui_params || {});
 
-      const data = await xuiRequest(config, endpoint);
+        // Auto-update server status on server_stats calls
+        if (xui_action === 'get_server_stats' || xui_action === 'user_info') {
+          await serviceClient
+            .from('servers')
+            .update({ status: 'online' })
+            .eq('id', server_id);
+        }
 
-      // Update server status in DB
-      if (action === 'server_info' && data.server_info) {
-        await supabase
+        return new Response(JSON.stringify({ success: true, data }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } catch (e) {
+        // Mark server offline on connection failure
+        await serviceClient
           .from('servers')
-          .update({
-            status: 'online',
-            uptime: data.server_info.uptime || '0%',
-          })
+          .update({ status: 'offline' })
           .eq('id', server_id);
-      }
 
-      return new Response(JSON.stringify({ success: true, data }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        return new Response(JSON.stringify({
+          success: false,
+          error: e.message,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
-    return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
+    return new Response(JSON.stringify({ error: `Ação desconhecida: ${action}` }), {
       status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
