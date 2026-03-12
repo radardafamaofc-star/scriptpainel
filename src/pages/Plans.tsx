@@ -145,7 +145,7 @@ export default function Plans() {
       status: "active",
       is_test: Boolean(plan.is_test),
       price: Number(plan.price),
-      credits: 1,
+      credits: plan.bouquets || 0,
       duration_value: value,
       duration_unit: unit,
       max_connections: plan.max_connections,
