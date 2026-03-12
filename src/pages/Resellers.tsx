@@ -554,9 +554,12 @@ function ResellerRow({
         </td>
 
         {/* Datas */}
-        <td className="py-4 pr-4">
+        <td className="px-5 py-3">
           <div className="space-y-0.5 text-xs">
-            <p className="text-foreground/60">Criado em<br /><span className="text-foreground">{formatDate(r.created_at)}</span></p>
+            <p className="text-foreground">
+              {formatDate(r.created_at)}
+            </p>
+            <p className="text-muted-foreground">Criado em</p>
           </div>
         </td>
 
