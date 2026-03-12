@@ -477,16 +477,16 @@ export default function Resellers() {
             <p className="text-sm text-muted-foreground mt-1">Crie seu primeiro revendedor para começar</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="glass-card overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Usuário</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Créditos</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Datas</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Situação</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Revenda</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Ações</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Créditos</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Datas</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Situação</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Revenda</th>
+                  <th className="px-5 py-3 text-right text-muted-foreground font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -533,36 +533,37 @@ function ResellerRow({
 }) {
   return (
     <>
-      <tr className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+      <tr className="border-b border-border/50 hover:bg-accent/50 transition-colors">
         {/* Usuário */}
-        <td className="py-4 pr-4">
+        <td className="px-5 py-3">
           <div>
-            <span className="font-semibold text-primary cursor-pointer hover:underline">{rProfile?.display_name || rProfile?.email || "Sem nome"}</span>
-            <div className="flex flex-col gap-0.5 mt-1">
-              <span className="text-xs text-muted-foreground">
-                {(rRole === "admin" || rRole === "reseller_ultra") ? "∞ créditos ilimitados" : `${Number(r.balance).toLocaleString("pt-BR")} créditos`}
-              </span>
-              <span className={`text-xs font-medium ${ROLE_COLORS[rRole] || "text-muted-foreground"}`}>
-                {ROLE_LABELS[rRole] || rRole}
-              </span>
-            </div>
+            <p className="font-medium text-primary">{rProfile?.display_name || rProfile?.email || "Sem nome"}</p>
+            <p className="text-xs text-muted-foreground">{rProfile?.email || "—"}</p>
+            <span className={`text-xs font-medium ${ROLE_COLORS[rRole] || "text-muted-foreground"}`}>
+              {ROLE_LABELS[rRole] || rRole}
+            </span>
           </div>
         </td>
 
         {/* Créditos */}
-        <td className="py-4 pr-4">
-          <span className="font-semibold text-foreground">{Number(r.balance).toLocaleString("pt-BR")}</span>
+        <td className="px-5 py-3">
+          <span className="font-semibold text-foreground">
+            {(rRole === "admin" || rRole === "reseller_ultra") ? "∞ ilimitados" : Number(r.balance).toLocaleString("pt-BR")}
+          </span>
         </td>
 
         {/* Datas */}
-        <td className="py-4 pr-4">
+        <td className="px-5 py-3">
           <div className="space-y-0.5 text-xs">
-            <p className="text-foreground/60">Criado em<br /><span className="text-foreground">{formatDate(r.created_at)}</span></p>
+            <p className="text-foreground">
+              {formatDate(r.created_at)}
+            </p>
+            <p className="text-muted-foreground">Criado em</p>
           </div>
         </td>
 
         {/* Situação */}
-        <td className="py-4 pr-4">
+        <td className="px-5 py-3">
           {r.status === "active" ? (
             <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded border border-primary/50 text-primary bg-primary/10">Ativo</span>
           ) : (
@@ -574,12 +575,12 @@ function ResellerRow({
         </td>
 
         {/* Revenda (pai) */}
-        <td className="py-4 pr-4">
-          <span className="text-foreground/80">{parentName}</span>
+        <td className="px-5 py-3">
+          <span className="text-foreground/80 text-xs">{parentName}</span>
         </td>
 
         {/* Ações */}
-        <td className="py-4 text-right">
+        <td className="px-5 py-3 text-right">
           <div className="flex items-center justify-end gap-1.5">
             <button onClick={onEdit} className="p-1.5 rounded text-foreground/70 hover:text-foreground hover:bg-accent transition-colors" title="Editar">
               <Pencil className="h-4 w-4" />

@@ -36,6 +36,7 @@ export default function Clients() {
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterServer, setFilterServer] = useState<string>("all");
   const [detailsClient, setDetailsClient] = useState<any>(null);
   const [convertDialog, setConvertDialog] = useState<any>(null);
   const [convertPlanId, setConvertPlanId] = useState("");
@@ -83,6 +84,21 @@ export default function Clients() {
       if (error) throw error;
       return data;
     },
+  });
+
+  // Fetch creator profiles for clients
+  const creatorIds = [...new Set([...clients.map((c: any) => c.created_by), ...testLines.map((t: any) => t.created_by)])].filter(Boolean);
+  const { data: creatorProfiles = {} } = useQuery({
+    queryKey: ["creator-profiles", creatorIds.join(",")],
+    queryFn: async () => {
+      if (creatorIds.length === 0) return {};
+      const { data } = await supabase.from("profiles").select("user_id, display_name, email").in("user_id", creatorIds);
+      const map: Record<string, any> = {};
+      (data || []).forEach((p: any) => { map[p.user_id] = p; });
+      return map;
+    },
+    enabled: creatorIds.length > 0,
+    staleTime: 10000,
   });
 
   const saveMutation = useMutation({
@@ -347,6 +363,13 @@ export default function Clients() {
     ...testLines.map((t: any) => ({ ...t, _type: "test" as const, max_connections: 1 })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
+  const getCreatorName = (item: any) => {
+    const id = item.created_by;
+    if (!id) return "—";
+    const profile = (creatorProfiles as any)[id];
+    return profile?.display_name || profile?.email || "—";
+  };
+
   const filtered = unifiedList.filter((item: any) => {
     const matchSearch = item.username.toLowerCase().includes(search.toLowerCase()) ||
       (item.email && item.email.toLowerCase().includes(search.toLowerCase()));
@@ -354,7 +377,8 @@ export default function Clients() {
     const matchStatus = filterStatus === "all" ||
       (filterStatus === "test" && item._type === "test") ||
       (filterStatus !== "test" && itemStatus === filterStatus);
-    return matchSearch && matchStatus;
+    const matchServer = filterServer === "all" || item.server_id === filterServer;
+    return matchSearch && matchStatus && matchServer;
   });
 
   const statusStyle: Record<string, string> = {
@@ -394,6 +418,17 @@ export default function Clients() {
               <SelectItem value="suspended">Suspensos</SelectItem>
               <SelectItem value="blocked">Bloqueados</SelectItem>
               <SelectItem value="test">Testes</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterServer} onValueChange={setFilterServer}>
+            <SelectTrigger className="w-44 bg-card border-border">
+              <SelectValue placeholder="Servidor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Servidores</SelectItem>
+              {servers.map(s => (
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -505,6 +540,7 @@ export default function Clients() {
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Situação</th>
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Detalhes</th>
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Servidor</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Criado por</th>
                   <th className="px-5 py-3 text-right text-muted-foreground font-medium">Ações</th>
                 </tr>
               </thead>
@@ -544,6 +580,7 @@ export default function Clients() {
                           Conexões: 1
                         </td>
                         <td className="px-5 py-3 text-muted-foreground text-xs">{item.servers?.name || "—"}</td>
+                        <td className="px-5 py-3 text-muted-foreground text-xs">{getCreatorName(item)}</td>
                         <td className="px-5 py-3 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -621,6 +658,7 @@ export default function Clients() {
                         </div>
                       </td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">{item.servers?.name || "—"}</td>
+                      <td className="px-5 py-3 text-muted-foreground text-xs">{getCreatorName(item)}</td>
                       <td className="px-5 py-3 text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
