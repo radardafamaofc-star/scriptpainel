@@ -105,7 +105,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       {(logoSrc || panelName) && (
         <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-          {logoSrc && <img src={logoSrc} alt={panelName || "Painel"} className="w-8 h-8 object-contain" />}
+          {logoSrc && <img src={logoSrc} alt={panelName || "Painel"} className="w-10 h-10 object-contain" />}
           {!collapsed && panelName && (
             <div>
               <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
