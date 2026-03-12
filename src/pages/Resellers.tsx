@@ -477,16 +477,16 @@ export default function Resellers() {
             <p className="text-sm text-muted-foreground mt-1">Crie seu primeiro revendedor para começar</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="glass-card overflow-hidden">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left">
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Usuário</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Créditos</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Datas</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Situação</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Revenda</th>
-                  <th className="pb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider text-right">Ações</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Créditos</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Datas</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Situação</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Revenda</th>
+                  <th className="px-5 py-3 text-right text-muted-foreground font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
