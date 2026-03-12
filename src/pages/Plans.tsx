@@ -137,7 +137,7 @@ export default function Plans() {
       server_id: plan.server_id || "",
       order: 0,
       status: "active",
-      is_test: false,
+      is_test: Boolean(plan.is_test),
       price: Number(plan.price),
       credits: 1,
       duration_value: value,
