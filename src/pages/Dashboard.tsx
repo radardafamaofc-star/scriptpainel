@@ -22,6 +22,16 @@ const tooltipStyle = {
   fontSize: 11,
 };
 
+const formatDuration = (hours: number): string => {
+  const normalizedHours = Math.max(1, hours || 0);
+  const days = Math.floor(normalizedHours / 24);
+  const remainingHours = normalizedHours % 24;
+
+  if (days === 0) return `${normalizedHours}h`;
+  if (remainingHours === 0) return `${days} dia(s)`;
+  return `${days}d ${remainingHours}h`;
+};
+
 export default function Dashboard() {
   const auth = useAuth();
   const { role, user } = auth;
