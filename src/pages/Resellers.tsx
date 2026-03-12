@@ -561,7 +561,7 @@ function ResellerRow({
         {/* Situação */}
         <td className="py-4 pr-4">
           {r.status === "active" ? (
-            <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded border border-emerald-500/50 text-emerald-400 bg-emerald-500/10">Ativo</span>
+            <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded border border-primary/50 text-primary bg-primary/10">Ativo</span>
           ) : (
             <span className="inline-block px-2.5 py-1 text-xs font-semibold rounded border border-destructive/50 text-destructive bg-destructive/10">Inativo</span>
           )}
