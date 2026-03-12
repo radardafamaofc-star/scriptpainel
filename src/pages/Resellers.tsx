@@ -581,7 +581,7 @@ function ResellerRow({
         </td>
 
         {/* Ações */}
-        <td className="py-4 text-right">
+        <td className="px-5 py-3 text-right">
           <div className="flex items-center justify-end gap-1.5">
             <button onClick={onEdit} className="p-1.5 rounded text-foreground/70 hover:text-foreground hover:bg-accent transition-colors" title="Editar">
               <Pencil className="h-4 w-4" />
