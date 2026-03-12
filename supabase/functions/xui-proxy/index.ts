@@ -12,11 +12,11 @@ interface XuiServerConfig {
   use_proxy?: boolean;
 }
 
-async function tryFetch(url: string, timeoutMs = 15000): Promise<Response> {
+async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { method: 'GET', signal: controller.signal });
+    const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(timeout);
     return response;
   } catch (e) {
@@ -28,90 +28,156 @@ async function tryFetch(url: string, timeoutMs = 15000): Promise<Response> {
   }
 }
 
+function buildUrlsToTry(baseUrl: string): string[] {
+  const clean = baseUrl.replace(/\/+$/, '');
+  const urls: string[] = [];
+
+  // Original URL as-is
+  urls.push(`${clean}/api.php`);
+  urls.push(`${clean}/player_api.php`);
+
+  // Strip path, keep host:port
+  try {
+    const parsed = new URL(clean);
+    if (parsed.pathname && parsed.pathname !== '/') {
+      const root = `${parsed.protocol}//${parsed.host}`;
+      urls.push(`${root}/api.php`);
+      urls.push(`${root}/player_api.php`);
+    }
+  } catch {}
+
+  return urls;
+}
+
 async function xuiRequest(
   config: XuiServerConfig,
   action: string,
   params: Record<string, string> = {}
 ) {
-  let baseUrl = config.url.replace(/\/+$/, '');
-  
-  // Build query params
-  const queryParams = new URLSearchParams();
-  queryParams.set('api_key', config.api_key);
-  queryParams.set('action', action);
-  if (config.api_version) {
-    queryParams.set('api_version', config.api_version);
-  }
-  for (const [k, v] of Object.entries(params)) {
-    queryParams.set(k, v);
-  }
-  const qs = queryParams.toString();
+  const baseUrls = buildUrlsToTry(config.url);
 
-  // Try multiple URL patterns that XUI One panels commonly use
-  const urlsToTry = [
-    `${baseUrl}/api.php?${qs}`,
-    `${baseUrl}/player_api.php?${qs}`,
+  // XUI One accepts both api_key and username/password auth styles.
+  // We'll try api_key as query param first, then as POST body.
+  const authVariants = [
+    // Variant 1: api_key as query param (some XUI One versions)
+    (qs: URLSearchParams) => { qs.set('api_key', config.api_key); },
+    // Variant 2: api_key as "token" param
+    (qs: URLSearchParams) => { qs.set('token', config.api_key); },
   ];
 
-  // Also try stripping the path and going to root
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.pathname && parsed.pathname !== '/') {
-      const rootUrl = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${rootUrl}/api.php?${qs}`);
-      urlsToTry.push(`${rootUrl}/player_api.php?${qs}`);
-    }
-  } catch {}
-
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
+  console.log(`[XUI] Testing ${baseUrls.length} base URLs x ${authVariants.length} auth variants for action: ${action}`);
 
   let lastError: Error | null = null;
 
-  for (const url of urlsToTry) {
-    try {
-      console.log(`[XUI] Trying: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
+  for (const baseEndpoint of baseUrls) {
+    // === Try GET with different auth params ===
+    for (const setAuth of authVariants) {
+      const qs = new URLSearchParams();
+      setAuth(qs);
+      qs.set('action', action);
+      if (config.api_version) qs.set('api_version', config.api_version);
+      for (const [k, v] of Object.entries(params)) qs.set(k, v);
 
-      if (response.status === 404) {
-        console.log(`[XUI] 404 for: ${url.replace(config.api_key, '***')}`);
-        continue; // Try next URL pattern
-      }
-
-      if (!response.ok) {
-        throw new Error(`XUI API HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const text = await response.text();
-      
-      // Some XUI panels return empty response for invalid endpoints
-      if (!text || text.trim() === '') {
-        console.log(`[XUI] Empty response for: ${url.replace(config.api_key, '***')}`);
-        continue;
-      }
-
+      const url = `${baseEndpoint}?${qs.toString()}`;
       try {
-        return JSON.parse(text);
-      } catch {
-        // If it's HTML (login page), skip
-        if (text.includes('<html') || text.includes('<!DOCTYPE')) {
-          console.log(`[XUI] Got HTML response, skipping`);
+        console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
+        const response = await tryFetch(url);
+
+        if (response.status === 404) { console.log(`[XUI] 404`); continue; }
+        if (response.status === 403) { console.log(`[XUI] 403 Forbidden`); continue; }
+
+        const text = await response.text();
+        if (!text || text.trim() === '') { console.log(`[XUI] Empty`); continue; }
+        if (text.includes('<html') || text.includes('<!DOCTYPE')) { console.log(`[XUI] HTML page`); continue; }
+
+        try {
+          const json = JSON.parse(text);
+          console.log(`[XUI] ✅ Success via GET`);
+          return json;
+        } catch {
+          // Non-JSON but not HTML - might be an error message
+          console.log(`[XUI] Non-JSON response: ${text.substring(0, 100)}`);
           continue;
         }
-        throw new Error(`XUI API retornou resposta inválida: ${text.substring(0, 200)}`);
+      } catch (e) {
+        if (e.message.includes('timeout') || e.message.includes('expirou')) throw e;
+        lastError = e;
+        console.log(`[XUI] GET error: ${e.message}`);
+      }
+    }
+
+    // === Try POST with form data ===
+    try {
+      const formData = new URLSearchParams();
+      formData.set('api_key', config.api_key);
+      formData.set('action', action);
+      if (config.api_version) formData.set('api_version', config.api_version);
+      for (const [k, v] of Object.entries(params)) formData.set(k, v);
+
+      console.log(`[XUI] POST: ${baseEndpoint.replace(config.api_key, '***')}`);
+      const response = await tryFetch(baseEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData.toString(),
+      });
+
+      if (response.status === 404) { console.log(`[XUI] POST 404`); continue; }
+
+      const text = await response.text();
+      if (!text || text.trim() === '') continue;
+      if (text.includes('<html') || text.includes('<!DOCTYPE')) continue;
+
+      try {
+        const json = JSON.parse(text);
+        console.log(`[XUI] ✅ Success via POST`);
+        return json;
+      } catch {
+        console.log(`[XUI] POST Non-JSON: ${text.substring(0, 100)}`);
       }
     } catch (e) {
+      if (e.message.includes('timeout') || e.message.includes('expirou')) throw e;
       lastError = e;
-      if (e.message.includes('timeout') || e.message.includes('expirou')) {
-        throw e; // Don't retry on timeout
+      console.log(`[XUI] POST error: ${e.message}`);
+    }
+
+    // === Try POST with JSON body ===
+    try {
+      const jsonBody = JSON.stringify({
+        api_key: config.api_key,
+        action,
+        api_version: config.api_version || '1',
+        ...params,
+      });
+
+      console.log(`[XUI] POST JSON: ${baseEndpoint}`);
+      const response = await tryFetch(baseEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: jsonBody,
+      });
+
+      if (response.status === 404) continue;
+
+      const text = await response.text();
+      if (!text || text.trim() === '') continue;
+      if (text.includes('<html') || text.includes('<!DOCTYPE')) continue;
+
+      try {
+        const json = JSON.parse(text);
+        console.log(`[XUI] ✅ Success via POST JSON`);
+        return json;
+      } catch {
+        console.log(`[XUI] POST JSON Non-JSON: ${text.substring(0, 100)}`);
       }
-      console.log(`[XUI] Error for URL: ${e.message}`);
+    } catch (e) {
+      if (e.message.includes('timeout') || e.message.includes('expirou')) throw e;
+      lastError = e;
     }
   }
 
   throw lastError || new Error(
-    `Não foi possível conectar ao XUI One. Verifique se a URL está correta.\n` +
-    `Formato esperado: http://SEU_IP:PORTA ou http://SEU_IP:PORTA/subdir\n` +
-    `URLs tentadas: ${urlsToTry.length}`
+    `Não foi possível conectar ao XUI One. Verifique se a URL e a chave de API estão corretas.\n` +
+    `Formato esperado: http://SEU_IP:PORTA ou http://SEU_IP:PORTA/subdir`
   );
 }
 
