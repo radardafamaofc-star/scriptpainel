@@ -17,6 +17,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 interface ServerForm {
   name: string;
   url: string;
+  dns: string;
   api_key: string;
   api_version: string;
   use_proxy: boolean;
@@ -25,7 +26,7 @@ interface ServerForm {
 }
 
 const emptyForm: ServerForm = {
-  name: "", url: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500, template: DEFAULT_TEMPLATE,
+  name: "", url: "", dns: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500, template: DEFAULT_TEMPLATE,
 };
 
 function parseUrl(url: string) {
@@ -64,6 +65,7 @@ export default function Servers() {
         name: formData.name,
         host: formData.url,
         port: parsed?.port || 25461,
+        dns: formData.dns || null,
         api_key: formData.api_key,
         access_code: formData.api_version,
         max_clients: formData.max_clients,
@@ -119,6 +121,7 @@ export default function Servers() {
     setForm({
       name: server.name,
       url: server.host,
+      dns: (server as any).dns || "",
       api_key: server.api_key || "",
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
@@ -227,6 +230,16 @@ export default function Servers() {
                   {editId && (
                     <p className="text-xs text-muted-foreground">Oculto, deixe em branco para manter o mesmo</p>
                   )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-sm font-medium">DNS Principal <span className="text-destructive">*</span></Label>
+                  <Input
+                    placeholder="Usado em modelos e Player API, por exemplo, http://meuservidor.xyz:80"
+                    className="bg-secondary border-border text-xs"
+                    value={form.dns}
+                    onChange={e => handleChange("dns", e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-1.5">
