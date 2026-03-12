@@ -111,7 +111,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <Label className="text-muted-foreground text-sm">Nova Senha</Label>
-              <Input type="password" placeholder="Deixe vazio para manter" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="bg-secondary border-border mt-1" />
+              <Input type="password" placeholder="Deixe vazio para manter" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="bg-secondary border-border mt-1 text-foreground placeholder:text-muted-foreground" />
             </div>
           </div>
           <Button onClick={handleSaveProfile} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
