@@ -260,13 +260,7 @@ export default function Dashboard() {
                     <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
                       onClick={() => handleQuickTest(plan)}>
                       <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">
-                        {plan.durationDays > 0 && plan.durationHours > 0
-                          ? `${plan.durationDays}d ${plan.durationHours}h`
-                          : plan.durationDays > 0
-                            ? `${plan.durationDays} dia(s)`
-                            : `${plan.durationHours}h`}
-                      </span>
+                      <span className="text-[10px] text-muted-foreground uppercase">{formatDuration(plan.durationHours)}</span>
                     </div>
                   ))
                 )}
