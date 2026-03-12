@@ -107,7 +107,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <Label className="text-muted-foreground text-sm">Email</Label>
-              <Input value={email} disabled className="bg-secondary border-border mt-1 opacity-50" />
+              <Input value={email} disabled className="bg-secondary border-border mt-1 text-foreground opacity-60" />
             </div>
             <div>
               <Label className="text-muted-foreground text-sm">Nova Senha</Label>
