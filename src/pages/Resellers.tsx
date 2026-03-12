@@ -586,7 +586,7 @@ function ResellerRow({
                 <DollarSign className="h-4 w-4" />
               </button>
             )}
-            <button onClick={onToggleStatus} className={`p-1.5 rounded transition-colors ${r.status === "active" ? "text-muted-foreground hover:text-destructive hover:bg-destructive/10" : "text-muted-foreground hover:text-emerald-400 hover:bg-emerald-500/10"}`} title={r.status === "active" ? "Suspender" : "Ativar"}>
+            <button onClick={onToggleStatus} className={`p-1.5 rounded transition-colors ${r.status === "active" ? "text-muted-foreground hover:text-destructive hover:bg-destructive/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`} title={r.status === "active" ? "Suspender" : "Ativar"}>
               {r.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
             </button>
             {onDelete && (
