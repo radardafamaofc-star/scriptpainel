@@ -198,6 +198,48 @@ export default function Clients() {
     toast({ title: "Credenciais copiadas!" });
   };
 
+  const getClientTemplate = (client: any): string => {
+    // Priority: plan template > server template > default
+    const planTemplate = client.plans?.template;
+    const serverTemplate = client.servers?.template;
+    return planTemplate || serverTemplate || DEFAULT_TEMPLATE;
+  };
+
+  const getRenderedTemplate = (client: any): string => {
+    const template = getClientTemplate(client);
+    const serverHost = client.servers?.host || "";
+    let dns = serverHost;
+    let dnsHost = serverHost;
+    try {
+      const parsed = new URL(serverHost);
+      dns = `${parsed.protocol}//${parsed.host}`;
+      dnsHost = parsed.host;
+    } catch { /* keep raw */ }
+
+    return renderTemplate(template, {
+      username: client.username || "",
+      password: client.password || "",
+      package: client.plans?.name || "",
+      pay_url: "",
+      plan_price: client.plans?.price ? `R$ ${Number(client.plans.price).toFixed(2)}` : "R$ 0,00",
+      expires_at: client.expiry_date ? format(new Date(client.expiry_date), "dd/MM/yyyy HH:mm:ss") : "",
+      connections: String(client.max_connections || 1),
+      dns,
+      dns_host: dnsHost,
+    });
+  };
+
+  const copyTemplate = (client: any) => {
+    const text = getRenderedTemplate(client);
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copiado!" });
+  };
+
+  const sendWhatsApp = (client: any) => {
+    const text = encodeURIComponent(getRenderedTemplate(client));
+    window.open(`https://wa.me/?text=${text}`, "_blank");
+  };
+
   const filtered = clients.filter((c: any) => {
     const matchSearch = c.username.toLowerCase().includes(search.toLowerCase()) ||
       (c.email && c.email.toLowerCase().includes(search.toLowerCase()));
