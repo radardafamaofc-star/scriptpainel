@@ -540,6 +540,7 @@ export default function Clients() {
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Situação</th>
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Detalhes</th>
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Servidor</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Criado por</th>
                   <th className="px-5 py-3 text-right text-muted-foreground font-medium">Ações</th>
                 </tr>
               </thead>
