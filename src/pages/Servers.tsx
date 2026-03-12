@@ -61,26 +61,39 @@ export default function Servers() {
   const saveMutation = useMutation({
     mutationFn: async (formData: ServerForm) => {
       const parsed = parseUrl(formData.url);
-      const payload = {
-        name: formData.name,
-        host: formData.url,
-        port: parsed?.port || 25461,
-        dns: formData.dns || null,
-        api_key: formData.api_key,
-        access_code: formData.api_version,
-        max_clients: formData.max_clients,
-        username: formData.use_proxy ? "proxy" : null,
-        template: formData.template || null,
-      };
 
       if (editId) {
-        const { error } = await supabase.from("servers").update(payload).eq("id", editId);
+        // Only update fields that were actually changed (non-empty)
+        const updates: Record<string, any> = {
+          name: formData.name,
+          max_clients: formData.max_clients,
+          username: formData.use_proxy ? "proxy" : null,
+          template: formData.template || null,
+        };
+        if (formData.url) {
+          updates.host = formData.url;
+          updates.port = parsed?.port || 25461;
+        }
+        if (formData.dns) updates.dns = formData.dns;
+        if (formData.api_key) updates.api_key = formData.api_key;
+        if (formData.api_version) updates.access_code = formData.api_version;
+
+        const { error } = await supabase.from("servers").update(updates).eq("id", editId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("servers").insert({
-          ...payload,
+        const payload = {
+          name: formData.name,
+          host: formData.url,
+          port: parsed?.port || 25461,
+          dns: formData.dns || null,
+          api_key: formData.api_key,
+          access_code: formData.api_version,
+          max_clients: formData.max_clients,
+          username: formData.use_proxy ? "proxy" : null,
+          template: formData.template || null,
           created_by: user!.id,
-        });
+        };
+        const { error } = await supabase.from("servers").insert(payload);
         if (error) throw error;
       }
     },
