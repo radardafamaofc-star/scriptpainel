@@ -378,45 +378,54 @@ export default function Servers() {
             <p className="text-sm text-muted-foreground mt-1">Adicione seu primeiro servidor XUI One para começar</p>
           </div>
         ) : (
-          <div className="grid gap-4">
-            {servers.map((server) => (
-              <div key={server.id} className="glass-card p-4 sm:p-5 animate-slide-in">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 sm:gap-4">
-                    <div className={`p-2.5 sm:p-3 rounded-xl ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                      {server.status === "online" ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">{server.name}</h3>
-                      <p className="text-sm text-muted-foreground font-mono truncate max-w-[200px] sm:max-w-none">{(server as any).dns || "••••••••••••"}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 sm:gap-8 ml-12 sm:ml-0">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                      {server.status === "online" ? "ONLINE" : "OFFLINE"}
-                    </span>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="bg-card border-border">
-                        <DropdownMenuItem onClick={() => refreshServer(server.id)} className="gap-2">
-                          <RefreshCw className="h-4 w-4" /> Atualizar Status
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openEdit(server)} className="gap-2">
-                          <Pencil className="h-4 w-4" /> Editar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => deleteMutation.mutate(server.id)} className="gap-2 text-destructive focus:text-destructive">
-                          <Trash2 className="h-4 w-4" /> Remover
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="glass-card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase">
+                  <th className="px-4 py-3 font-medium">Nome</th>
+                  <th className="px-4 py-3 font-medium">Situação</th>
+                  <th className="px-4 py-3 font-medium">Tipo</th>
+                  <th className="px-4 py-3 font-medium">Tipo de Conexão</th>
+                  <th className="px-4 py-3 font-medium text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {servers.map((server) => (
+                  <tr key={server.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 font-medium text-primary">{server.name}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${server.status === "online" ? "border-success/50 text-success" : "border-destructive/50 text-destructive"}`}>
+                        {server.status === "online" ? "Ativo" : "Inativo"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-foreground">XUIONE</td>
+                    <td className="px-4 py-3">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border border-primary/50 text-primary">IPTV</span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="default" size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                            Ações
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="bg-card border-border">
+                          <DropdownMenuItem onClick={() => refreshServer(server.id)} className="gap-2">
+                            <RefreshCw className="h-4 w-4" /> Atualizar Status
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openEdit(server)} className="gap-2">
+                            <Pencil className="h-4 w-4" /> Editar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => deleteMutation.mutate(server.id)} className="gap-2 text-destructive focus:text-destructive">
+                            <Trash2 className="h-4 w-4" /> Remover
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
