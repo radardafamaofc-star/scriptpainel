@@ -576,8 +576,8 @@ function ResellerRow({
         </td>
 
         {/* Revenda (pai) */}
-        <td className="py-4 pr-4">
-          <span className="text-foreground/80">{parentName}</span>
+        <td className="px-5 py-3">
+          <span className="text-foreground/80 text-xs">{parentName}</span>
         </td>
 
         {/* Ações */}
