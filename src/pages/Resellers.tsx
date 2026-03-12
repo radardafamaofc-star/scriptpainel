@@ -578,15 +578,15 @@ function ResellerRow({
         {/* Ações */}
         <td className="py-4 text-right">
           <div className="flex items-center justify-end gap-1.5">
-            <button onClick={onEdit} className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="Editar">
+            <button onClick={onEdit} className="p-1.5 rounded text-foreground/70 hover:text-foreground hover:bg-accent transition-colors" title="Editar">
               <Pencil className="h-4 w-4" />
             </button>
             {onAddCredits && (
-              <button onClick={onAddCredits} className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Adicionar Créditos">
+              <button onClick={onAddCredits} className="p-1.5 rounded text-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors" title="Adicionar Créditos">
                 <DollarSign className="h-4 w-4" />
               </button>
             )}
-            <button onClick={onToggleStatus} className={`p-1.5 rounded transition-colors ${r.status === "active" ? "text-muted-foreground hover:text-destructive hover:bg-destructive/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`} title={r.status === "active" ? "Suspender" : "Ativar"}>
+            <button onClick={onToggleStatus} className={`p-1.5 rounded transition-colors ${r.status === "active" ? "text-foreground/70 hover:text-destructive hover:bg-destructive/10" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`} title={r.status === "active" ? "Suspender" : "Ativar"}>
               {r.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
             </button>
             {onDelete && (
