@@ -23,8 +23,14 @@ const tooltipStyle = {
 };
 
 export default function Dashboard() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testServerId, setTestServerId] = useState("");
+  const [testDuration, setTestDuration] = useState("4");
+  const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
