@@ -388,18 +388,10 @@ export default function Servers() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{server.name}</h3>
-                      <p className="text-sm text-muted-foreground font-mono">••••••••••••</p>
+                      <p className="text-sm text-muted-foreground font-mono truncate max-w-[200px] sm:max-w-none">{(server as any).dns || "••••••••••••"}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 sm:gap-8 ml-12 sm:ml-0">
-                    <div className="text-left sm:text-right">
-                      <p className="text-xs text-muted-foreground">Máx. Clientes</p>
-                      <p className="text-sm font-semibold text-foreground">{server.max_clients}</p>
-                    </div>
-                    <div className="text-left sm:text-right">
-                      <p className="text-xs text-muted-foreground">Uptime</p>
-                      <p className="text-sm font-semibold text-foreground">{server.uptime || "N/A"}</p>
-                    </div>
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
                       {server.status === "online" ? "ONLINE" : "OFFLINE"}
                     </span>
