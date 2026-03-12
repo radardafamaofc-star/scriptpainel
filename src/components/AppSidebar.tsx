@@ -6,6 +6,7 @@ import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import xsyncLogoDefault from "@/assets/xsync-logo.png";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { useBranding } from "@/hooks/use-branding";
 import { useQuery } from "@tanstack/react-query";
 import {
