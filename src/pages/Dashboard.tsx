@@ -155,12 +155,12 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { serverId: string | null; durationDays: number }) => {
+    mutationFn: async (plan: { serverId: string | null; durationDays: number; durationHours: number }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
-      const hours = Math.max(1, Math.round((plan.durationDays || 1) * 24));
+      const totalHours = Math.max(1, (plan.durationDays || 0) * 24 + (plan.durationHours || 0));
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + hours);
+      expiresAt.setHours(expiresAt.getHours() + totalHours);
 
       const serverId = plan.serverId || "";
       const { error } = await supabase.from("test_lines").insert({
