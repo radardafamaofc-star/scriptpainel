@@ -49,8 +49,9 @@ function durationToDays(value: number, unit: DurationUnit): number {
   return Math.max(1, Math.round(durationToHours(value, unit) / 24));
 }
 
-function durationLabel(days: number): string {
-  if (days < 1) return "< 1 Dia";
+function durationLabel(hours: number): string {
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
   if (days === 1) return "1 Dia";
   if (days < 30) return `${days} Dias`;
   if (days < 60) return "1 Mês";
