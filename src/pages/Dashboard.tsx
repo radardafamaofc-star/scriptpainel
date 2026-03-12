@@ -199,9 +199,8 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = (sId: string) => {
-    setTestServerId(sId);
-    setTestDuration("4");
+  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationDays: number; serverName: string }) => {
+    setTestPlan(plan);
     setTestResult(null);
     setTestDialogOpen(true);
   };
