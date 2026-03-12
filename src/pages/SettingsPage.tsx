@@ -130,8 +130,8 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div>
                 <Label className="text-muted-foreground text-sm">Tipo de caracteres</Label>
-                <Select value={charset} onValueChange={setCharset}>
-                  <SelectTrigger className="bg-secondary border-border mt-1">
+                 <Select value={charset} onValueChange={setCharset}>
+                  <SelectTrigger className="bg-secondary border-border mt-1 text-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
