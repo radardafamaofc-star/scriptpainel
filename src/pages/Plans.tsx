@@ -185,6 +185,7 @@ export default function Plans() {
       bouquets: plan.bouquets,
       template: (plan as any).template || "",
     });
+    setSelectedPackageId(String(plan.bouquets || ""));
     setOpen(true);
   };
 
