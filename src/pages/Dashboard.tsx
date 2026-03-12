@@ -141,7 +141,54 @@ export default function Dashboard() {
     refetchInterval: 30000,
   });
 
-  if (isLoading) {
+  const { data: servers4test = [] } = useQuery({
+    queryKey: ["servers-for-test"],
+    queryFn: async () => {
+      const { data } = await supabase.from("servers").select("id, name, status, host, port, template").order("name");
+      return data || [];
+    },
+  });
+
+  const createTestMutation = useMutation({
+    mutationFn: async (sId: string) => {
+      const username = "test_" + Math.random().toString(36).substring(2, 8);
+      const password = Math.random().toString(36).substring(2, 10);
+      const hours = parseInt(testDuration);
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + hours);
+
+      const { error } = await supabase.from("test_lines").insert({
+        username, password, server_id: sId || null,
+        created_by: user!.id, duration_hours: hours,
+        expires_at: expiresAt.toISOString(),
+      });
+      if (error) throw error;
+
+      const srv = servers4test.find(s => s.id === sId);
+      const dns = srv ? `http://${srv.host}:${srv.port}` : "";
+      const dnsHost = srv?.host || "";
+      const tpl = srv?.template || DEFAULT_TEMPLATE;
+      const rendered = renderTemplate(tpl, {
+        username, password, dns, dns_host: dnsHost,
+        expires_at: format(expiresAt, "dd/MM/yyyy HH:mm"),
+        package: "Teste", plan_price: "Grátis", pay_url: "", connections: "1",
+      });
+      return { username, password, template: rendered };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      setTestResult(result);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const handleQuickTest = (sId: string) => {
+    setTestServerId(sId);
+    setTestDuration("4");
+    setTestResult(null);
+    setTestDialogOpen(true);
+  };
+
     return (
       <Layout>
         <div className="flex items-center justify-center py-20">
