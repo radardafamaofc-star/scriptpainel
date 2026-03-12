@@ -99,7 +99,7 @@ async function xuiRequest(
       try {
         const json = JSON.parse(text);
         console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
-        if (action === 'get_packages' || xui_action === 'get_packages') {
+        if (action === 'get_packages') {
           // Log full first entry to understand structure
           const entries = Object.entries(json);
           if (entries.length > 0) {
