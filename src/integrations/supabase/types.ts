@@ -268,8 +268,10 @@ export type Database = {
       resellers: {
         Row: {
           balance: number
+          can_create_ultra: boolean
           client_limit: number
           created_at: string
+          created_by: string | null
           id: string
           status: string
           updated_at: string
@@ -277,8 +279,10 @@ export type Database = {
         }
         Insert: {
           balance?: number
+          can_create_ultra?: boolean
           client_limit?: number
           created_at?: string
+          created_by?: string | null
           id?: string
           status?: string
           updated_at?: string
@@ -286,8 +290,10 @@ export type Database = {
         }
         Update: {
           balance?: number
+          can_create_ultra?: boolean
           client_limit?: number
           created_at?: string
+          created_by?: string | null
           id?: string
           status?: string
           updated_at?: string
@@ -446,6 +452,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_descendant_user_ids: {
+        Args: { _parent_id: string }
+        Returns: string[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -455,7 +465,13 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "moderator" | "reseller" | "client"
+      app_role:
+        | "admin"
+        | "moderator"
+        | "reseller"
+        | "client"
+        | "reseller_master"
+        | "reseller_ultra"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -583,7 +599,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "reseller", "client"],
+      app_role: [
+        "admin",
+        "moderator",
+        "reseller",
+        "client",
+        "reseller_master",
+        "reseller_ultra",
+      ],
     },
   },
 } as const

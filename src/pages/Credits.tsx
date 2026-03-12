@@ -21,13 +21,13 @@ export default function Credits() {
   const { user, role } = useAuth();
   const queryClient = useQueryClient();
 
+  // Can manage credits (add/edit transactions)
+  const canManage = role === "admin" || role === "reseller_master" || role === "reseller_ultra";
+
   const { data: transactions = [], isLoading } = useQuery({
     queryKey: ["credit-transactions"],
     queryFn: async () => {
-      let query = supabase.from("credit_transactions").select("*").order("created_at", { ascending: false }).limit(100);
-      if (role !== "admin") {
-        query = query.eq("user_id", user!.id);
-      }
+      const query = supabase.from("credit_transactions").select("*").order("created_at", { ascending: false }).limit(100);
       const { data, error } = await query;
       if (error) throw error;
       return data;
@@ -73,9 +73,11 @@ export default function Credits() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Créditos</h1>
-            <p className="text-sm text-muted-foreground mt-1">Gerencie seus créditos</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {canManage ? "Gerencie créditos" : "Acompanhe seus créditos"}
+            </p>
           </div>
-          {role === "admin" && (
+          {canManage && (
             <Button onClick={() => setOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
               <Plus className="h-4 w-4 mr-2" /> Registrar Transação
             </Button>
@@ -95,39 +97,41 @@ export default function Credits() {
           </div>
         </div>
 
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogContent className="bg-card border-border sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="text-foreground">Nova Transação</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Tipo</Label>
-                <Select value={type} onValueChange={setType}>
-                  <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="purchase">Compra</SelectItem>
-                    <SelectItem value="usage">Uso</SelectItem>
-                    <SelectItem value="transfer">Transferência</SelectItem>
-                    <SelectItem value="refund">Reembolso</SelectItem>
-                  </SelectContent>
-                </Select>
+        {canManage && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent className="bg-card border-border sm:max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="text-foreground">Nova Transação</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs">Tipo</Label>
+                  <Select value={type} onValueChange={setType}>
+                    <SelectTrigger className="bg-secondary border-border"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="purchase">Compra</SelectItem>
+                      <SelectItem value="usage">Uso</SelectItem>
+                      <SelectItem value="transfer">Transferência</SelectItem>
+                      <SelectItem value="refund">Reembolso</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs">Quantidade</Label>
+                  <Input type="number" step="0.01" placeholder="10" className="bg-secondary border-border" value={amount} onChange={e => setAmount(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs">Descrição (opcional)</Label>
+                  <Input placeholder="Compra de créditos" className="bg-secondary border-border" value={desc} onChange={e => setDesc(e.target.value)} />
+                </div>
+                <Button className="w-full bg-primary text-primary-foreground" onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !amount}>
+                  {addMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Registrar
+                </Button>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Quantidade</Label>
-                <Input type="number" step="0.01" placeholder="10" className="bg-secondary border-border" value={amount} onChange={e => setAmount(e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Descrição (opcional)</Label>
-                <Input placeholder="Compra de créditos" className="bg-secondary border-border" value={desc} onChange={e => setDesc(e.target.value)} />
-              </div>
-              <Button className="w-full bg-primary text-primary-foreground" onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !amount}>
-                {addMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Registrar
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Transactions list */}
         <div>

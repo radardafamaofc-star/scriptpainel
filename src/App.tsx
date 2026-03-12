@@ -8,7 +8,6 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Servers from "./pages/Servers";
 import Clients from "./pages/Clients";
-
 import Resellers from "./pages/Resellers";
 import Plans from "./pages/Plans";
 import Connections from "./pages/Connections";
@@ -34,14 +33,13 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/servers" element={<ProtectedRoute allowedRoles={["admin"]}><Servers /></ProtectedRoute>} />
-              <Route path="/clients" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Clients /></ProtectedRoute>} />
-              
-              <Route path="/resellers" element={<ProtectedRoute allowedRoles={["admin"]}><Resellers /></ProtectedRoute>} />
+              <Route path="/clients" element={<ProtectedRoute allowedRoles={["admin", "reseller", "reseller_master", "reseller_ultra"]}><Clients /></ProtectedRoute>} />
+              <Route path="/resellers" element={<ProtectedRoute allowedRoles={["admin", "reseller_master", "reseller_ultra"]}><Resellers /></ProtectedRoute>} />
               <Route path="/plans" element={<ProtectedRoute allowedRoles={["admin"]}><Plans /></ProtectedRoute>} />
-              <Route path="/connections" element={<ProtectedRoute allowedRoles={["admin"]}><Connections /></ProtectedRoute>} />
-              <Route path="/credits" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Credits /></ProtectedRoute>} />
-              <Route path="/coupons" element={<ProtectedRoute allowedRoles={["admin"]}><Coupons /></ProtectedRoute>} />
-              <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Reports /></ProtectedRoute>} />
+              <Route path="/connections" element={<ProtectedRoute allowedRoles={["admin", "reseller", "reseller_master", "reseller_ultra"]}><Connections /></ProtectedRoute>} />
+              <Route path="/credits" element={<ProtectedRoute allowedRoles={["admin", "reseller", "reseller_master", "reseller_ultra"]}><Credits /></ProtectedRoute>} />
+              <Route path="/coupons" element={<ProtectedRoute allowedRoles={["admin", "reseller", "reseller_master", "reseller_ultra"]}><Coupons /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "reseller", "reseller_master", "reseller_ultra"]}><Reports /></ProtectedRoute>} />
               <Route path="/logs" element={<ProtectedRoute allowedRoles={["admin"]}><Logs /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin"]}><SettingsPage /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
