@@ -41,11 +41,11 @@ export default function Login() {
         <div className="w-full max-w-md relative z-10">
           {branding?.logo_url && (
           <div className="flex justify-center -mb-6">
-              <img src={branding.logo_url} alt="Logo do painel" className="w-56 h-56 object-contain" />
+              <img src={branding.logo_url} alt="Logo do painel" className="w-40 h-40 sm:w-56 sm:h-56 object-contain" />
             </div>
           )}
 
-          <div className="glass-card p-8">
+          <div className="glass-card p-5 sm:p-8">
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <Label className="text-muted-foreground text-sm">Email</Label>

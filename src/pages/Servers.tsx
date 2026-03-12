@@ -196,14 +196,14 @@ export default function Servers() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Servidores</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">Servidores</h1>
             <p className="text-sm text-muted-foreground mt-1">Gerencie seus servidores XUI One</p>
           </div>
           <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
             <DialogTrigger asChild>
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 w-full sm:w-auto">
                 <Plus className="h-4 w-4 mr-2" /> Adicionar Servidor
               </Button>
             </DialogTrigger>
@@ -366,46 +366,48 @@ export default function Servers() {
         ) : (
           <div className="grid gap-4">
             {servers.map((server) => (
-              <div key={server.id} className="glass-card p-5 flex items-center justify-between animate-slide-in">
-                <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-xl ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                    {server.status === "online" ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+              <div key={server.id} className="glass-card p-4 sm:p-5 animate-slide-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className={`p-2.5 sm:p-3 rounded-xl ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                      {server.status === "online" ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{server.name}</h3>
+                      <p className="text-sm text-muted-foreground font-mono truncate max-w-[200px] sm:max-w-none">{server.host}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{server.name}</h3>
-                    <p className="text-sm text-muted-foreground font-mono">{server.host}</p>
+                  <div className="flex items-center gap-4 sm:gap-8 ml-12 sm:ml-0">
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs text-muted-foreground">Máx. Clientes</p>
+                      <p className="text-sm font-semibold text-foreground">{server.max_clients}</p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs text-muted-foreground">Uptime</p>
+                      <p className="text-sm font-semibold text-foreground">{server.uptime || "N/A"}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                      {server.status === "online" ? "ONLINE" : "OFFLINE"}
+                    </span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-card border-border">
+                        <DropdownMenuItem onClick={() => refreshServer(server.id)} className="gap-2">
+                          <RefreshCw className="h-4 w-4" /> Atualizar Status
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEdit(server)} className="gap-2">
+                          <Pencil className="h-4 w-4" /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => deleteMutation.mutate(server.id)} className="gap-2 text-destructive focus:text-destructive">
+                          <Trash2 className="h-4 w-4" /> Remover
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                </div>
-                <div className="flex items-center gap-8">
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Máx. Clientes</p>
-                    <p className="text-sm font-semibold text-foreground">{server.max_clients}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Uptime</p>
-                    <p className="text-sm font-semibold text-foreground">{server.uptime || "N/A"}</p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                    {server.status === "online" ? "ONLINE" : "OFFLINE"}
-                  </span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-card border-border">
-                      <DropdownMenuItem onClick={() => refreshServer(server.id)} className="gap-2">
-                        <RefreshCw className="h-4 w-4" /> Atualizar Status
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openEdit(server)} className="gap-2">
-                        <Pencil className="h-4 w-4" /> Editar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => deleteMutation.mutate(server.id)} className="gap-2 text-destructive focus:text-destructive">
-                        <Trash2 className="h-4 w-4" /> Remover
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                 </div>
               </div>
             ))}

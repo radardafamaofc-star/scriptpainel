@@ -392,23 +392,24 @@ export default function Clients() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">Clientes</h1>
             <p className="text-sm text-muted-foreground mt-1">{clients.length} clientes · {testLines.length} testes</p>
           </div>
-          <Button onClick={openNew} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Button onClick={openNew} className="bg-primary text-primary-foreground hover:bg-primary/90 w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" /> Novo Cliente
           </Button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 sm:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar por usuário ou email..." className="pl-10 bg-card border-border" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <div className="flex gap-2">
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-40 bg-card border-border">
+            <SelectTrigger className="flex-1 sm:w-40 bg-card border-border">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -421,7 +422,7 @@ export default function Clients() {
             </SelectContent>
           </Select>
           <Select value={filterServer} onValueChange={setFilterServer}>
-            <SelectTrigger className="w-44 bg-card border-border">
+            <SelectTrigger className="flex-1 sm:w-44 bg-card border-border">
               <SelectValue placeholder="Servidor" />
             </SelectTrigger>
             <SelectContent>
@@ -431,6 +432,7 @@ export default function Clients() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         {/* Dialog for create/edit */}
@@ -531,8 +533,8 @@ export default function Clients() {
             </p>
           </div>
         ) : (
-          <div className="glass-card overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="glass-card overflow-x-auto">
+            <table className="w-full text-sm min-w-[800px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>

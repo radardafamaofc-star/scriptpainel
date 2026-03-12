@@ -307,10 +307,10 @@ export default function Dashboard() {
               connections={stats?.totalConnections || 0} />
 
             {/* Expiring clients table */}
-            <div className="glass-card p-4">
+            <div className="glass-card p-4 overflow-x-auto">
               <h3 className="text-sm font-bold text-foreground">Clientes que venceram nos últimos 7 dias e que vão vencer em 7 dias</h3>
               <p className="text-xs text-muted-foreground mb-3">{stats?.expiringList?.length || 0} clientes</p>
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[500px]">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="pb-2 font-medium">Usuário</th>
@@ -481,10 +481,10 @@ export default function Dashboard() {
               total={stats?.totalResellers || 0} />
 
             {/* Low balance resellers */}
-            <div className="glass-card p-4">
+            <div className="glass-card p-4 overflow-x-auto">
               <h3 className="text-sm font-bold text-foreground">Revendas com menos de 10 créditos</h3>
               <p className="text-xs text-muted-foreground mb-3">{stats?.lowBalanceResellers?.length || 0} revendas</p>
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[500px]">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="pb-2 font-medium">Usuário</th>
@@ -534,7 +534,7 @@ function ClientSection({ title, active, inactive, total, connections }: {
   return (
     <div className="glass-card p-4">
       <h3 className="text-sm font-bold text-foreground mb-3">{title}</h3>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatItem icon="🟢" label="Ativo" value={active} color="text-success" />
         <StatItem icon="🔴" label="Inativo" value={inactive} color="text-destructive" />
         <StatItem icon="⚪" label="Total" value={total} color="text-muted-foreground" />
