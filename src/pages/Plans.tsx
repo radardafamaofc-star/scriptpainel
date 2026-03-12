@@ -91,6 +91,7 @@ export default function Plans() {
         price: f.price,
         bouquets: f.bouquets,
         server_id: f.server_id || null,
+        template: f.template || null,
       };
       if (editId) {
         const { error } = await supabase.from("plans").update(payload).eq("id", editId);
