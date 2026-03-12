@@ -123,6 +123,7 @@ export default function Servers() {
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
+      template: (server as any).template || DEFAULT_TEMPLATE,
     });
     setTestResult(null);
     setOpen(true);
