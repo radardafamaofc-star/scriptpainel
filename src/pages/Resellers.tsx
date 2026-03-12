@@ -280,7 +280,7 @@ export default function Resellers() {
               )}
               <div className="space-y-1.5">
                 <Label className="text-muted-foreground text-xs">Créditos (R$)</Label>
-                <Input type="number" step="0.01" min={0} className="bg-secondary border-border" value={form.balance} onChange={e => setForm(prev => ({ ...prev, balance: parseFloat(e.target.value) || 0 }))} />
+                <Input type="number" step="1" min={0} className="bg-secondary border-border" value={form.balance} onChange={e => setForm(prev => ({ ...prev, balance: parseInt(e.target.value) || 0 }))} />
               </div>
 
               {/* Toggle can_create_ultra - admin can see for reseller_ultra (create or edit) */}
