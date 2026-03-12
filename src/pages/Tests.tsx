@@ -11,11 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { generateUsername, generatePassword } from "@/lib/credentials";
 
-function generateTestCredentials() {
-  const user = "test_" + Math.random().toString(36).substring(2, 8);
-  const pass = Math.random().toString(36).substring(2, 10);
-  return { username: user, password: pass };
+async function generateTestCredentials() {
+  const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
+  return { username, password };
 }
 
 export default function Tests() {
@@ -49,7 +49,7 @@ export default function Tests() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const creds = generateTestCredentials();
+      const creds = await generateTestCredentials();
       const hours = parseInt(duration);
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + hours);

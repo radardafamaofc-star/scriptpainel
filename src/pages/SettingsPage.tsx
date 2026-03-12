@@ -52,11 +52,19 @@ export default function SettingsPage() {
 
   const saveCredSettings = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
+      const { data: existing } = await supabase
         .from("panel_settings")
-        .update({ value: { charset, length: credLength } as any })
-        .eq("key", "credential_generation");
-      if (error) throw error;
+        .select("id")
+        .eq("key", "credential_generation")
+        .single();
+      const val = { charset, length: credLength } as any;
+      if (existing) {
+        const { error } = await supabase.from("panel_settings").update({ value: val }).eq("key", "credential_generation");
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("panel_settings").insert({ key: "credential_generation", value: val });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["panel-settings"] });

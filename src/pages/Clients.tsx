@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { DEFAULT_TEMPLATE, renderTemplate } from "@/lib/template";
+import { generateUsername as genUser, generatePassword as genPass } from "@/lib/credentials";
 
 interface ClientForm {
   username: string;
@@ -28,14 +29,6 @@ const emptyForm: ClientForm = {
   username: "", password: "", email: "", plan_id: "", server_id: "", max_connections: 1, expiry_date: "",
 };
 
-function generatePassword(length = 8) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
-
-function generateUsername() {
-  return "user_" + Math.random().toString(36).substring(2, 8);
-}
 
 export default function Clients() {
   const [open, setOpen] = useState(false);
@@ -225,9 +218,10 @@ export default function Clients() {
 
   const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
 
-  const openNew = () => {
+  const openNew = async () => {
     setEditId(null);
-    setForm({ ...emptyForm, username: generateUsername(), password: generatePassword() });
+    const [username, password] = await Promise.all([genUser(), genPass()]);
+    setForm({ ...emptyForm, username, password });
     setOpen(true);
   };
 
@@ -417,7 +411,7 @@ export default function Clients() {
                   <div className="flex gap-1">
                     <Input className="bg-secondary border-border" value={form.username} onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))} />
                     {!editId && (
-                      <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={() => setForm(prev => ({ ...prev, username: generateUsername() }))}>
+                      <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const u = await genUser(); setForm(prev => ({ ...prev, username: u })); }}>
                         <RefreshCw className="h-3 w-3" />
                       </Button>
                     )}
@@ -427,7 +421,7 @@ export default function Clients() {
                   <Label className="text-muted-foreground text-xs">{editId ? "Nova Senha (vazio = manter)" : "Senha"}</Label>
                   <div className="flex gap-1">
                     <Input className="bg-secondary border-border font-mono" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} />
-                    <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={() => setForm(prev => ({ ...prev, password: generatePassword() }))}>
+                    <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const p = await genPass(); setForm(prev => ({ ...prev, password: p })); }}>
                       <Key className="h-3 w-3" />
                     </Button>
                   </div>
