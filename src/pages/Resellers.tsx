@@ -229,14 +229,15 @@ export default function Resellers() {
   const [editResellerRole, setEditResellerRole] = useState("");
 
   const openEdit = (r: any) => {
+    const profile = (resellerProfiles as any)[r.user_id];
     const rRole = (resellerRoles as any)[r.user_id] || "reseller";
     setEditId(r.id);
     setEditResellerRole(rRole);
     setEditCanCreateUltra(!!(r as any).can_create_ultra);
     setForm({
-      email: r.profiles?.email || "",
+      email: profile?.email || "",
       password: "",
-      display_name: r.profiles?.display_name || "",
+      display_name: profile?.display_name || "",
       balance: Number(r.balance),
       client_limit: r.client_limit,
       reseller_role: rRole,
@@ -245,7 +246,8 @@ export default function Resellers() {
   };
 
   const filtered = resellers.filter((r: any) => {
-    const name = r.profiles?.display_name || r.profiles?.email || "";
+    const profile = (resellerProfiles as any)[r.user_id];
+    const name = profile?.display_name || profile?.email || "";
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
