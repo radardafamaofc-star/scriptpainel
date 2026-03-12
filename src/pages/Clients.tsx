@@ -422,7 +422,7 @@ export default function Clients() {
             </SelectContent>
           </Select>
           <Select value={filterServer} onValueChange={setFilterServer}>
-            <SelectTrigger className="w-44 bg-card border-border">
+            <SelectTrigger className="flex-1 sm:w-44 bg-card border-border">
               <SelectValue placeholder="Servidor" />
             </SelectTrigger>
             <SelectContent>
