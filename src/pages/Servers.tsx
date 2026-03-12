@@ -233,6 +233,16 @@ export default function Servers() {
                 </div>
 
                 <div className="space-y-1.5">
+                  <Label className="text-foreground text-sm font-medium">DNS Principal <span className="text-destructive">*</span></Label>
+                  <Input
+                    placeholder="Usado em modelos e Player API, por exemplo, http://meuservidor.xyz:80"
+                    className="bg-secondary border-border text-xs"
+                    value={form.dns}
+                    onChange={e => handleChange("dns", e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
                   <Label className="text-foreground text-sm font-medium">Chave de API/Token</Label>
                   <div className="relative">
                     <Input
