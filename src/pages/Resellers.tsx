@@ -278,19 +278,13 @@ export default function Resellers() {
                   </div>
                 </>
               )}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Saldo Inicial (R$)</Label>
-                  <Input type="number" step="0.01" min={0} className="bg-secondary border-border" value={form.balance} onChange={e => setForm(prev => ({ ...prev, balance: parseFloat(e.target.value) || 0 }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Limite de Clientes</Label>
-                  <Input type="number" min={1} className="bg-secondary border-border" value={form.client_limit} onChange={e => setForm(prev => ({ ...prev, client_limit: parseInt(e.target.value) || 1 }))} />
-                </div>
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground text-xs">Créditos (R$)</Label>
+                <Input type="number" step="0.01" min={0} className="bg-secondary border-border" value={form.balance} onChange={e => setForm(prev => ({ ...prev, balance: parseFloat(e.target.value) || 0 }))} />
               </div>
 
-              {/* Toggle can_create_ultra - only admin can see, only for reseller_ultra */}
-              {editId && role === "admin" && editResellerRole === "reseller_ultra" && (
+              {/* Toggle can_create_ultra - admin can see for reseller_ultra (create or edit) */}
+              {role === "admin" && (form.reseller_role === "reseller_ultra" || (editId && editResellerRole === "reseller_ultra")) && (
                 <div className="flex items-center justify-between rounded-lg border border-border p-3">
                   <div>
                     <p className="text-sm font-medium text-foreground">Pode criar Revendedor Ultra</p>
