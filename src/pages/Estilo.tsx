@@ -6,8 +6,9 @@ import { Loader2, Upload, X } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import xsyncLogoDefault from "@/assets/xsync-logo.png";
+import { BRANDING_QUERY_KEY, BrandingSettings, cacheBranding, useBranding } from "@/hooks/use-branding";
 
 export default function Estilo() {
   const { toast } = useToast();
@@ -17,17 +18,7 @@ export default function Estilo() {
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const { data: branding } = useQuery({
-    queryKey: ["panel-settings", "branding"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("panel_settings")
-        .select("value")
-        .eq("key", "branding")
-        .single();
-      return data?.value as { logo_url: string | null; panel_name: string } || { logo_url: null, panel_name: "xSync" };
-    },
-  });
+  const { data: branding } = useBranding();
 
   useEffect(() => {
     if (branding) {
@@ -36,26 +27,33 @@ export default function Estilo() {
     }
   }, [branding]);
 
-  const saveBranding = useMutation({
+  const saveBranding = useMutation<void, Error, string | null, { previous?: BrandingSettings }>({
     mutationFn: async (logoUrl: string | null) => {
       const { error } = await supabase
         .from("panel_settings")
-        .update({ value: { logo_url: logoUrl, panel_name: panelName } as any })
-        .eq("key", "branding");
+        .upsert(
+          { key: "branding", value: { logo_url: logoUrl, panel_name: panelName } as any },
+          { onConflict: "key" }
+        );
       if (error) throw error;
     },
     onMutate: async (logoUrl) => {
-      await queryClient.cancelQueries({ queryKey: ["panel-settings", "branding"] });
-      const previous = queryClient.getQueryData(["panel-settings", "branding"]);
-      queryClient.setQueryData(["panel-settings", "branding"], { logo_url: logoUrl, panel_name: panelName });
+      await queryClient.cancelQueries({ queryKey: BRANDING_QUERY_KEY });
+      const previous = queryClient.getQueryData<BrandingSettings>(BRANDING_QUERY_KEY);
+      const optimistic: BrandingSettings = { logo_url: logoUrl, panel_name: panelName };
+      queryClient.setQueryData(BRANDING_QUERY_KEY, optimistic);
+      cacheBranding(optimistic);
       return { previous };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["panel-settings"] });
+      queryClient.invalidateQueries({ queryKey: BRANDING_QUERY_KEY });
       toast({ title: "Estilo atualizado!" });
     },
     onError: (err: Error, _v, context) => {
-      if (context?.previous) queryClient.setQueryData(["panel-settings", "branding"], context.previous);
+      if (context?.previous) {
+        queryClient.setQueryData(BRANDING_QUERY_KEY, context.previous);
+        cacheBranding(context.previous);
+      }
       toast({ title: "Erro", description: err.message, variant: "destructive" });
     },
   });

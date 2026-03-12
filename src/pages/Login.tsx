@@ -7,8 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import xsyncLogo from "@/assets/xsync-logo.png";
 import { Eye, EyeOff, LogIn } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useBranding } from "@/hooks/use-branding";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -18,17 +17,7 @@ export default function Login() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
 
-  const { data: branding } = useQuery({
-    queryKey: ["panel-settings", "branding"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("panel_settings")
-        .select("value")
-        .eq("key", "branding")
-        .single();
-      return data?.value as { logo_url?: string; panel_name?: string } | null;
-    },
-  });
+  const { data: branding } = useBranding();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
