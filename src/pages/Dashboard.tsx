@@ -534,7 +534,7 @@ function ClientSection({ title, active, inactive, total, connections }: {
   return (
     <div className="glass-card p-4">
       <h3 className="text-sm font-bold text-foreground mb-3">{title}</h3>
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatItem icon="🟢" label="Ativo" value={active} color="text-success" />
         <StatItem icon="🔴" label="Inativo" value={inactive} color="text-destructive" />
         <StatItem icon="⚪" label="Total" value={total} color="text-muted-foreground" />
