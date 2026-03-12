@@ -86,6 +86,21 @@ export default function Clients() {
     },
   });
 
+  // Fetch creator profiles for clients
+  const creatorIds = [...new Set([...clients.map((c: any) => c.created_by), ...testLines.map((t: any) => t.created_by)])].filter(Boolean);
+  const { data: creatorProfiles = {} } = useQuery({
+    queryKey: ["creator-profiles", creatorIds.join(",")],
+    queryFn: async () => {
+      if (creatorIds.length === 0) return {};
+      const { data } = await supabase.from("profiles").select("user_id, display_name, email").in("user_id", creatorIds);
+      const map: Record<string, any> = {};
+      (data || []).forEach((p: any) => { map[p.user_id] = p; });
+      return map;
+    },
+    enabled: creatorIds.length > 0,
+    staleTime: 10000,
+  });
+
   const saveMutation = useMutation({
     mutationFn: async (f: ClientForm) => {
       const payload = {
