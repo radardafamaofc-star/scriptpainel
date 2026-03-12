@@ -34,10 +34,10 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  admin: "text-destructive",
-  reseller: "text-primary",
-  reseller_master: "text-orange-400",
-  reseller_ultra: "text-emerald-400",
+  admin: "text-destructive font-semibold",
+  reseller: "text-primary font-semibold",
+  reseller_master: "text-warning font-semibold",
+  reseller_ultra: "text-success font-semibold",
 };
 
 function formatDate(dateStr: string | null) {
