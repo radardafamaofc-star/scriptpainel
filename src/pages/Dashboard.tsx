@@ -164,15 +164,21 @@ export default function Dashboard() {
       });
       if (error) throw error;
 
-      const srv = servers4test.find(s => s.id === sId);
-      const dnsRaw = (srv as any)?.dns || (srv ? `http://${srv.host}:${srv.port}` : "");
-      let dns = dnsRaw;
-      let dnsHost = srv?.host || "";
+      const srv: any = servers4test.find((s: any) => s.id === sId);
+      const serverDns = srv?.dns || "";
+      const serverHost = srv?.host || "";
+      const fallbackUrl = serverHost.startsWith("http") ? serverHost : `http://${serverHost}:${srv?.port || 80}`;
+      const dnsSource = serverDns || fallbackUrl;
+      let dns = dnsSource;
+      let dnsHost = "";
       try {
-        const parsed = new URL(dnsRaw);
+        const parsed = new URL(dnsSource);
         dns = `${parsed.protocol}//${parsed.host}`;
-        dnsHost = parsed.host;
-      } catch { /* keep raw */ }
+        dnsHost = parsed.hostname;
+      } catch {
+        dns = dnsSource;
+        dnsHost = dnsSource.replace(/https?:\/\//, "").split(":")[0].split("/")[0];
+      }
       const tpl = srv?.template || DEFAULT_TEMPLATE;
       const rendered = renderTemplate(tpl, {
         username, password, dns, dns_host: dnsHost,
