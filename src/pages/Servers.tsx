@@ -131,11 +131,12 @@ export default function Servers() {
 
   const openEdit = (server: typeof servers[0]) => {
     setEditId(server.id);
+    // Don't load sensitive fields - they stay hidden
     setForm({
       name: server.name,
-      url: server.host,
-      dns: (server as any).dns || "",
-      api_key: server.api_key || "",
+      url: "",        // Hidden - leave blank to keep current
+      dns: "",         // Hidden - leave blank to keep current
+      api_key: "",     // Hidden - leave blank to keep current
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
