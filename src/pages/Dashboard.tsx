@@ -353,14 +353,14 @@ export default function Dashboard() {
             <div className="glass-card p-4">
               <h3 className="text-sm font-bold text-foreground mb-3">Teste Rápido</h3>
               <div className="space-y-1">
-                {servers4test.filter(s => s.status === "online").length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">Nenhum servidor online. Adicione servidores para gerar testes.</p>
+                {(stats?.testPlans || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">Nenhum plano de teste encontrado. Marque um plano como teste em Planos.</p>
                 ) : (
-                  servers4test.filter(s => s.status === "online").map((srv: any) => (
-                    <div key={srv.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => handleQuickTest(srv.id)}>
-                      <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{srv.name}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">Gerar Teste</span>
+                  (stats?.testPlans || []).map((plan: any) => (
+                    <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
+                      onClick={() => handleQuickTest(plan)}>
+                      <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">{plan.durationDays} dia(s)</span>
                     </div>
                   ))
                 )}
