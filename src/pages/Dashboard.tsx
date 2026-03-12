@@ -437,8 +437,8 @@ export default function Dashboard() {
                         <td className="py-2 text-muted-foreground">{format(new Date(r.created_at), "dd/MM/yyyy, HH:mm")}</td>
                         <td className="py-2 text-right">
                           <div className="inline-flex gap-0.5">
-                            {["bg-primary", "bg-success"].map((color, i) => (
-                              <span key={i} className={`inline-block h-5 w-5 rounded-sm ${color} opacity-80`} />
+                            {["primary", "success"].map((color, i) => (
+                              <span key={i} className={`inline-block h-5 w-5 rounded-sm bg-${color} opacity-80`} />
                             ))}
                           </div>
                         </td>
