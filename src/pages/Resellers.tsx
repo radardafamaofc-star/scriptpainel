@@ -1,9 +1,10 @@
 import { Layout } from "@/components/Layout";
-import { Plus, MoreVertical, Wallet, Loader2, UserPlus, Pencil, Trash2, DollarSign, Ban, CheckCircle, Search, Shield } from "lucide-react";
+import { Plus, MoreVertical, Wallet, Loader2, UserPlus, Pencil, Trash2, DollarSign, Ban, CheckCircle, Search } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -26,12 +27,14 @@ const emptyForm: ResellerForm = {
 };
 
 const ROLE_LABELS: Record<string, string> = {
+  admin: "Administrador",
   reseller: "Revendedor",
   reseller_master: "Revendedor Master",
   reseller_ultra: "Revendedor Ultra",
 };
 
 const ROLE_COLORS: Record<string, string> = {
+  admin: "bg-destructive/10 text-destructive",
   reseller: "bg-primary/10 text-primary",
   reseller_master: "bg-warning/10 text-warning",
   reseller_ultra: "bg-success/10 text-success",
@@ -53,92 +56,82 @@ export default function Resellers() {
   const { data: myReseller } = useQuery({
     queryKey: ["my-reseller-record"],
     queryFn: async () => {
-      if (role === "admin") return null;
       const { data } = await supabase.from("resellers").select("can_create_ultra").eq("user_id", user!.id).single();
       return data;
     },
     enabled: role === "reseller_ultra",
+    staleTime: 60000,
   });
 
   const getAvailableRoles = () => {
     if (role === "admin") return [
-      { value: "reseller", label: "Revendedor" },
-      { value: "reseller_master", label: "Revendedor Master" },
+      { value: "admin", label: "Administrador" },
       { value: "reseller_ultra", label: "Revendedor Ultra" },
+      { value: "reseller_master", label: "Revendedor Master" },
+      { value: "reseller", label: "Revendedor" },
     ];
     if (role === "reseller_ultra") {
       const roles = [
-        { value: "reseller", label: "Revendedor" },
         { value: "reseller_master", label: "Revendedor Master" },
+        { value: "reseller", label: "Revendedor" },
       ];
       if (myReseller?.can_create_ultra) {
-        roles.push({ value: "reseller_ultra", label: "Revendedor Ultra" });
+        roles.unshift({ value: "reseller_ultra", label: "Revendedor Ultra" });
       }
       return roles;
     }
     if (role === "reseller_master") return [
-      { value: "reseller", label: "Revendedor" },
       { value: "reseller_master", label: "Revendedor Master" },
+      { value: "reseller", label: "Revendedor" },
     ];
     return [];
   };
 
+  // Single query: resellers + profiles
   const { data: resellers = [], isLoading } = useQuery({
     queryKey: ["resellers"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("resellers").select("*, profiles(display_name, email)").order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("resellers")
+        .select("*, profiles(display_name, email)")
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
     },
+    staleTime: 10000,
   });
 
-  // Fetch roles for each reseller
+  // Fetch roles for resellers (only if we have resellers)
+  const resellerUserIds = resellers.map((r: any) => r.user_id);
   const { data: resellerRoles = {} } = useQuery({
-    queryKey: ["reseller-roles", resellers.map((r: any) => r.user_id)],
+    queryKey: ["reseller-roles", resellerUserIds.join(",")],
     queryFn: async () => {
-      const userIds = resellers.map((r: any) => r.user_id);
-      if (userIds.length === 0) return {};
-      const { data } = await supabase.from("user_roles").select("user_id, role").in("user_id", userIds);
+      if (resellerUserIds.length === 0) return {};
+      const { data } = await supabase.from("user_roles").select("user_id, role").in("user_id", resellerUserIds);
       const map: Record<string, string> = {};
       (data || []).forEach((r: any) => { map[r.user_id] = r.role; });
       return map;
     },
-    enabled: resellers.length > 0,
+    enabled: resellerUserIds.length > 0,
+    staleTime: 10000,
   });
 
-  const { data: clientCounts = {} } = useQuery({
-    queryKey: ["reseller-client-counts"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("clients").select("reseller_id");
-      if (error) throw error;
-      const counts: Record<string, number> = {};
-      data.forEach((c: any) => { if (c.reseller_id) counts[c.reseller_id] = (counts[c.reseller_id] || 0) + 1; });
-      return counts;
-    },
-  });
-
+  // Create reseller via edge function (no session switch!)
   const createMutation = useMutation({
     mutationFn: async (f: ResellerForm) => {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: f.email,
-        password: f.password,
-        options: { data: { display_name: f.display_name } },
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await supabase.functions.invoke("create-reseller", {
+        body: {
+          email: f.email,
+          password: f.password,
+          display_name: f.display_name,
+          reseller_role: f.reseller_role,
+          balance: f.balance,
+          client_limit: f.client_limit,
+        },
       });
-      if (authError) throw authError;
-      if (!authData.user) throw new Error("Falha ao criar usuário");
-
-      // Update role to selected reseller tier
-      const { error: roleError } = await supabase.from("user_roles").update({ role: f.reseller_role as any }).eq("user_id", authData.user.id);
-      if (roleError) throw roleError;
-
-      // Create reseller record with created_by
-      const { error: resellerError } = await supabase.from("resellers").insert({
-        user_id: authData.user.id,
-        balance: f.balance,
-        client_limit: f.client_limit,
-        created_by: user!.id,
-      } as any);
-      if (resellerError) throw resellerError;
+      if (res.error) throw new Error(res.error.message || "Erro ao criar revendedor");
+      if (res.data?.error) throw new Error(res.data.error);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["resellers"] });
@@ -150,8 +143,12 @@ export default function Resellers() {
   });
 
   const editMutation = useMutation({
-    mutationFn: async ({ id, balance, client_limit }: { id: string; balance: number; client_limit: number }) => {
-      const { error } = await supabase.from("resellers").update({ balance, client_limit }).eq("id", id);
+    mutationFn: async (payload: { id: string; balance: number; client_limit: number; can_create_ultra?: boolean }) => {
+      const updateData: any = { balance: payload.balance, client_limit: payload.client_limit };
+      if (payload.can_create_ultra !== undefined) {
+        updateData.can_create_ultra = payload.can_create_ultra;
+      }
+      const { error } = await supabase.from("resellers").update(updateData).eq("id", payload.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -202,17 +199,22 @@ export default function Resellers() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
+  const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); setEditCanCreateUltra(false); };
+  const [editCanCreateUltra, setEditCanCreateUltra] = useState(false);
+  const [editResellerRole, setEditResellerRole] = useState("");
 
   const openEdit = (r: any) => {
+    const rRole = (resellerRoles as any)[r.user_id] || "reseller";
     setEditId(r.id);
+    setEditResellerRole(rRole);
+    setEditCanCreateUltra(!!(r as any).can_create_ultra);
     setForm({
       email: r.profiles?.email || "",
       password: "",
       display_name: r.profiles?.display_name || "",
       balance: Number(r.balance),
       client_limit: r.client_limit,
-      reseller_role: (resellerRoles as any)[r.user_id] || "reseller",
+      reseller_role: rRole,
     });
     setOpen(true);
   };
@@ -286,11 +288,28 @@ export default function Resellers() {
                   <Input type="number" min={1} className="bg-secondary border-border" value={form.client_limit} onChange={e => setForm(prev => ({ ...prev, client_limit: parseInt(e.target.value) || 1 }))} />
                 </div>
               </div>
+
+              {/* Toggle can_create_ultra - only admin can see, only for reseller_ultra */}
+              {editId && role === "admin" && editResellerRole === "reseller_ultra" && (
+                <div className="flex items-center justify-between rounded-lg border border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Pode criar Revendedor Ultra</p>
+                    <p className="text-xs text-muted-foreground">Permite que este Ultra crie outros Ultras</p>
+                  </div>
+                  <Switch checked={editCanCreateUltra} onCheckedChange={setEditCanCreateUltra} />
+                </div>
+              )}
+
               <Button
                 className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                 onClick={() => {
                   if (editId) {
-                    editMutation.mutate({ id: editId, balance: form.balance, client_limit: form.client_limit });
+                    editMutation.mutate({
+                      id: editId,
+                      balance: form.balance,
+                      client_limit: form.client_limit,
+                      ...(role === "admin" && editResellerRole === "reseller_ultra" ? { can_create_ultra: editCanCreateUltra } : {}),
+                    });
                   } else {
                     createMutation.mutate(form);
                   }
@@ -352,7 +371,7 @@ export default function Resellers() {
             {filtered.map((r: any) => {
               const rRole = (resellerRoles as any)[r.user_id] || "reseller";
               return (
-                <div key={r.id} className="glass-card p-5 animate-slide-in">
+                <div key={r.id} className="glass-card p-5">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
@@ -407,7 +426,7 @@ export default function Resellers() {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Clientes</p>
-                      <p className="text-sm font-semibold text-foreground">{(clientCounts as any)[r.user_id] || 0}</p>
+                      <p className="text-sm font-semibold text-foreground">—</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Limite</p>
