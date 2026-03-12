@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import xsyncLogo from "@/assets/xsync-logo.png";
 import { Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
