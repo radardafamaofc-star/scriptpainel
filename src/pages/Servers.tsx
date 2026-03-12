@@ -65,6 +65,7 @@ export default function Servers() {
         name: formData.name,
         host: formData.url,
         port: parsed?.port || 25461,
+        dns: formData.dns || null,
         api_key: formData.api_key,
         access_code: formData.api_version,
         max_clients: formData.max_clients,
