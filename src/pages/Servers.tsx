@@ -207,7 +207,7 @@ export default function Servers() {
                 <Plus className="h-4 w-4 mr-2" /> Adicionar Servidor
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-border sm:max-w-lg">
+            <DialogContent className="bg-card border-border sm:max-w-lg max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle className="text-foreground">
                   {editId ? "Editar Servidor" : "Novo Servidor XUI One"}
