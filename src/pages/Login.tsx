@@ -44,9 +44,6 @@ export default function Login() {
               <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-56 h-56 object-contain" />
             </div>
           )}
-          {branding?.panel_name && (
-            <h1 className="text-2xl font-bold text-foreground text-center mb-2">{branding.panel_name}</h1>
-          )}
 
           <div className="glass-card p-8">
             <form onSubmit={handleSubmit} className="space-y-5">
