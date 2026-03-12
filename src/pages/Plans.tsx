@@ -104,14 +104,18 @@ export default function Plans() {
       if (res.error) throw res.error;
       const result = res.data;
       if (!result?.success || !result?.data) return [];
-      // XUI returns packages as an object { "1": { id: 1, package_name: "..." }, ... }
+      // XUI returns packages in various formats
       const pkgs = result.data;
-      if (Array.isArray(pkgs)) return pkgs;
-      return Object.values(pkgs).map((p: any) => ({
-        id: String(p.id),
-        name: p.package_name || p.name || `Package ${p.id}`,
-        is_trial: p.is_trial === "1" || p.is_trial === 1,
-        is_official: p.is_official === "1" || p.is_official === 1,
+      console.log("[XUI Packages raw]", JSON.stringify(pkgs).substring(0, 500));
+      if (Array.isArray(pkgs)) {
+        return pkgs.map((p: any) => ({
+          id: String(p.id),
+          name: p.package_name || p.name || p.output_name || `Package ${p.id}`,
+        }));
+      }
+      return Object.entries(pkgs).map(([key, p]: [string, any]) => ({
+        id: String(p?.id ?? key),
+        name: p?.package_name || p?.name || p?.output_name || `Package ${p?.id ?? key}`,
       }));
     },
     enabled: !!form.server_id && open,
