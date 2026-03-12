@@ -87,13 +87,13 @@ export default function Resellers() {
     return [];
   };
 
-  // Single query: resellers + profiles
+  // Query principal de revendedores
   const { data: resellers = [], isLoading } = useQuery({
     queryKey: ["resellers"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("resellers")
-        .select("*, profiles(display_name, email)")
+        .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -101,8 +101,33 @@ export default function Resellers() {
     staleTime: 10000,
   });
 
-  // Fetch roles for resellers (only if we have resellers)
   const resellerUserIds = resellers.map((r: any) => r.user_id);
+
+  // Perfis dos revendedores (consulta separada, sem depender de FK)
+  const { data: resellerProfiles = {} } = useQuery({
+    queryKey: ["reseller-profiles", resellerUserIds.join(",")],
+    queryFn: async () => {
+      if (resellerUserIds.length === 0) return {};
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, email")
+        .in("user_id", resellerUserIds);
+      if (error) throw error;
+
+      const map: Record<string, { display_name: string | null; email: string | null }> = {};
+      (data || []).forEach((p: any) => {
+        map[p.user_id] = {
+          display_name: p.display_name,
+          email: p.email,
+        };
+      });
+      return map;
+    },
+    enabled: resellerUserIds.length > 0,
+    staleTime: 10000,
+  });
+
+  // Fetch roles for resellers (only if we have resellers)
   const { data: resellerRoles = {} } = useQuery({
     queryKey: ["reseller-roles", resellerUserIds.join(",")],
     queryFn: async () => {
@@ -119,7 +144,6 @@ export default function Resellers() {
   // Create reseller via edge function (no session switch!)
   const createMutation = useMutation({
     mutationFn: async (f: ResellerForm) => {
-      const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("create-reseller", {
         body: {
           email: f.email,
@@ -204,14 +228,15 @@ export default function Resellers() {
   const [editResellerRole, setEditResellerRole] = useState("");
 
   const openEdit = (r: any) => {
+    const profile = (resellerProfiles as any)[r.user_id];
     const rRole = (resellerRoles as any)[r.user_id] || "reseller";
     setEditId(r.id);
     setEditResellerRole(rRole);
     setEditCanCreateUltra(!!(r as any).can_create_ultra);
     setForm({
-      email: r.profiles?.email || "",
+      email: profile?.email || "",
       password: "",
-      display_name: r.profiles?.display_name || "",
+      display_name: profile?.display_name || "",
       balance: Number(r.balance),
       client_limit: r.client_limit,
       reseller_role: rRole,
@@ -220,11 +245,13 @@ export default function Resellers() {
   };
 
   const filtered = resellers.filter((r: any) => {
-    const name = r.profiles?.display_name || r.profiles?.email || "";
+    const profile = (resellerProfiles as any)[r.user_id];
+    const name = profile?.display_name || profile?.email || "";
     return name.toLowerCase().includes(search.toLowerCase());
   });
 
   const canManageCredits = role === "admin" || role === "reseller_master" || role === "reseller_ultra";
+  const creditProfile = creditTarget ? (resellerProfiles as any)[creditTarget.user_id] : null;
 
   return (
     <Layout>
@@ -325,7 +352,7 @@ export default function Resellers() {
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <p className="text-sm text-muted-foreground">
-                Revendedor: <span className="text-foreground font-medium">{creditTarget?.profiles?.display_name || creditTarget?.profiles?.email}</span>
+                Revendedor: <span className="text-foreground font-medium">{creditProfile?.display_name || creditProfile?.email || "—"}</span>
               </p>
               <p className="text-sm text-muted-foreground">
                 Saldo atual: <span className="text-foreground font-medium">R$ {Number(creditTarget?.balance || 0).toFixed(2)}</span>
@@ -364,15 +391,16 @@ export default function Resellers() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filtered.map((r: any) => {
               const rRole = (resellerRoles as any)[r.user_id] || "reseller";
+              const rProfile = (resellerProfiles as any)[r.user_id];
               return (
                 <div key={r.id} className="glass-card p-5">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                        {(r.profiles?.display_name || r.profiles?.email || "R").charAt(0).toUpperCase()}
+                        {(rProfile?.display_name || rProfile?.email || "R").charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <h3 className="font-semibold text-foreground">{r.profiles?.display_name || r.profiles?.email}</h3>
+                        <h3 className="font-semibold text-foreground">{rProfile?.display_name || rProfile?.email || "Sem nome"}</h3>
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-medium ${r.status === "active" ? "text-success" : "text-destructive"}`}>
                             {r.status === "active" ? "Ativo" : "Suspenso"}
