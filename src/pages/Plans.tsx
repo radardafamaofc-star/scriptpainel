@@ -88,6 +88,7 @@ export default function Plans() {
         name: f.name,
         max_connections: f.max_connections,
         duration_days: durationToDays(f.duration_value, f.duration_unit),
+        is_test: f.is_test,
         price: f.price,
         bouquets: f.bouquets,
         server_id: f.server_id || null,
