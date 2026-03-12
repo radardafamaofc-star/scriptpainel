@@ -390,7 +390,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays, durationHours: testPlan.durationHours });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >
