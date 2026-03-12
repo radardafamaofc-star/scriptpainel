@@ -105,6 +105,7 @@ export default function Dashboard() {
           name: p.name,
           serverId: p.server_id,
           durationDays: p.duration_days,
+          durationHours: p.duration_hours || 0,
           serverName: p.servers?.name || "—",
         }));
 
