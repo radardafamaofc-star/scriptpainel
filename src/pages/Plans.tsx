@@ -65,6 +65,7 @@ export default function Plans() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<PlanForm>(emptyForm);
   const [search, setSearch] = useState("");
+  const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -85,6 +86,37 @@ export default function Plans() {
       if (error) throw error;
       return data;
     },
+  });
+
+  // Fetch XUI packages when a server is selected
+  const { data: xuiPackages = [], isLoading: packagesLoading } = useQuery({
+    queryKey: ["xui-packages", form.server_id],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return [];
+      const res = await supabase.functions.invoke("xui-proxy", {
+        body: {
+          action: "xui_command",
+          server_id: form.server_id,
+          xui_action: "get_packages",
+        },
+      });
+      if (res.error) throw res.error;
+      const result = res.data;
+      if (!result?.success || !result?.data) return [];
+      // XUI returns packages as an object { "1": { id: 1, package_name: "..." }, ... }
+      const pkgs = result.data;
+      if (Array.isArray(pkgs)) return pkgs;
+      return Object.values(pkgs).map((p: any) => ({
+        id: String(p.id),
+        name: p.package_name || p.name || `Package ${p.id}`,
+        is_trial: p.is_trial === "1" || p.is_trial === 1,
+        is_official: p.is_official === "1" || p.is_official === 1,
+      }));
+    },
+    enabled: !!form.server_id && open,
+    staleTime: 30000,
+    retry: 1,
   });
 
   const saveMutation = useMutation({
