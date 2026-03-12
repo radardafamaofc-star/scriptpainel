@@ -1,10 +1,11 @@
 import { Layout } from "@/components/Layout";
-import { Plus, Search, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle, List, Wifi, Bell, ArrowUpCircle, Minus, Info, Lock, User, Calendar } from "lucide-react";
+import { Plus, Search, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle, List, Wifi, Bell, ArrowUpCircle, Minus, Info, Lock, User, Calendar, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
@@ -221,6 +222,48 @@ export default function Clients() {
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
+
+  const [bulkDeleteDialog, setBulkDeleteDialog] = useState<{ type: "expired" | "active" | "tests"; count: number } | null>(null);
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (type: "expired" | "active" | "tests") => {
+      if (type === "tests") {
+        const ids = testLines.map((t: any) => t.id);
+        if (ids.length === 0) return;
+        const { error } = await supabase.from("test_lines").delete().in("id", ids);
+        if (error) throw error;
+      } else if (type === "expired") {
+        const expiredIds = clients.filter((c: any) => getClientStatus(c) === "expired").map((c: any) => c.id);
+        if (expiredIds.length === 0) return;
+        const { error } = await supabase.from("clients").delete().in("id", expiredIds);
+        if (error) throw error;
+      } else if (type === "active") {
+        const activeIds = clients.filter((c: any) => getClientStatus(c) === "active").map((c: any) => c.id);
+        if (activeIds.length === 0) return;
+        const { error } = await supabase.from("clients").delete().in("id", activeIds);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      toast({ title: "Itens removidos com sucesso!" });
+      setBulkDeleteDialog(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const handleBulkDelete = (type: "expired" | "active" | "tests") => {
+    let count = 0;
+    if (type === "tests") count = testLines.length;
+    else if (type === "expired") count = clients.filter((c: any) => getClientStatus(c) === "expired").length;
+    else if (type === "active") count = clients.filter((c: any) => getClientStatus(c) === "active").length;
+    if (count === 0) {
+      toast({ title: "Nenhum item encontrado para remover." });
+      return;
+    }
+    setBulkDeleteDialog({ type, count });
+  };
 
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
@@ -528,8 +571,52 @@ export default function Clients() {
               ))}
             </SelectContent>
           </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10">
+                <Trash2 className="h-4 w-4 mr-1" /> Apagar em Massa
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleBulkDelete("expired")} className="text-warning">
+                <AlertTriangle className="h-4 w-4 mr-2" /> Todos Expirados
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleBulkDelete("active")} className="text-success">
+                <CheckCircle className="h-4 w-4 mr-2" /> Todos Ativos
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleBulkDelete("tests")} className="text-primary">
+                <Key className="h-4 w-4 mr-2" /> Todos Testes
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           </div>
         </div>
+
+        {/* Bulk delete confirmation */}
+        <AlertDialog open={!!bulkDeleteDialog} onOpenChange={(v) => { if (!v) setBulkDeleteDialog(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-destructive">Confirmar exclusão em massa</AlertDialogTitle>
+              <AlertDialogDescription>
+                Você está prestes a apagar <strong>{bulkDeleteDialog?.count}</strong>{" "}
+                {bulkDeleteDialog?.type === "expired" ? "clientes expirados" : bulkDeleteDialog?.type === "active" ? "clientes ativos" : "testes"}.
+                <br />Esta ação é <strong>irreversível</strong>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => bulkDeleteDialog && bulkDeleteMutation.mutate(bulkDeleteDialog.type)}
+                disabled={bulkDeleteMutation.isPending}
+              >
+                {bulkDeleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Apagar {bulkDeleteDialog?.count} itens
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Dialog for create/edit */}
         <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
