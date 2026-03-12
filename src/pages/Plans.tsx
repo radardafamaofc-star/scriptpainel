@@ -1,34 +1,62 @@
 import { Layout } from "@/components/Layout";
-import { Plus, Wifi, Clock, DollarSign, MoreVertical, Pencil, Trash2, Loader2, Package } from "lucide-react";
+import { Plus, Loader2, Package, Copy, Search } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
+type DurationUnit = "hours" | "days" | "months" | "years";
+
 interface PlanForm {
   name: string;
-  max_connections: number;
-  duration_days: number;
-  price: number;
-  bouquets: number;
   server_id: string;
+  order: number;
+  status: "active" | "inactive";
+  is_test: boolean;
+  price: number;
+  credits: number;
+  duration_value: number;
+  duration_unit: DurationUnit;
+  max_connections: number;
+  bouquets: number;
 }
 
 const emptyForm: PlanForm = {
-  name: "", max_connections: 1, duration_days: 30, price: 0, bouquets: 0, server_id: "",
+  name: "", server_id: "", order: 0, status: "active", is_test: false,
+  price: 0, credits: 1, duration_value: 1, duration_unit: "months",
+  max_connections: 2, bouquets: 0,
 };
+
+function durationToDays(value: number, unit: DurationUnit): number {
+  switch (unit) {
+    case "hours": return Math.max(1, Math.round(value / 24));
+    case "days": return value;
+    case "months": return value * 30;
+    case "years": return value * 365;
+  }
+}
+
+function durationLabel(days: number): string {
+  if (days < 1) return "< 1 Dia";
+  if (days === 1) return "1 Dia";
+  if (days < 30) return `${days} Dias`;
+  if (days < 60) return "1 Mês";
+  if (days < 365) return `${Math.round(days / 30)} Meses`;
+  if (days === 365) return "1 Ano";
+  return `${Math.round(days / 365)} Anos`;
+}
 
 export default function Plans() {
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<PlanForm>(emptyForm);
+  const [search, setSearch] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -36,7 +64,7 @@ export default function Plans() {
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ["plans"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("plans").select("*, servers(name)").order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("plans").select("*, servers(name)").order("created_at", { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -56,7 +84,7 @@ export default function Plans() {
       const payload = {
         name: f.name,
         max_connections: f.max_connections,
-        duration_days: f.duration_days,
+        duration_days: durationToDays(f.duration_value, f.duration_unit),
         price: f.price,
         bouquets: f.bouquets,
         server_id: f.server_id || null,
@@ -92,142 +120,265 @@ export default function Plans() {
   const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
 
   const openEdit = (plan: any) => {
+    const days = plan.duration_days;
+    let unit: DurationUnit = "days";
+    let value = days;
+    if (days >= 365 && days % 365 === 0) { unit = "years"; value = days / 365; }
+    else if (days >= 30 && days % 30 === 0) { unit = "months"; value = days / 30; }
+
     setEditId(plan.id);
     setForm({
       name: plan.name,
-      max_connections: plan.max_connections,
-      duration_days: plan.duration_days,
-      price: Number(plan.price),
-      bouquets: plan.bouquets,
       server_id: plan.server_id || "",
+      order: 0,
+      status: "active",
+      is_test: false,
+      price: Number(plan.price),
+      credits: 1,
+      duration_value: value,
+      duration_unit: unit,
+      max_connections: plan.max_connections,
+      bouquets: plan.bouquets,
     });
     setOpen(true);
   };
 
-  const handleChange = (field: keyof PlanForm, value: string | number) => {
+  const handleChange = (field: keyof PlanForm, value: any) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
+  const filtered = plans.filter((p: any) => p.name.toLowerCase().includes(search.toLowerCase()));
+
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Planos</h1>
-            <p className="text-sm text-muted-foreground mt-1">Gerencie os planos IPTV</p>
-          </div>
+          <h1 className="text-lg font-bold text-foreground">Planos</h1>
           <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
             <DialogTrigger asChild>
               <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-                <Plus className="h-4 w-4 mr-2" /> Novo Plano
+                <Plus className="h-4 w-4 mr-2" /> Adicionar
               </Button>
             </DialogTrigger>
-            <DialogContent className="bg-card border-border sm:max-w-md">
+            <DialogContent className="bg-card border-border sm:max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle className="text-foreground">{editId ? "Editar Plano" : "Criar Plano"}</DialogTitle>
+                <DialogTitle className="text-foreground">{editId ? "Editar Plano" : "Adicionar Plano"}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 mt-4">
+              <div className="space-y-4 mt-2">
+                {/* Nome */}
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Nome do plano</Label>
-                  <Input placeholder="Ex: Premium" className="bg-secondary border-border" value={form.name} onChange={e => handleChange("name", e.target.value)} />
+                  <Label className="text-foreground text-xs">Nome *</Label>
+                  <Input placeholder="Obrigatório" className="bg-secondary border-border" value={form.name} onChange={e => handleChange("name", e.target.value)} />
+                  <p className="text-[10px] text-primary">O nome do plano ficará visível para clientes e revendas.</p>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Conexões</Label>
-                    <Input type="number" min={1} className="bg-secondary border-border" value={form.max_connections} onChange={e => handleChange("max_connections", parseInt(e.target.value) || 1)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Duração (dias)</Label>
-                    <Input type="number" min={1} className="bg-secondary border-border" value={form.duration_days} onChange={e => handleChange("duration_days", parseInt(e.target.value) || 1)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Preço (R$)</Label>
-                    <Input type="number" step="0.01" min={0} className="bg-secondary border-border" value={form.price} onChange={e => handleChange("price", parseFloat(e.target.value) || 0)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Bouquets</Label>
-                    <Input type="number" min={0} className="bg-secondary border-border" value={form.bouquets} onChange={e => handleChange("bouquets", parseInt(e.target.value) || 0)} />
-                  </div>
-                </div>
+
+                {/* Servidor */}
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Servidor</Label>
-                  <Select value={form.server_id} onValueChange={v => handleChange("server_id", v)}>
-                    <SelectTrigger className="bg-secondary border-border">
-                      <SelectValue placeholder="Selecione um servidor" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {servers.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-foreground text-xs">Servidor *</Label>
+                  <div className="space-y-1.5">
+                    {servers.map(s => (
+                      <label key={s.id} className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="server" className="accent-primary" checked={form.server_id === s.id}
+                          onChange={() => handleChange("server_id", s.id)} />
+                        <span className="text-sm text-foreground">{s.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-warning">O servidor não pode ser alterado depois de salvo.</p>
                 </div>
+
+                {/* Ordem */}
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-xs">Ordem</Label>
+                  <Input type="number" className="bg-secondary border-border" value={form.order} onChange={e => handleChange("order", parseInt(e.target.value) || 0)} />
+                  <p className="text-[10px] text-primary">A ordem é por número, um número maior irá fazer com que seja mostrado no topo.</p>
+                </div>
+
+                {/* Situação */}
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-xs">Situação *</Label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" name="status" className="accent-primary" checked={form.status === "active"} onChange={() => handleChange("status", "active")} />
+                      <span className="text-sm text-foreground">Ativo</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" name="status" className="accent-primary" checked={form.status === "inactive"} onChange={() => handleChange("status", "inactive")} />
+                      <span className="text-sm text-foreground">Inativo</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Teste */}
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-xs">Teste *</Label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" name="is_test" className="accent-primary" checked={!form.is_test} onChange={() => handleChange("is_test", false)} />
+                      <span className="text-sm text-foreground">Não</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" name="is_test" className="accent-primary" checked={form.is_test} onChange={() => handleChange("is_test", true)} />
+                      <span className="text-sm text-foreground">Sim</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Valor do Plano */}
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-xs">Valor do Plano *</Label>
+                  <Input type="number" step="0.01" min={0} placeholder="Obrigatório, 0 é permitido" className="bg-secondary border-border"
+                    value={form.price} onChange={e => handleChange("price", parseFloat(e.target.value) || 0)} />
+                </div>
+
+                {/* Créditos */}
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-xs">Créditos *</Label>
+                  <Input type="number" min={0} className="bg-secondary border-border"
+                    value={form.credits} onChange={e => handleChange("credits", parseInt(e.target.value) || 0)} />
+                </div>
+
+                {/* Conexões */}
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-xs">Conexões</Label>
+                  <Input type="number" min={1} className="bg-secondary border-border"
+                    value={form.max_connections} onChange={e => handleChange("max_connections", parseInt(e.target.value) || 1)} />
+                </div>
+
+                {/* Duração */}
+                <div className="space-y-2 border border-dashed border-border rounded-lg p-3">
+                  <Label className="text-foreground text-xs">Duração *</Label>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                      onClick={() => handleChange("duration_value", Math.max(1, form.duration_value - 1))}>−</Button>
+                    <Input type="number" min={1} className="bg-secondary border-border w-20 text-center"
+                      value={form.duration_value} onChange={e => handleChange("duration_value", parseInt(e.target.value) || 1)} />
+                    <Button variant="outline" size="sm" className="h-8 w-8 p-0"
+                      onClick={() => handleChange("duration_value", form.duration_value + 1)}>+</Button>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-foreground text-xs">Duração Em *</Label>
+                    {(["hours", "days", "months", "years"] as DurationUnit[]).map(u => (
+                      <label key={u} className="flex items-center gap-1.5 cursor-pointer">
+                        <input type="radio" name="duration_unit" className="accent-primary"
+                          checked={form.duration_unit === u} onChange={() => handleChange("duration_unit", u)} />
+                        <span className="text-sm text-foreground">
+                          {u === "hours" ? "Horas" : u === "days" ? "Dias" : u === "months" ? "Meses" : "Anos"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-primary mt-1">
+                    Esse plano será renovado por {form.duration_value} {form.duration_unit === "hours" ? "Hora(s)" : form.duration_unit === "days" ? "Dia(s)" : form.duration_unit === "months" ? "Mês(es)" : "Ano(s)"}
+                  </p>
+                </div>
+
                 <Button
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={() => saveMutation.mutate(form)}
                   disabled={saveMutation.isPending || !form.name}
                 >
                   {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  {editId ? "Salvar Alterações" : "Criar Plano"}
+                  {editId ? "Salvar Alterações" : "Adicionar Plano"}
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
         </div>
 
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Pesquisar" className="pl-9 bg-secondary border-border"
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+
+        {/* Plans table */}
         {isLoading ? (
           <div className="flex items-center justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
-        ) : plans.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="glass-card p-12 text-center">
             <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-foreground">Nenhum plano cadastrado</h3>
-            <p className="text-sm text-muted-foreground mt-1">Crie seu primeiro plano para começar a adicionar clientes</p>
+            <h3 className="text-lg font-semibold text-foreground">Nenhum plano encontrado</h3>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {plans.map((plan: any) => (
-              <div key={plan.id} className="glass-card p-5 animate-slide-in group hover:glow-primary transition-all">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-lg text-foreground">{plan.name}</h3>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors opacity-0 group-hover:opacity-100">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-card border-border">
-                      <DropdownMenuItem onClick={() => openEdit(plan)} className="gap-2">
-                        <Pencil className="h-4 w-4" /> Editar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => deleteMutation.mutate(plan.id)} className="gap-2 text-destructive focus:text-destructive">
-                        <Trash2 className="h-4 w-4" /> Remover
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <p className="text-3xl font-bold text-gradient mb-4">
-                  {Number(plan.price) === 0 ? "Grátis" : `R$ ${Number(plan.price).toFixed(2)}`}
-                </p>
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Wifi className="h-4 w-4 text-primary" /> {plan.max_connections} {plan.max_connections > 1 ? "conexões" : "conexão"}
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4 text-primary" /> {plan.duration_days} dias
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <DollarSign className="h-4 w-4 text-primary" /> {plan.bouquets} bouquets
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
-                  {plan.servers?.name || "Sem servidor"}
-                </p>
-              </div>
-            ))}
+          <div className="glass-card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase">
+                  <th className="px-4 py-3 font-medium">Servidor</th>
+                  <th className="px-4 py-3 font-medium">Plano</th>
+                  <th className="px-4 py-3 font-medium">Situação</th>
+                  <th className="px-4 py-3 font-medium">Teste</th>
+                  <th className="px-4 py-3 font-medium">Valor do Plano</th>
+                  <th className="px-4 py-3 font-medium">Créditos</th>
+                  <th className="px-4 py-3 font-medium">Conexões</th>
+                  <th className="px-4 py-3 font-medium">Duração</th>
+                  <th className="px-4 py-3 font-medium">Ordem</th>
+                  <th className="px-4 py-3 font-medium text-right">Ações</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((plan: any) => (
+                  <tr key={plan.id} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                    <td className="px-4 py-3 text-foreground">{plan.servers?.name || "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-primary font-medium">{plan.servers?.name || ""} • {plan.name}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success/15 text-success border border-success/30">
+                        Ativo
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
+                        plan.duration_days <= 1
+                          ? "bg-warning/15 text-warning border border-warning/30"
+                          : "bg-muted text-muted-foreground border border-border"
+                      }`}>
+                        {plan.duration_days <= 1 ? "Sim" : "Não"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-foreground">
+                      {Number(plan.price) === 0 ? "-" : `R$ ${Number(plan.price).toFixed(2)}`}
+                    </td>
+                    <td className="px-4 py-3 text-foreground">{plan.bouquets || 0}</td>
+                    <td className="px-4 py-3 text-foreground">{plan.max_connections}</td>
+                    <td className="px-4 py-3 text-foreground">{durationLabel(plan.duration_days)}</td>
+                    <td className="px-4 py-3 text-foreground">0</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex gap-1.5">
+                        <Button size="sm" variant="outline" className="h-7 text-xs bg-warning/15 text-warning border-warning/30 hover:bg-warning/25"
+                          onClick={() => {
+                            navigator.clipboard.writeText(plan.name);
+                            toast({ title: "Copiado!" });
+                          }}>
+                          <Copy className="h-3 w-3 mr-1" /> Copiar
+                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90">
+                              Ações
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-card border-border">
+                            <DropdownMenuItem onClick={() => openEdit(plan)}>Editar</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => deleteMutation.mutate(plan.id)} className="text-destructive focus:text-destructive">
+                              Remover
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 text-xs text-muted-foreground text-right">
+              1 até {filtered.length} de {filtered.length}
+            </div>
           </div>
         )}
       </div>

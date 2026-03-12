@@ -1,4 +1,4 @@
-import { Users, UserPlus, Server, Wifi, Eye, Loader2, AlertTriangle, DollarSign, Activity, Clock, Plus } from "lucide-react";
+import { Users, UserPlus, Wifi, Loader2, DollarSign, Plus, Circle } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { useQuery } from "@tanstack/react-query";
@@ -23,115 +23,107 @@ export default function Dashboard() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
-      const [clientsRes, resellersRes, serversRes, connectionsRes, creditsRes, testsRes] = await Promise.all([
-        supabase.from("clients").select("id, username, status, expiry_date, created_at, reseller_id", { count: "exact" }),
+      const [clientsRes, resellersRes, serversRes, connectionsRes, creditsRes, plansRes] = await Promise.all([
+        supabase.from("clients").select("id, username, status, expiry_date, created_at, reseller_id, plan_id", { count: "exact" }),
         supabase.from("resellers").select("id, balance, status, user_id", { count: "exact" }),
-        supabase.from("servers").select("id, name, status, max_clients"),
-        supabase.from("active_connections").select("id", { count: "exact" }),
+        supabase.from("servers").select("id, name, status, created_at"),
+        supabase.from("active_connections").select("id, client_id", { count: "exact" }),
         supabase.from("credit_transactions").select("amount, type, created_at"),
-        supabase.from("test_lines").select("id, status, created_at, expires_at", { count: "exact" }),
+        supabase.from("plans").select("id, name, server_id, servers(name)"),
       ]);
 
       const clients = clientsRes.data || [];
       const resellers = resellersRes.data || [];
+      const servers = serversRes.data || [];
+      const plans = plansRes.data || [];
+      const connections = connectionsRes.data || [];
       const credits = creditsRes.data || [];
       const now = new Date();
 
       const activeClients = clients.filter(c => c.status === "active").length;
-      const expiredClients = clients.filter(c => c.status === "expired").length;
+      const inactiveClients = clients.filter(c => c.status !== "active").length;
+      const totalConnections = connectionsRes.count || 0;
 
-      const expiringSoon = clients.filter(c => {
+      // Expiring/expired within 7 days
+      const expiringList = clients.filter(c => {
         if (!c.expiry_date) return false;
         const exp = new Date(c.expiry_date);
-        const diff = (exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-        return diff > 0 && diff <= 7;
-      });
+        const diffDays = (exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+        return diffDays >= -7 && diffDays <= 7;
+      }).slice(0, 8);
 
-      const recentExpired = clients.filter(c => {
-        if (!c.expiry_date) return false;
-        const exp = new Date(c.expiry_date);
-        const diff = (now.getTime() - exp.getTime()) / (1000 * 60 * 60 * 24);
-        return diff >= 0 && diff <= 7;
-      });
-
-      const expiringList = [...recentExpired, ...expiringSoon].slice(0, 8);
-
+      // Client breakdown
       const resellerClients = clients.filter(c => c.reseller_id);
       const ownClients = clients.filter(c => !c.reseller_id);
 
-      const servers = serversRes.data || [];
-      const onlineServers = servers.filter(s => s.status === "online").length;
-      const totalBalance = resellers.reduce((sum, r) => sum + (r.balance || 0), 0);
+      // Reseller breakdown
       const activeResellers = resellers.filter(r => r.status === "active").length;
+      const inactiveResellers = resellers.filter(r => r.status !== "active").length;
+      const lowBalanceResellers = resellers.filter(r => r.balance < 10);
 
+      // Expected revenue (active clients that will renew)
+      const expectedRevenue = 0; // Placeholder - would come from plans pricing
+
+      // Credits
       const creditsPurchased = credits.filter(c => c.type === "purchase").reduce((s, c) => s + c.amount, 0);
       const creditsUsed = credits.filter(c => c.type === "usage").reduce((s, c) => s + Math.abs(c.amount), 0);
 
-      // Low balance resellers
-      const lowBalanceResellers = resellers.filter(r => r.balance < 10).slice(0, 10);
-
       // Chart data (30 days)
-      const clientGrowth: { name: string; value: number }[] = [];
-      const creditsData: { name: string; created: number; used: number }[] = [];
-      const creditsUsedData: { name: string; value: number }[] = [];
-      const resellerGrowth: { name: string; value: number }[] = [];
-      const testGrowth: { name: string; value: number }[] = [];
-      const connectionGrowth: { name: string; value: number }[] = [];
-
+      const clientGrowth: { name: string; atual: number; anterior: number }[] = [];
+      const resellerGrowth: { name: string; atual: number; anterior: number }[] = [];
       for (let i = 29; i >= 0; i--) {
-        const day = subDays(new Date(), i);
+        const day = subDays(now, i);
         const dayStr = format(day, "dd");
         const dayISO = format(day, "yyyy-MM-dd");
-        
-        clientGrowth.push({ name: dayStr, value: clients.filter(c => new Date(c.created_at) <= day).length });
-        
-        const dc = credits.filter(c => c.type === "purchase" && c.created_at.startsWith(dayISO)).reduce((s, c) => s + c.amount, 0);
-        const du = credits.filter(c => c.type === "usage" && c.created_at.startsWith(dayISO)).reduce((s, c) => s + Math.abs(c.amount), 0);
-        creditsData.push({ name: dayStr, created: dc, used: du });
-        creditsUsedData.push({ name: dayStr, value: du });
+        const prevDay = subDays(day, 30);
 
-        resellerGrowth.push({ name: dayStr, value: resellers.length });
+        const newClientsDay = clients.filter(c => c.created_at.startsWith(dayISO)).length;
+        const newClientsPrev = clients.filter(c => c.created_at.startsWith(format(prevDay, "yyyy-MM-dd"))).length;
+        clientGrowth.push({ name: dayStr, atual: newClientsDay, anterior: newClientsPrev });
 
-        const tests = testsRes.data || [];
-        testGrowth.push({ name: dayStr, value: tests.filter(t => new Date(t.created_at) <= day).length });
-
-        // Simulated connection variation
-        connectionGrowth.push({ name: dayStr, value: Math.max(0, (connectionsRes.count || 0) + Math.round((Math.random() - 0.5) * 3)) });
+        // Reseller growth is simulated for now
+        resellerGrowth.push({ name: dayStr, atual: Math.max(0, Math.round(Math.random() * 2)), anterior: Math.max(0, Math.round(Math.random() * 1.5)) });
       }
+
+      // Plans for quick test (plans that have test flag or all plans)
+      const testPlans = plans.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        serverName: p.servers?.name || "—",
+      }));
 
       return {
         totalClients: clientsRes.count || 0,
         activeClients,
-        expiredClients,
-        expiringSoon: expiringSoon.length,
+        inactiveClients,
+        totalConnections,
         expiringList,
         resellerClients: {
           total: resellerClients.length,
           active: resellerClients.filter(c => c.status === "active").length,
-          expired: resellerClients.filter(c => c.status === "expired").length,
+          inactive: resellerClients.filter(c => c.status !== "active").length,
+          connections: 0,
         },
         ownClients: {
           total: ownClients.length,
           active: ownClients.filter(c => c.status === "active").length,
-          expired: ownClients.filter(c => c.status === "expired").length,
+          inactive: ownClients.filter(c => c.status !== "active").length,
+          connections: 0,
         },
+        servers,
         totalResellers: resellersRes.count || 0,
         activeResellers,
+        inactiveResellers,
         lowBalanceResellers,
-        totalServers: servers.length,
-        onlineServers,
-        activeConnections: connectionsRes.count || 0,
-        totalBalance,
-        creditsPurchased,
-        creditsUsed,
-        totalTests: testsRes.count || 0,
-        activeTests: (testsRes.data || []).filter(t => t.status === "active").length,
+        expectedRevenue,
+        newClientsCount: clients.filter(c => {
+          const d = (now.getTime() - new Date(c.created_at).getTime()) / (1000 * 60 * 60 * 24);
+          return d <= 30;
+        }).length,
+        newResellersCount: resellers.length,
+        testPlans,
         clientGrowth,
-        creditsData,
-        creditsUsedData,
         resellerGrowth,
-        testGrowth,
-        connectionGrowth,
       };
     },
     refetchInterval: 30000,
@@ -155,34 +147,57 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {/* ═══════ LEFT COLUMN ═══════ */}
           <div className="space-y-3">
-            {/* Green balance banner */}
-            <div className="rounded-lg bg-success p-4 text-success-foreground">
-              <div className="flex items-center gap-2 mb-0.5">
-                <DollarSign className="h-5 w-5" />
-                <span className="text-2xl font-bold">R$ {(stats?.totalBalance || 0).toFixed(2)}</span>
+            {/* Green revenue banner */}
+            <div className="rounded-lg bg-success p-5">
+              <div className="flex items-center gap-2.5 mb-1">
+                <Users className="h-7 w-7 text-success-foreground/80" />
               </div>
-              <p className="text-xs opacity-80">Revendedores ativos · Créditos do sistema</p>
+              <p className="text-2xl font-bold text-success-foreground">R$ {(stats?.expectedRevenue || 0).toFixed(2)}</p>
+              <p className="text-xs text-success-foreground/80 mt-0.5">Meu Rendimento Esperado - Próximos 30 Dias</p>
             </div>
 
-            {/* Quick info bar */}
-            <div className="glass-card px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-muted-foreground">
-              <span>Início: <strong className="text-foreground">01/01</strong></span>
-              <span>Créditos criados: <strong className="text-success">R$ {(stats?.creditsPurchased || 0).toFixed(2)}</strong></span>
-              <span>Créditos usados: <strong className="text-destructive">R$ {(stats?.creditsUsed || 0).toFixed(2)}</strong></span>
-              <span>Servidores: <strong className="text-foreground">{stats?.onlineServers}/{stats?.totalServers}</strong></span>
+            {/* Servers list */}
+            <div className="glass-card p-4">
+              {(stats?.servers || []).map((server: any) => (
+                <div key={server.id} className="flex items-center justify-between py-2.5 border-b border-border/30 last:border-0">
+                  <div className="flex items-center gap-8">
+                    <span className="text-sm font-medium text-foreground">{server.name}</span>
+                    <span className="text-xs text-muted-foreground">IPTV</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-primary">{format(new Date(server.created_at), "dd/MM/yyyy, HH:mm:ss")}</span>
+                    <Circle className={`h-3 w-3 fill-current ${server.status === "online" ? "text-success" : "text-destructive"}`} />
+                  </div>
+                </div>
+              ))}
+              {(stats?.servers || []).length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-3">Nenhum servidor configurado</p>
+              )}
+              <p className="text-[10px] text-muted-foreground mt-2">Atualizado a cada 5 minutos</p>
             </div>
 
-            {/* Chart 1: Clients */}
-            <ChartCard icon={<Users className="h-3.5 w-3.5 text-primary" />} title="Clientes" rightValue={String(stats?.totalClients || 0)}>
-              <div className="flex gap-4 mb-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary" /> Créditos criados</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground" /> Créditos usados</span>
+            {/* New Clients count + chart */}
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-lg bg-muted">
+                    <UserPlus className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-foreground">{stats?.newClientsCount || 0}</p>
+                  <p className="text-xs text-muted-foreground">Novos Clientes - Últimos 30 Dias</p>
+                </div>
               </div>
-              <ResponsiveContainer width="100%" height={140}>
+              <div className="flex gap-4 mt-3 mb-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary" />Período Atual</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground" />Período Anterior</span>
+              </div>
+              <ResponsiveContainer width="100%" height={160}>
                 <AreaChart data={stats?.clientGrowth || []}>
                   <defs>
-                    <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0.35} />
+                    <linearGradient id="gClient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0.3} />
                       <stop offset="95%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -190,105 +205,66 @@ export default function Dashboard() {
                   <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
                   <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(187, 85%, 53%)" fill="url(#g1)" strokeWidth={1.5} name="Clientes" />
+                  <Area type="monotone" dataKey="atual" stroke="hsl(187, 85%, 53%)" fill="url(#gClient)" strokeWidth={1.5} name="Período Atual" />
+                  <Area type="monotone" dataKey="anterior" stroke="hsl(215, 15%, 55%)" fillOpacity={0.1} fill="hsl(215, 15%, 55%)" strokeWidth={1} name="Período Anterior" />
                 </AreaChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </div>
 
-            {/* Chart 2: Credits created/used */}
-            <ChartCard icon={<DollarSign className="h-3.5 w-3.5 text-success" />} title="Créditos" rightValue={`R$ ${(stats?.creditsPurchased || 0).toFixed(2)}`}>
-              <div className="flex gap-4 mb-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" /> Créditos criados</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary" /> Créditos usados</span>
-              </div>
-              <ResponsiveContainer width="100%" height={140}>
-                <AreaChart data={stats?.creditsData || []}>
-                  <defs>
-                    <linearGradient id="g2a" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="g2b" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 15%)" />
-                  <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
-                  <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="created" stroke="hsl(142, 71%, 45%)" fill="url(#g2a)" strokeWidth={1.5} name="Criados" />
-                  <Area type="monotone" dataKey="used" stroke="hsl(187, 85%, 53%)" fill="url(#g2b)" strokeWidth={1.5} name="Usados" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
+            {/* Client sections */}
+            <ClientSection title="Clientes - Subrevendas"
+              active={stats?.resellerClients?.active || 0}
+              inactive={stats?.resellerClients?.inactive || 0}
+              total={stats?.resellerClients?.total || 0}
+              connections={stats?.resellerClients?.connections || 0} />
 
-            {/* Chart 3: Credits used only */}
-            <ChartCard icon={<Activity className="h-3.5 w-3.5 text-destructive" />} title="Créditos Usados" rightValue={`R$ ${(stats?.creditsUsed || 0).toFixed(2)}`}>
-              <div className="flex gap-4 mb-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-destructive" /> Créditos usados</span>
-              </div>
-              <ResponsiveContainer width="100%" height={120}>
-                <AreaChart data={stats?.creditsUsedData || []}>
-                  <defs>
-                    <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="hsl(0, 72%, 51%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 15%)" />
-                  <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
-                  <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(0, 72%, 51%)" fill="url(#g3)" strokeWidth={1.5} name="Usados" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
+            <ClientSection title="Clientes - Próprios"
+              active={stats?.ownClients?.active || 0}
+              inactive={stats?.ownClients?.inactive || 0}
+              total={stats?.ownClients?.total || 0}
+              connections={stats?.ownClients?.connections || 0} />
 
-            {/* Client breakdowns */}
-            <ClientSection title="Clientes - Subrevendas" subtitle="Clientes criados pelos seus revendedores"
-              total={stats?.resellerClients?.total || 0} expired={stats?.resellerClients?.expired || 0}
-              active={stats?.resellerClients?.active || 0} online={0} />
-            <ClientSection title="Clientes - Próprios" subtitle="Clientes criados diretamente por você"
-              total={stats?.ownClients?.total || 0} expired={stats?.ownClients?.expired || 0}
-              active={stats?.ownClients?.active || 0} online={0} />
-            <ClientSection title="Clientes - Total" subtitle="Todos os clientes do sistema"
-              total={stats?.totalClients || 0} expired={stats?.expiredClients || 0}
-              active={stats?.activeClients || 0} online={stats?.activeConnections || 0} />
+            <ClientSection title="Clientes - Total"
+              active={stats?.activeClients || 0}
+              inactive={stats?.inactiveClients || 0}
+              total={stats?.totalClients || 0}
+              connections={stats?.totalConnections || 0} />
 
             {/* Expiring clients table */}
             <div className="glass-card p-4">
-              <h3 className="text-xs font-semibold text-foreground mb-3">
-                Clientes que venceram nos últimos 7 dias e que irão vencer em 7 dias
-              </h3>
+              <h3 className="text-sm font-bold text-foreground">Clientes que venceram nos últimos 7 dias e que vão vencer em 7 dias</h3>
+              <p className="text-xs text-muted-foreground mb-3">{stats?.expiringList?.length || 0} clientes</p>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="pb-2 font-medium">Usuário</th>
-                    <th className="pb-2 font-medium">Expiração</th>
+                    <th className="pb-2 font-medium">Vencimento</th>
                     <th className="pb-2 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(stats?.expiringList || []).length === 0 ? (
-                    <tr><td colSpan={3} className="py-3 text-center text-muted-foreground">Nenhum cliente expirando</td></tr>
+                    <tr><td colSpan={3} className="py-4 text-center text-muted-foreground">Nenhum cliente</td></tr>
                   ) : (
-                    (stats?.expiringList || []).map((c: any) => {
-                      const expired = new Date(c.expiry_date) < new Date();
-                      return (
-                        <tr key={c.id} className="border-b border-border/30">
-                          <td className="py-2 text-foreground">{c.username || c.id.slice(0, 8)}</td>
-                          <td className="py-2 text-muted-foreground">{format(new Date(c.expiry_date), "dd/MM/yyyy, HH:mm")}</td>
-                          <td className="py-2 text-right">
-                            <div className="inline-flex gap-0.5">
-                              {["bg-success", "bg-primary", "bg-warning", "bg-destructive", "bg-purple-500"].map((color, i) => (
-                                <span key={i} className={`inline-block h-5 w-5 rounded-sm ${color} opacity-80`} />
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
+                    (stats?.expiringList || []).map((c: any) => (
+                      <tr key={c.id} className="border-b border-border/30">
+                        <td className="py-2.5">
+                          <span className="text-primary font-medium">{c.username || c.id.slice(0, 6)}</span>
+                          <br /><span className="text-muted-foreground text-[10px]">Valor do Plano:</span>
+                        </td>
+                        <td className="py-2.5 text-muted-foreground">{format(new Date(c.expiry_date), "dd/MM/yyyy, HH:mm:ss")}</td>
+                        <td className="py-2.5 text-right">
+                          <div className="inline-flex gap-1">
+                            <ActionBtn color="bg-success" />
+                            <ActionBtn color="bg-teal-600" />
+                            <ActionBtn color="bg-blue-600" />
+                            <ActionBtn color="bg-green-600" />
+                            <ActionBtn color="bg-emerald-500" />
+                            <ActionBtn color="bg-destructive" />
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -297,149 +273,102 @@ export default function Dashboard() {
 
           {/* ═══════ RIGHT COLUMN ═══════ */}
           <div className="space-y-3">
-            {/* Testes Rápidos */}
+            {/* Teste Rápido */}
             <div className="glass-card p-4">
-              <h3 className="text-sm font-semibold text-foreground mb-2">Testes Rápidos</h3>
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <p>Testes ativos: <strong className="text-foreground">{stats?.activeTests || 0}</strong></p>
-                <p>Total de testes: <strong className="text-foreground">{stats?.totalTests || 0}</strong></p>
-                <p>Servidores online: <strong className="text-success">{stats?.onlineServers || 0}</strong></p>
-                <p>Conexões ativas: <strong className="text-primary">{stats?.activeConnections || 0}</strong></p>
+              <h3 className="text-sm font-bold text-foreground mb-3">Teste Rápido</h3>
+              <div className="space-y-1">
+                {(stats?.testPlans || []).length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">Nenhum plano cadastrado. Adicione planos para gerar testes rápidos.</p>
+                ) : (
+                  (stats?.testPlans || []).map((plan: any) => (
+                    <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
+                      onClick={() => navigate("/tests")}>
+                      <span className="text-xs font-medium text-primary">{plan.serverName} • {plan.name}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">{plan.serverName}</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
             {/* Adicionar Cliente button */}
-            <Button className="w-full" onClick={() => navigate("/clients")}>
+            <Button className="w-full bg-success hover:bg-success/90 text-success-foreground font-medium" onClick={() => navigate("/clients")}>
               <Plus className="h-4 w-4 mr-2" /> Adicionar Cliente
             </Button>
 
-            {/* Chart: Clients - right side (different color) */}
-            <ChartCard icon={<Users className="h-3.5 w-3.5 text-primary" />} title="Clientes" rightValue="">
-              <div className="flex gap-4 mb-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-primary" /> Créditos criados</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground" /> Créditos usados</span>
+            {/* New Resellers count + chart */}
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-lg bg-muted">
+                    <Users className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-foreground">{stats?.newResellersCount || 0}</p>
+                  <p className="text-xs text-muted-foreground">Novos Revendas - Últimos 30 Dias</p>
+                </div>
               </div>
-              <ResponsiveContainer width="100%" height={140}>
-                <AreaChart data={stats?.clientGrowth || []}>
-                  <defs>
-                    <linearGradient id="g4" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(187, 85%, 53%)" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="g4b" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(215, 15%, 55%)" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="hsl(215, 15%, 55%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 15%)" />
-                  <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
-                  <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(187, 85%, 53%)" fill="url(#g4)" strokeWidth={1.5} name="Criados" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* Chart: Connections */}
-            <ChartCard icon={<Wifi className="h-3.5 w-3.5 text-warning" />} title="Conexões" rightValue={`+${stats?.activeConnections || 0}`}>
-              <ResponsiveContainer width="100%" height={120}>
-                <AreaChart data={stats?.connectionGrowth || []}>
-                  <defs>
-                    <linearGradient id="g5" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="hsl(38, 92%, 50%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 15%)" />
-                  <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
-                  <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(38, 92%, 50%)" fill="url(#g5)" strokeWidth={1.5} name="Conexões" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* Chart: Tests (pink/magenta like QPanel) */}
-            <ChartCard icon={<Clock className="h-3.5 w-3.5" />} title="Testes" rightValue="">
-              <ResponsiveContainer width="100%" height={120}>
-                <AreaChart data={stats?.testGrowth || []}>
-                  <defs>
-                    <linearGradient id="g6" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(330, 70%, 55%)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(330, 70%, 55%)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 15%)" />
-                  <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
-                  <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(330, 70%, 55%)" fill="url(#g6)" strokeWidth={1.5} name="Testes" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            {/* Chart: Resellers (pink) */}
-            <ChartCard icon={<UserPlus className="h-3.5 w-3.5 text-pink-400" />} title="Revendedores" rightValue={`S${stats?.totalResellers || 0}`}>
-              <div className="flex gap-4 mb-2 text-[10px] text-muted-foreground">
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-pink-400" /> Créditos criados</span>
-                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground" /> Créditos usados</span>
+              <div className="flex gap-4 mt-3 mb-2 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-success" />Período Atual</span>
+                <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-muted-foreground" />Período Anterior</span>
               </div>
-              <ResponsiveContainer width="100%" height={140}>
+              <ResponsiveContainer width="100%" height={160}>
                 <AreaChart data={stats?.resellerGrowth || []}>
                   <defs>
-                    <linearGradient id="g7" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(330, 70%, 55%)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="hsl(330, 70%, 55%)" stopOpacity={0} />
+                    <linearGradient id="gReseller" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 20%, 15%)" />
                   <XAxis dataKey="name" tick={chartStyle} axisLine={false} tickLine={false} />
                   <YAxis tick={chartStyle} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="value" stroke="hsl(330, 70%, 55%)" fill="url(#g7)" strokeWidth={1.5} name="Revendedores" />
+                  <Area type="monotone" dataKey="atual" stroke="hsl(142, 71%, 45%)" fill="url(#gReseller)" strokeWidth={1.5} name="Período Atual" />
+                  <Area type="monotone" dataKey="anterior" stroke="hsl(215, 15%, 55%)" fillOpacity={0.1} fill="hsl(215, 15%, 55%)" strokeWidth={1} name="Período Anterior" />
                 </AreaChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </div>
 
-            {/* Reseller breakdowns */}
-            <ClientSection title="Revendedores - Subrevendas" subtitle="Revendedores de subrevendas"
-              total={0} expired={0} active={0} online={0}
-              labels={{ expired: "Inativos", active: "Ativos", online: "Online" }} />
-            <ClientSection title="Revendedores - Próprios" subtitle="Revendedores diretos"
-              total={stats?.totalResellers || 0} expired={0} active={stats?.activeResellers || 0} online={0}
-              labels={{ expired: "Inativos", active: "Ativos", online: "Online" }} />
-            <ClientSection title="Revendedores - Total" subtitle="Todos os revendedores"
-              total={stats?.totalResellers || 0} expired={0} active={stats?.activeResellers || 0} online={0}
-              labels={{ expired: "Inativos", active: "Ativos", online: "Online" }} />
+            {/* Reseller sections */}
+            <ResellerSection title="Revendas - Subrevendas" active={0} inactive={0} total={0} />
+            <ResellerSection title="Revendas - Próprias"
+              active={stats?.activeResellers || 0}
+              inactive={stats?.inactiveResellers || 0}
+              total={stats?.totalResellers || 0} />
+            <ResellerSection title="Revendas - Total"
+              active={stats?.activeResellers || 0}
+              inactive={stats?.inactiveResellers || 0}
+              total={stats?.totalResellers || 0} />
 
-            {/* Low balance resellers table */}
+            {/* Low balance resellers */}
             <div className="glass-card p-4">
-              <h3 className="text-xs font-semibold text-foreground mb-3">
-                Revendedores com menos de 10 créditos
-              </h3>
+              <h3 className="text-sm font-bold text-foreground">Revendas com menos de 10 créditos</h3>
+              <p className="text-xs text-muted-foreground mb-3">{stats?.lowBalanceResellers?.length || 0} revendas</p>
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="pb-2 font-medium">Usuário</th>
                     <th className="pb-2 font-medium">Créditos</th>
-                    <th className="pb-2 font-medium">Criação</th>
+                    <th className="pb-2 font-medium">Última Recarga</th>
                     <th className="pb-2 font-medium text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(stats?.lowBalanceResellers || []).length === 0 ? (
-                    <tr><td colSpan={4} className="py-3 text-center text-muted-foreground">Nenhum revendedor com saldo baixo</td></tr>
+                    <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">Nenhuma revenda</td></tr>
                   ) : (
                     (stats?.lowBalanceResellers || []).map((r: any) => (
                       <tr key={r.id} className="border-b border-border/30">
-                        <td className="py-2 text-foreground">{r.user_id?.slice(0, 8)}</td>
-                        <td className="py-2 text-muted-foreground">{r.balance}</td>
-                        <td className="py-2 text-muted-foreground">{format(new Date(r.created_at), "dd/MM/yyyy, HH:mm")}</td>
-                        <td className="py-2 text-right">
-                          <div className="inline-flex gap-0.5">
-                            {["primary", "success"].map((color, i) => (
-                              <span key={i} className={`inline-block h-5 w-5 rounded-sm bg-${color} opacity-80`} />
-                            ))}
+                        <td className="py-2.5 text-foreground">{r.user_id?.slice(0, 12)}...</td>
+                        <td className="py-2.5 text-muted-foreground">{r.balance}</td>
+                        <td className="py-2.5 text-muted-foreground">-</td>
+                        <td className="py-2.5 text-right">
+                          <div className="inline-flex gap-1">
+                            <ActionBtn color="bg-blue-600" />
+                            <ActionBtn color="bg-green-600" />
+                            <ActionBtn color="bg-destructive" />
                           </div>
                         </td>
                       </tr>
@@ -457,49 +386,49 @@ export default function Dashboard() {
 
 /* ── Sub-components ── */
 
-function ChartCard({ icon, title, rightValue, children }: { icon: React.ReactNode; title: string; rightValue: string; children: React.ReactNode }) {
-  return (
-    <div className="glass-card p-4">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-1.5">
-          {icon}
-          <h3 className="text-xs font-semibold text-foreground">{title}</h3>
-        </div>
-        {rightValue && <span className="text-sm font-bold text-foreground">{rightValue}</span>}
-      </div>
-      {children}
-    </div>
-  );
+function ActionBtn({ color }: { color: string }) {
+  return <span className={`inline-block h-6 w-6 rounded ${color} opacity-80 cursor-pointer hover:opacity-100 transition-opacity`} />;
 }
 
-function ClientSection({
-  title, subtitle, total, expired, active, online, labels,
-}: {
-  title: string; subtitle: string; total: number; expired: number; active: number; online: number;
-  labels?: { expired: string; active: string; online: string };
+function ClientSection({ title, active, inactive, total, connections }: {
+  title: string; active: number; inactive: number; total: number; connections: number;
 }) {
-  const l = labels || { expired: "Expirados", active: "Ativos", online: "Online" };
   return (
     <div className="glass-card p-4">
-      <h3 className="text-xs font-semibold text-foreground">{title}</h3>
-      <p className="text-[10px] text-muted-foreground mb-2">{subtitle}</p>
-      <div className="grid grid-cols-4 gap-2">
-        <StatPill icon={<Users className="h-3.5 w-3.5" />} label="Total" value={total} color="text-primary" />
-        <StatPill icon={<AlertTriangle className="h-3.5 w-3.5" />} label={l.expired} value={expired} color="text-destructive" />
-        <StatPill icon={<Eye className="h-3.5 w-3.5" />} label={l.active} value={active} color="text-success" />
-        <StatPill icon={<Wifi className="h-3.5 w-3.5" />} label={l.online} value={online} color="text-warning" />
+      <h3 className="text-sm font-bold text-foreground mb-3">{title}</h3>
+      <div className="grid grid-cols-4 gap-3">
+        <StatItem icon="🟢" label="Ativo" value={active} color="text-success" />
+        <StatItem icon="🔴" label="Inativo" value={inactive} color="text-destructive" />
+        <StatItem icon="⚪" label="Total" value={total} color="text-muted-foreground" />
+        <StatItem icon="🟡" label="Conexões" value={connections} color="text-warning" />
+      </div>
+      <p className="text-[10px] text-primary mt-2 cursor-pointer hover:underline">Clique aqui para saber mais sobre os números acima</p>
+    </div>
+  );
+}
+
+function ResellerSection({ title, active, inactive, total }: {
+  title: string; active: number; inactive: number; total: number;
+}) {
+  return (
+    <div className="glass-card p-4">
+      <h3 className="text-sm font-bold text-foreground mb-3">{title}</h3>
+      <div className="grid grid-cols-3 gap-3">
+        <StatItem icon="🟢" label="Ativo" value={active} color="text-success" />
+        <StatItem icon="🔴" label="Inativo" value={inactive} color="text-destructive" />
+        <StatItem icon="⚪" label="Total" value={total} color="text-muted-foreground" />
       </div>
     </div>
   );
 }
 
-function StatPill({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: string }) {
+function StatItem({ icon, label, value, color }: { icon: string; label: string; value: number; color: string }) {
   return (
-    <div className="flex items-center gap-2 bg-muted/50 rounded-md px-2.5 py-2">
-      <div className={color}>{icon}</div>
+    <div className="flex items-center gap-2">
+      <span className="text-lg">{icon}</span>
       <div>
-        <p className="text-[10px] text-muted-foreground leading-tight">{label}</p>
-        <p className="text-sm font-bold text-foreground">{value}</p>
+        <p className={`text-lg font-bold ${color}`}>{value}</p>
+        <p className="text-[10px] text-muted-foreground">{label}</p>
       </div>
     </div>
   );
