@@ -20,7 +20,7 @@ export async function getCredentialSettings(): Promise<CredentialSettings> {
     .select("value")
     .eq("key", "credential_generation")
     .single();
-  const val = data?.value as CredentialSettings | null;
+  const val = data?.value as unknown as CredentialSettings | null;
   cachedSettings = val && val.charset ? val : { charset: "alphanumeric", length: 8 };
   // Cache for 30s
   setTimeout(() => { cachedSettings = null; }, 30000);
