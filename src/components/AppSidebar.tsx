@@ -39,7 +39,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, role } = useAuth();
+  const { signOut, role, user, loading } = useAuth();
 
   const { data: branding } = useQuery({
     queryKey: ["panel-settings", "branding"],
