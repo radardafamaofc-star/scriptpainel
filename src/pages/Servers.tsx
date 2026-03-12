@@ -1,5 +1,6 @@
 import { Layout } from "@/components/Layout";
-import { Server, Plus, Wifi, WifiOff, MoreVertical, TestTube, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff } from "lucide-react";
+import { Server, Plus, Wifi, WifiOff, MoreVertical, TestTube, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff, FileText } from "lucide-react";
+import { DEFAULT_TEMPLATE } from "@/lib/template";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
