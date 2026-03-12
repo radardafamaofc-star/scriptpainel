@@ -1,11 +1,13 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  DollarSign, BarChart3, Tag
+  DollarSign, BarChart3, Tag, Palette
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
-import xsyncLogo from "@/assets/xsync-logo.png";
+import xsyncLogoDefault from "@/assets/xsync-logo.png";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter, useSidebar,
@@ -28,6 +30,7 @@ const financeItems = [
 
 const systemItems = [
   { title: "Logs", url: "/logs", icon: ScrollText, roles: ["admin"] },
+  { title: "Estilo", url: "/estilo", icon: Palette, roles: ["admin"] },
   { title: "Configurações", url: "/settings", icon: Settings, roles: ["admin"] },
 ];
 
@@ -37,6 +40,18 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, role } = useAuth();
+
+  const { data: branding } = useQuery({
+    queryKey: ["panel-settings", "branding"],
+    queryFn: async () => {
+      const { data } = await supabase.from("panel_settings").select("value").eq("key", "branding").single();
+      return data?.value as { logo_url: string | null; panel_name: string } | null;
+    },
+    staleTime: 60000,
+  });
+
+  const logoSrc = branding?.logo_url || xsyncLogoDefault;
+  const panelName = branding?.panel_name || "xSync";
 
   const filterByRole = (items: typeof mainItems) =>
     items.filter((item) => !role || item.roles.includes(role));
@@ -73,10 +88,10 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-        <img src={xsyncLogo} alt="xSync" className="w-8 h-8" />
+        <img src={logoSrc} alt={panelName} className="w-8 h-8 object-contain" />
         {!collapsed && (
           <div>
-            <h1 className="text-lg font-bold text-sidebar-accent-foreground">xSync</h1>
+            <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
             <p className="text-[10px] text-sidebar-foreground uppercase tracking-widest">Panel</p>
           </div>
         )}
