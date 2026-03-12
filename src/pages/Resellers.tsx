@@ -353,7 +353,7 @@ export default function Resellers() {
             </DialogHeader>
             <div className="space-y-4 mt-4">
               <p className="text-sm text-muted-foreground">
-                Revendedor: <span className="text-foreground font-medium">{creditTarget?.profiles?.display_name || creditTarget?.profiles?.email}</span>
+                Revendedor: <span className="text-foreground font-medium">{creditProfile?.display_name || creditProfile?.email || "—"}</span>
               </p>
               <p className="text-sm text-muted-foreground">
                 Saldo atual: <span className="text-foreground font-medium">R$ {Number(creditTarget?.balance || 0).toFixed(2)}</span>
