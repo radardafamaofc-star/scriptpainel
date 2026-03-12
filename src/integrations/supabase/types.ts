@@ -301,6 +301,7 @@ export type Database = {
           api_key: string | null
           created_at: string
           created_by: string
+          dns: string | null
           host: string
           id: string
           max_clients: number
@@ -318,6 +319,7 @@ export type Database = {
           api_key?: string | null
           created_at?: string
           created_by: string
+          dns?: string | null
           host: string
           id?: string
           max_clients?: number
@@ -335,6 +337,7 @@ export type Database = {
           api_key?: string | null
           created_at?: string
           created_by?: string
+          dns?: string | null
           host?: string
           id?: string
           max_clients?: number
