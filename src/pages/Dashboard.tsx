@@ -171,10 +171,10 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { serverId: string | null; durationDays: number; durationHours: number }) => {
+    mutationFn: async (plan: { serverId: string | null; durationHours: number }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
-      const totalHours = Math.max(1, (plan.durationDays || 0) * 24 + (plan.durationHours || 0));
+      const totalHours = Math.max(1, plan.durationHours || 0);
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + totalHours);
 
