@@ -353,9 +353,9 @@ export default function Dashboard() {
 
             {/* Test Dialog */}
             <Dialog open={testDialogOpen} onOpenChange={(v) => { setTestDialogOpen(v); if (!v) setTestResult(null); }}>
-              <DialogContent className="bg-card border-border sm:max-w-md">
+              <DialogContent className="bg-background border-border sm:max-w-lg max-h-[85vh] flex flex-col">
                 <DialogHeader>
-                  <DialogTitle className="text-foreground">Gerar Teste Rápido</DialogTitle>
+                  <DialogTitle className="text-foreground text-lg">Gerar Teste Rápido</DialogTitle>
                 </DialogHeader>
                 {!testResult ? (
                   <div className="space-y-4 mt-2">
@@ -388,22 +388,24 @@ export default function Dashboard() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-4 mt-2">
-                    <pre className="whitespace-pre-wrap text-xs text-foreground bg-secondary p-4 rounded-lg border border-border max-h-80 overflow-y-auto font-mono leading-relaxed">{testResult.template}</pre>
-                    <div className="flex gap-2">
-                      <Button className="flex-1" variant="outline" onClick={() => {
+                  <div className="flex flex-col gap-4 mt-2 flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-border bg-muted/30 p-5">
+                      <pre className="whitespace-pre-wrap text-sm text-foreground font-sans leading-7">{testResult.template}</pre>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <Button className="flex-1 h-11" variant="outline" onClick={() => {
                         navigator.clipboard.writeText(testResult.template || "");
                         toast({ title: "Copiado!" });
                       }}>
                         <Copy className="h-4 w-4 mr-2" /> Copiar
                       </Button>
-                      <Button className="flex-1" variant="outline" onClick={() => {
+                      <Button className="flex-1 h-11" variant="outline" onClick={() => {
                         const text = encodeURIComponent(testResult.template || "");
                         window.open(`https://wa.me/?text=${text}`, "_blank");
                       }}>
                         WhatsApp
                       </Button>
-                      <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => {
+                      <Button className="flex-1 h-11 bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => {
                         navigator.clipboard.writeText(testResult.template || "");
                         toast({ title: "Copiado!" });
                         setTestDialogOpen(false);
