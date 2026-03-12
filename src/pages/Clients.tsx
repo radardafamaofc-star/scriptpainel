@@ -432,6 +432,7 @@ export default function Clients() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         {/* Dialog for create/edit */}
