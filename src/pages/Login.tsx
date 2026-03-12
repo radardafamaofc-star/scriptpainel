@@ -45,7 +45,7 @@ export default function Login() {
             </div>
           )}
 
-          <div className="glass-card p-8">
+          <div className="glass-card p-5 sm:p-8">
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <Label className="text-muted-foreground text-sm">Email</Label>
