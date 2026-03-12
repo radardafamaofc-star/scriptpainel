@@ -29,14 +29,6 @@ const emptyForm: ClientForm = {
   username: "", password: "", email: "", plan_id: "", server_id: "", max_connections: 1, expiry_date: "",
 };
 
-function generatePassword(length = 8) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-}
-
-function generateUsername() {
-  return "user_" + Math.random().toString(36).substring(2, 8);
-}
 
 export default function Clients() {
   const [open, setOpen] = useState(false);
