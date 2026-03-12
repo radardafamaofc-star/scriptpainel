@@ -23,13 +23,21 @@ const tooltipStyle = {
 };
 
 const formatDuration = (hours: number): string => {
-  const normalizedHours = Math.max(1, hours || 0);
+  const normalizedHours = Math.max(1, Number(hours) || 0);
   const days = Math.floor(normalizedHours / 24);
   const remainingHours = normalizedHours % 24;
 
   if (days === 0) return `${normalizedHours}h`;
   if (remainingHours === 0) return `${days} dia(s)`;
   return `${days}d ${remainingHours}h`;
+};
+
+const normalizeDurationHours = (plan: { duration_hours?: number | null; duration_days?: number | null }): number => {
+  const hours = Number(plan.duration_hours ?? 0);
+  if (Number.isFinite(hours) && hours > 0) return hours;
+
+  const days = Number(plan.duration_days ?? 0);
+  return Math.max(1, days * 24);
 };
 
 export default function Dashboard() {
