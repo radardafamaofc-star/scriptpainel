@@ -218,9 +218,10 @@ export default function Clients() {
 
   const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
 
-  const openNew = () => {
+  const openNew = async () => {
     setEditId(null);
-    setForm({ ...emptyForm, username: generateUsername(), password: generatePassword() });
+    const [username, password] = await Promise.all([genUser(), genPass()]);
+    setForm({ ...emptyForm, username, password });
     setOpen(true);
   };
 
