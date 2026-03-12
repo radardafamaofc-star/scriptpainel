@@ -356,7 +356,7 @@ export default function Servers() {
                     variant="outline"
                     className="flex-1 border-border"
                     onClick={() => saveMutation.mutate(form)}
-                    disabled={saveMutation.isPending || !form.name || !form.url || !form.api_key}
+                    disabled={saveMutation.isPending || !form.name || (!editId && (!form.url || !form.api_key))}
                   >
                     {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                     {editId ? "Salvar Alterações" : "Adicionar Servidor"}
