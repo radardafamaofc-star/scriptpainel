@@ -14,16 +14,326 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      active_connections: {
+        Row: {
+          channel: string | null
+          client_id: string
+          id: string
+          ip_address: string | null
+          server_id: string | null
+          started_at: string
+        }
+        Insert: {
+          channel?: string | null
+          client_id: string
+          id?: string
+          ip_address?: string | null
+          server_id?: string | null
+          started_at?: string
+        }
+        Update: {
+          channel?: string | null
+          client_id?: string
+          id?: string
+          ip_address?: string | null
+          server_id?: string | null
+          started_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "active_connections_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "active_connections_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          created_at: string
+          created_by: string
+          email: string | null
+          expiry_date: string | null
+          id: string
+          max_connections: number
+          password: string
+          plan_id: string | null
+          reseller_id: string | null
+          server_id: string | null
+          status: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          email?: string | null
+          expiry_date?: string | null
+          id?: string
+          max_connections?: number
+          password: string
+          plan_id?: string | null
+          reseller_id?: string | null
+          server_id?: string | null
+          status?: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          email?: string | null
+          expiry_date?: string | null
+          id?: string
+          max_connections?: number
+          password?: string
+          plan_id?: string | null
+          reseller_id?: string | null
+          server_id?: string | null
+          status?: string
+          updated_at?: string
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clients_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clients_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plans: {
+        Row: {
+          bouquets: number
+          created_at: string
+          created_by: string
+          duration_days: number
+          id: string
+          max_connections: number
+          name: string
+          price: number
+          server_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          bouquets?: number
+          created_at?: string
+          created_by: string
+          duration_days?: number
+          id?: string
+          max_connections?: number
+          name: string
+          price?: number
+          server_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          bouquets?: number
+          created_at?: string
+          created_by?: string
+          duration_days?: number
+          id?: string
+          max_connections?: number
+          name?: string
+          price?: number
+          server_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plans_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      resellers: {
+        Row: {
+          balance: number
+          client_limit: number
+          created_at: string
+          id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          client_limit?: number
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          client_limit?: number
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      servers: {
+        Row: {
+          api_key: string | null
+          created_at: string
+          created_by: string
+          host: string
+          id: string
+          max_clients: number
+          name: string
+          password: string | null
+          port: number
+          status: string
+          updated_at: string
+          uptime: string | null
+          username: string | null
+        }
+        Insert: {
+          api_key?: string | null
+          created_at?: string
+          created_by: string
+          host: string
+          id?: string
+          max_clients?: number
+          name: string
+          password?: string | null
+          port?: number
+          status?: string
+          updated_at?: string
+          uptime?: string | null
+          username?: string | null
+        }
+        Update: {
+          api_key?: string | null
+          created_at?: string
+          created_by?: string
+          host?: string
+          id?: string
+          max_clients?: number
+          name?: string
+          password?: string | null
+          port?: number
+          status?: string
+          updated_at?: string
+          uptime?: string | null
+          username?: string | null
+        }
+        Relationships: []
+      }
+      system_logs: {
+        Row: {
+          action: string
+          created_at: string
+          detail: string | null
+          id: string
+          type: string
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          type?: string
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          detail?: string | null
+          id?: string
+          type?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "moderator" | "reseller" | "client"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +460,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "moderator", "reseller", "client"],
+    },
   },
 } as const
