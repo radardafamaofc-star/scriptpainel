@@ -91,8 +91,18 @@ export default function Dashboard() {
       const inactiveResellers = resellers.filter(r => r.status !== "active").length;
       const lowBalanceResellers = resellers.filter(r => r.balance < 10);
 
-      // Expected revenue (active clients that will renew)
-      const expectedRevenue = 0; // Placeholder - would come from plans pricing
+      // Expected revenue: sum plan prices for active clients with expiry in next 30 days
+      const expectedRevenue = clients
+        .filter(c => {
+          if (c.status !== "active" || !c.expiry_date) return false;
+          const exp = new Date(c.expiry_date);
+          const diffDays = (exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+          return diffDays >= 0 && diffDays <= 30;
+        })
+        .reduce((sum, c) => {
+          const plan = plans.find((p: any) => p.id === c.plan_id);
+          return sum + (plan ? Number((plan as any).price || 0) : 0);
+        }, 0);
 
       // Credits
       const creditsPurchased = credits.filter(c => c.type === "purchase").reduce((s, c) => s + c.amount, 0);
