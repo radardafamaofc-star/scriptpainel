@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
 interface XuiServerConfig {
@@ -12,45 +12,13 @@ interface XuiServerConfig {
   use_proxy?: boolean;
 }
 
-async function xuiRequest(
-  config: XuiServerConfig,
-  action: string,
-  params: Record<string, string> = {}
-) {
-  // URL format: http://host:port/subdir + api.php or direct
-  let baseUrl = config.url.replace(/\/+$/, '');
-  
-  // Build the API URL
-  const apiUrl = new URL(`${baseUrl}/api.php`);
-  apiUrl.searchParams.set('api_key', config.api_key);
-  apiUrl.searchParams.set('action', action);
-  if (config.api_version) {
-    apiUrl.searchParams.set('api_version', config.api_version);
-  }
-  for (const [k, v] of Object.entries(params)) {
-    apiUrl.searchParams.set(k, v);
-  }
-
+async function tryFetch(url: string, timeoutMs = 15000): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(apiUrl.toString(), {
-      method: 'GET',
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
     clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`XUI API HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const text = await response.text();
-    try {
-      return JSON.parse(text);
-    } catch {
-      throw new Error(`XUI API retornou resposta inválida: ${text.substring(0, 200)}`);
-    }
+    return response;
   } catch (e) {
     clearTimeout(timeout);
     if (e.name === 'AbortError') {
@@ -58,6 +26,93 @@ async function xuiRequest(
     }
     throw e;
   }
+}
+
+async function xuiRequest(
+  config: XuiServerConfig,
+  action: string,
+  params: Record<string, string> = {}
+) {
+  let baseUrl = config.url.replace(/\/+$/, '');
+  
+  // Build query params
+  const queryParams = new URLSearchParams();
+  queryParams.set('api_key', config.api_key);
+  queryParams.set('action', action);
+  if (config.api_version) {
+    queryParams.set('api_version', config.api_version);
+  }
+  for (const [k, v] of Object.entries(params)) {
+    queryParams.set(k, v);
+  }
+  const qs = queryParams.toString();
+
+  // Try multiple URL patterns that XUI One panels commonly use
+  const urlsToTry = [
+    `${baseUrl}/api.php?${qs}`,
+    `${baseUrl}/player_api.php?${qs}`,
+  ];
+
+  // Also try stripping the path and going to root
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.pathname && parsed.pathname !== '/') {
+      const rootUrl = `${parsed.protocol}//${parsed.host}`;
+      urlsToTry.push(`${rootUrl}/api.php?${qs}`);
+      urlsToTry.push(`${rootUrl}/player_api.php?${qs}`);
+    }
+  } catch {}
+
+  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
+
+  let lastError: Error | null = null;
+
+  for (const url of urlsToTry) {
+    try {
+      console.log(`[XUI] Trying: ${url.replace(config.api_key, '***')}`);
+      const response = await tryFetch(url);
+
+      if (response.status === 404) {
+        console.log(`[XUI] 404 for: ${url.replace(config.api_key, '***')}`);
+        continue; // Try next URL pattern
+      }
+
+      if (!response.ok) {
+        throw new Error(`XUI API HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const text = await response.text();
+      
+      // Some XUI panels return empty response for invalid endpoints
+      if (!text || text.trim() === '') {
+        console.log(`[XUI] Empty response for: ${url.replace(config.api_key, '***')}`);
+        continue;
+      }
+
+      try {
+        return JSON.parse(text);
+      } catch {
+        // If it's HTML (login page), skip
+        if (text.includes('<html') || text.includes('<!DOCTYPE')) {
+          console.log(`[XUI] Got HTML response, skipping`);
+          continue;
+        }
+        throw new Error(`XUI API retornou resposta inválida: ${text.substring(0, 200)}`);
+      }
+    } catch (e) {
+      lastError = e;
+      if (e.message.includes('timeout') || e.message.includes('expirou')) {
+        throw e; // Don't retry on timeout
+      }
+      console.log(`[XUI] Error for URL: ${e.message}`);
+    }
+  }
+
+  throw lastError || new Error(
+    `Não foi possível conectar ao XUI One. Verifique se a URL está correta.\n` +
+    `Formato esperado: http://SEU_IP:PORTA ou http://SEU_IP:PORTA/subdir\n` +
+    `URLs tentadas: ${urlsToTry.length}`
+  );
 }
 
 Deno.serve(async (req) => {
@@ -80,16 +135,15 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
 
     const serviceClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
