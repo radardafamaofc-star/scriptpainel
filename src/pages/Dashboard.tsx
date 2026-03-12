@@ -165,7 +165,7 @@ export default function Dashboard() {
       const serverId = plan.serverId || "";
       const { error } = await supabase.from("test_lines").insert({
         username, password, server_id: serverId || null,
-        created_by: user!.id, duration_hours: hours,
+        created_by: user!.id, duration_hours: totalHours,
         expires_at: expiresAt.toISOString(),
       });
       if (error) throw error;
