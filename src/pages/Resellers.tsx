@@ -546,8 +546,11 @@ function ResellerRow({
         </td>
 
         {/* Créditos */}
-        <td className="py-4 pr-4">
-          <span className="font-semibold text-foreground">{Number(r.balance).toLocaleString("pt-BR")}</span>
+        <td className="px-5 py-3">
+          <span className="font-semibold text-foreground">
+            {(rRole === "admin" || rRole === "reseller_ultra") ? "∞ ilimitados" : Number(r.balance).toLocaleString("pt-BR")}
+          </span>
+        </td>
         </td>
 
         {/* Datas */}
