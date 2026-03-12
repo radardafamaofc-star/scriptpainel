@@ -592,15 +592,7 @@ export default function Clients() {
                 <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
                 <Button
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  onClick={() => {
-                    saveMutation.mutate(form, {
-                      onSuccess: () => {
-                        if (stayOpen) {
-                          genUser().then(u => genPass().then(p => setForm(prev => ({ ...prev, username: u, password: p, email: "" }))));
-                        }
-                      }
-                    });
-                  }}
+                  onClick={() => saveMutation.mutate(form)}
                   disabled={saveMutation.isPending || !form.username || (!editId && !form.password) || !form.server_id || !form.plan_id}
                 >
                   {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
