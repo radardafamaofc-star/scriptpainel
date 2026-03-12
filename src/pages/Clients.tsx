@@ -363,6 +363,13 @@ export default function Clients() {
     ...testLines.map((t: any) => ({ ...t, _type: "test" as const, max_connections: 1 })),
   ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
+  const getCreatorName = (item: any) => {
+    const id = item.created_by;
+    if (!id) return "—";
+    const profile = (creatorProfiles as any)[id];
+    return profile?.display_name || profile?.email || "—";
+  };
+
   const filtered = unifiedList.filter((item: any) => {
     const matchSearch = item.username.toLowerCase().includes(search.toLowerCase()) ||
       (item.email && item.email.toLowerCase().includes(search.toLowerCase()));
@@ -370,7 +377,8 @@ export default function Clients() {
     const matchStatus = filterStatus === "all" ||
       (filterStatus === "test" && item._type === "test") ||
       (filterStatus !== "test" && itemStatus === filterStatus);
-    return matchSearch && matchStatus;
+    const matchServer = filterServer === "all" || item.server_id === filterServer;
+    return matchSearch && matchStatus && matchServer;
   });
 
   const statusStyle: Record<string, string> = {
