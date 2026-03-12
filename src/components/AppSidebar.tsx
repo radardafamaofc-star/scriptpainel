@@ -119,6 +119,14 @@ export function AppSidebar() {
           </div>
         )}
       </div>
+
+      {!collapsed && user && (
+        <div className="px-4 py-3 border-b border-sidebar-border">
+          <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{displayName}</p>
+          <p className="text-xs text-sidebar-foreground/80 mt-0.5">{creditsLabel}</p>
+        </div>
+      )}
+
       <SidebarContent className="pt-2">
         <SidebarGroup>
           {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Principal</SidebarGroupLabel>}
