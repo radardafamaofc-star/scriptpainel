@@ -639,7 +639,7 @@ function ResellerRow({
       {/* Expanded client stats */}
       {isExpanded && (
         <tr>
-          <td colSpan={6} className="py-3 px-4 bg-muted/10 border-b border-border/50">
+          <td colSpan={6} className="py-3 px-4 bg-card border-b border-border">
             {!clientStats ? (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando...
@@ -649,18 +649,18 @@ function ResellerRow({
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {clientStats.map((s: any, i: number) => (
-                  <div key={i} className="rounded-lg border border-border/60 p-3 bg-card/50">
+                  <div key={i} className="rounded-lg border border-border p-3 bg-secondary">
                     <p className="text-xs font-bold text-foreground uppercase mb-2">{s.name}</p>
-                    <div className="grid grid-cols-2 gap-y-1 text-xs">
-                      <span className="text-muted-foreground">Ativo: <span className="text-foreground">{s.active}</span></span>
-                      <span className="text-muted-foreground">Ativos Subrevendas: <span className="text-foreground">{s.subActive}</span></span>
-                      <span className="text-muted-foreground">Total Ativo: <span className="text-foreground">{s.active + s.subActive}</span></span>
+                    <div className="grid grid-cols-2 gap-y-1.5 text-xs">
+                      <span className="text-muted-foreground">Ativo: <span className="text-primary font-semibold">{s.active}</span></span>
+                      <span className="text-muted-foreground">Ativos Subrevendas: <span className="text-primary font-semibold">{s.subActive}</span></span>
+                      <span className="text-muted-foreground">Total Ativo: <span className="text-primary font-semibold">{s.active + s.subActive}</span></span>
                       <span></span>
-                      <span className="text-muted-foreground">Conexões: <span className="text-foreground">{s.connections}</span></span>
-                      <span className="text-muted-foreground">Conexões Subrevendas: <span className="text-foreground">{s.subConnections}</span></span>
-                      <span className="text-muted-foreground">Total de Conexões: <span className="text-foreground">{s.connections + s.subConnections}</span></span>
+                      <span className="text-muted-foreground">Conexões: <span className="text-primary font-semibold">{s.connections}</span></span>
+                      <span className="text-muted-foreground">Conexões Subrevendas: <span className="text-primary font-semibold">{s.subConnections}</span></span>
+                      <span className="text-muted-foreground">Total de Conexões: <span className="text-primary font-semibold">{s.connections + s.subConnections}</span></span>
                       <span></span>
-                      <span className="text-muted-foreground">Teste: <span className="text-foreground">{s.tests}</span></span>
+                      <span className="text-muted-foreground">Teste: <span className="text-primary font-semibold">{s.tests}</span></span>
                     </div>
                   </div>
                 ))}
