@@ -43,8 +43,8 @@ export function AppSidebar() {
 
   const { data: branding } = useBranding();
 
-  const logoSrc = branding?.logo_url || xsyncLogoDefault;
-  const panelName = branding?.panel_name || "xSync";
+  const logoSrc = branding?.logo_url || null;
+  const panelName = branding?.panel_name || "";
 
   const displayName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Usuário";
 
