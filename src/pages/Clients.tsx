@@ -316,7 +316,8 @@ export default function Clients() {
       plan_id: client.plan_id || "",
       server_id: client.server_id || "",
       max_connections: client.max_connections,
-      expiry_date: client.expiry_date ? format(new Date(client.expiry_date), "yyyy-MM-dd") : "",
+      expiry_date: client.expiry_date ? format(new Date(client.expiry_date), "yyyy-MM-dd'T'HH:mm") : "",
+      name: "", telegram: "", whatsapp: "", notes: "", custom_price: "",
     });
     setOpen(true);
   };
