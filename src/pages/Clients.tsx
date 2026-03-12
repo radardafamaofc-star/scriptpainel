@@ -1,5 +1,5 @@
 import { Layout } from "@/components/Layout";
-import { Plus, Search, MoreVertical, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle, List, Wifi, Bell, ArrowUpCircle } from "lucide-react";
+import { Plus, Search, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle, List, Wifi, Bell, ArrowUpCircle, Minus, Info, Lock, User, Calendar } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { DEFAULT_TEMPLATE, renderTemplate } from "@/lib/template";
 import { generateUsername as genUser, generatePassword as genPass } from "@/lib/credentials";
+import { Textarea } from "@/components/ui/textarea";
 
 interface ClientForm {
   username: string;
@@ -23,10 +24,16 @@ interface ClientForm {
   server_id: string;
   max_connections: number;
   expiry_date: string;
+  name: string;
+  telegram: string;
+  whatsapp: string;
+  notes: string;
+  custom_price: string;
 }
 
 const emptyForm: ClientForm = {
   username: "", password: "", email: "", plan_id: "", server_id: "", max_connections: 1, expiry_date: "",
+  name: "", telegram: "", whatsapp: "", notes: "", custom_price: "",
 };
 
 
