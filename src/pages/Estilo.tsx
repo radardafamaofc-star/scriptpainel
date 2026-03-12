@@ -44,11 +44,20 @@ export default function Estilo() {
         .eq("key", "branding");
       if (error) throw error;
     },
+    onMutate: async (logoUrl) => {
+      await queryClient.cancelQueries({ queryKey: ["panel-settings", "branding"] });
+      const previous = queryClient.getQueryData(["panel-settings", "branding"]);
+      queryClient.setQueryData(["panel-settings", "branding"], { logo_url: logoUrl, panel_name: panelName });
+      return { previous };
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["panel-settings"] });
       toast({ title: "Estilo atualizado!" });
     },
-    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onError: (err: Error, _v, context) => {
+      if (context?.previous) queryClient.setQueryData(["panel-settings", "branding"], context.previous);
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
   });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
