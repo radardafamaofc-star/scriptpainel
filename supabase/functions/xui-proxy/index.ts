@@ -99,9 +99,13 @@ async function xuiRequest(
       try {
         const json = JSON.parse(text);
         console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
-        if (action === 'get_packages') {
-          const sample = JSON.stringify(json).substring(0, 300);
-          console.log(`[XUI] Packages sample: ${sample}`);
+        if (action === 'get_packages' || xui_action === 'get_packages') {
+          // Log full first entry to understand structure
+          const entries = Object.entries(json);
+          if (entries.length > 0) {
+            const [firstKey, firstVal] = entries[0];
+            console.log(`[XUI] Package entry key="${firstKey}" fields=${JSON.stringify(firstVal).substring(0, 500)}`);
+          }
         }
         return json;
       } catch {
