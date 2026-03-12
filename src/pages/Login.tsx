@@ -40,8 +40,8 @@ export default function Login() {
 
         <div className="w-full max-w-md relative z-10">
           {branding?.logo_url && (
-            <div className="flex justify-center -mb-4">
-              <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-36 h-36 object-contain" />
+          <div className="flex justify-center -mb-6">
+              <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-56 h-56 object-contain" />
             </div>
           )}
           {branding?.panel_name && (
