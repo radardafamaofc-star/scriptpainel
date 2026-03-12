@@ -6,18 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import xsyncLogo from "@/assets/xsync-logo.png";
-import { Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
+import { Eye, EyeOff, LogIn } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
   const navigate = useNavigate();
 
   const { data: branding } = useQuery({
@@ -35,22 +33,11 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-
-    if (isLogin) {
-      const { error } = await signIn(email, password);
-      if (error) {
-        toast.error("Erro ao entrar", { description: error.message });
-      } else {
-        navigate("/");
-      }
+    const { error } = await signIn(email, password);
+    if (error) {
+      toast.error("Erro ao entrar", { description: error.message });
     } else {
-      const { error } = await signUp(email, password, displayName);
-      if (error) {
-        toast.error("Erro ao cadastrar", { description: error.message });
-      } else {
-        toast.success("Conta criada!", { description: "Verifique seu email para confirmar." });
-        setIsLogin(true);
-      }
+      navigate("/");
     }
     setSubmitting(false);
   };
@@ -67,25 +54,11 @@ export default function Login() {
           <div className="flex flex-col items-center mb-8">
             <img src={branding?.logo_url || xsyncLogo} alt={branding?.panel_name || "xSync"} className="w-14 h-14 mb-4 object-contain" />
             <h1 className="text-2xl font-bold text-foreground">{branding?.panel_name || "xSync"} Panel</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {isLogin ? "Entre na sua conta" : "Crie sua conta"}
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">Entre na sua conta</p>
           </div>
 
           <div className="glass-card p-8">
             <form onSubmit={handleSubmit} className="space-y-5">
-              {!isLogin && (
-                <div>
-                  <Label className="text-muted-foreground text-sm">Nome</Label>
-                  <Input
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Seu nome"
-                    className="bg-secondary border-border mt-1.5"
-                  />
-                </div>
-              )}
-
               <div>
                 <Label className="text-muted-foreground text-sm">Email</Label>
                 <Input
@@ -127,28 +100,13 @@ export default function Login() {
               >
                 {submitting ? (
                   <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                ) : isLogin ? (
-                  <>
-                    <LogIn className="h-4 w-4 mr-2" /> Entrar
-                  </>
                 ) : (
                   <>
-                    <UserPlus className="h-4 w-4 mr-2" /> Cadastrar
+                    <LogIn className="h-4 w-4 mr-2" /> Entrar
                   </>
                 )}
               </Button>
             </form>
-
-            <div className="mt-6 text-center">
-              <button
-                onClick={() => setIsLogin(!isLogin)}
-                className="text-sm text-muted-foreground hover:text-primary transition-colors"
-              >
-                {isLogin
-                  ? "Não tem conta? Cadastre-se"
-                  : "Já tem conta? Entre"}
-              </button>
-            </div>
           </div>
         </div>
       </div>
