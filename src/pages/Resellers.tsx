@@ -551,7 +551,6 @@ function ResellerRow({
             {(rRole === "admin" || rRole === "reseller_ultra") ? "∞ ilimitados" : Number(r.balance).toLocaleString("pt-BR")}
           </span>
         </td>
-        </td>
 
         {/* Datas */}
         <td className="px-5 py-3">
