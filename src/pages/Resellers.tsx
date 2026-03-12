@@ -144,7 +144,6 @@ export default function Resellers() {
   // Create reseller via edge function (no session switch!)
   const createMutation = useMutation({
     mutationFn: async (f: ResellerForm) => {
-      const { data: { session } } = await supabase.auth.getSession();
       const res = await supabase.functions.invoke("create-reseller", {
         body: {
           email: f.email,
