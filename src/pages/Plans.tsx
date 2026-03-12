@@ -36,17 +36,22 @@ const emptyForm: PlanForm = {
   max_connections: 2, bouquets: 0, template: "",
 };
 
-function durationToDays(value: number, unit: DurationUnit): number {
+function durationToHours(value: number, unit: DurationUnit): number {
   switch (unit) {
-    case "hours": return Math.max(1, Math.round(value / 24));
-    case "days": return value;
-    case "months": return value * 30;
-    case "years": return value * 365;
+    case "hours": return value;
+    case "days": return value * 24;
+    case "months": return value * 30 * 24;
+    case "years": return value * 365 * 24;
   }
 }
 
-function durationLabel(days: number): string {
-  if (days < 1) return "< 1 Dia";
+function durationToDays(value: number, unit: DurationUnit): number {
+  return Math.max(1, Math.round(durationToHours(value, unit) / 24));
+}
+
+function durationLabel(hours: number): string {
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
   if (days === 1) return "1 Dia";
   if (days < 30) return `${days} Dias`;
   if (days < 60) return "1 Mês";
@@ -88,9 +93,10 @@ export default function Plans() {
         name: f.name,
         max_connections: f.max_connections,
         duration_days: durationToDays(f.duration_value, f.duration_unit),
+        duration_hours: durationToHours(f.duration_value, f.duration_unit),
         is_test: f.is_test,
         price: f.price,
-        bouquets: f.bouquets,
+        bouquets: f.credits,
         server_id: f.server_id || null,
         template: f.template || null,
       };
@@ -125,11 +131,12 @@ export default function Plans() {
   const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
 
   const openEdit = (plan: any) => {
-    const days = plan.duration_days;
-    let unit: DurationUnit = "days";
-    let value = days;
-    if (days >= 365 && days % 365 === 0) { unit = "years"; value = days / 365; }
-    else if (days >= 30 && days % 30 === 0) { unit = "months"; value = days / 30; }
+    const hours = plan.duration_hours || (plan.duration_days * 24);
+    let unit: DurationUnit = "hours";
+    let value = hours;
+    if (hours >= 365 * 24 && hours % (365 * 24) === 0) { unit = "years"; value = hours / (365 * 24); }
+    else if (hours >= 30 * 24 && hours % (30 * 24) === 0) { unit = "months"; value = hours / (30 * 24); }
+    else if (hours >= 24 && hours % 24 === 0) { unit = "days"; value = hours / 24; }
 
     setEditId(plan.id);
     setForm({
@@ -139,7 +146,7 @@ export default function Plans() {
       status: "active",
       is_test: Boolean(plan.is_test),
       price: Number(plan.price),
-      credits: 1,
+      credits: plan.bouquets || 0,
       duration_value: value,
       duration_unit: unit,
       max_connections: plan.max_connections,
@@ -379,7 +386,7 @@ export default function Plans() {
                     </td>
                     <td className="px-4 py-3 text-foreground">{plan.bouquets || 0}</td>
                     <td className="px-4 py-3 text-foreground">{plan.max_connections}</td>
-                    <td className="px-4 py-3 text-foreground">{durationLabel(plan.duration_days)}</td>
+                    <td className="px-4 py-3 text-foreground">{durationLabel(plan.duration_hours || plan.duration_days * 24)}</td>
                     <td className="px-4 py-3 text-foreground">0</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1.5">
