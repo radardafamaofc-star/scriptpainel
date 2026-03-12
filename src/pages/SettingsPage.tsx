@@ -103,7 +103,7 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <Label className="text-muted-foreground text-sm">Nome</Label>
-              <Input value={displayName} onChange={e => setDisplayName(e.target.value)} className="bg-secondary border-border mt-1" />
+              <Input value={displayName} onChange={e => setDisplayName(e.target.value)} className="bg-secondary border-border mt-1 text-foreground" />
             </div>
             <div>
               <Label className="text-muted-foreground text-sm">Email</Label>
