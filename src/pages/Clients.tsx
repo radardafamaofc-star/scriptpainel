@@ -223,7 +223,48 @@ export default function Clients() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const toggleStatusMutation = useMutation({
+  const [bulkDeleteDialog, setBulkDeleteDialog] = useState<{ type: "expired" | "active" | "tests"; count: number } | null>(null);
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (type: "expired" | "active" | "tests") => {
+      if (type === "tests") {
+        const ids = testLines.map((t: any) => t.id);
+        if (ids.length === 0) return;
+        const { error } = await supabase.from("test_lines").delete().in("id", ids);
+        if (error) throw error;
+      } else if (type === "expired") {
+        const expiredIds = clients.filter((c: any) => getClientStatus(c) === "expired").map((c: any) => c.id);
+        if (expiredIds.length === 0) return;
+        const { error } = await supabase.from("clients").delete().in("id", expiredIds);
+        if (error) throw error;
+      } else if (type === "active") {
+        const activeIds = clients.filter((c: any) => getClientStatus(c) === "active").map((c: any) => c.id);
+        if (activeIds.length === 0) return;
+        const { error } = await supabase.from("clients").delete().in("id", activeIds);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      toast({ title: "Itens removidos com sucesso!" });
+      setBulkDeleteDialog(null);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const handleBulkDelete = (type: "expired" | "active" | "tests") => {
+    let count = 0;
+    if (type === "tests") count = testLines.length;
+    else if (type === "expired") count = clients.filter((c: any) => getClientStatus(c) === "expired").length;
+    else if (type === "active") count = clients.filter((c: any) => getClientStatus(c) === "active").length;
+    if (count === 0) {
+      toast({ title: "Nenhum item encontrado para remover." });
+      return;
+    }
+    setBulkDeleteDialog({ type, count });
+  };
+
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const newStatus = status === "active" ? "suspended" : "active";
       const { error } = await supabase.from("clients").update({ status: newStatus }).eq("id", id);
