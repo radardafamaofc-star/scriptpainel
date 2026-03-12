@@ -420,6 +420,17 @@ export default function Clients() {
               <SelectItem value="test">Testes</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={filterServer} onValueChange={setFilterServer}>
+            <SelectTrigger className="w-44 bg-card border-border">
+              <SelectValue placeholder="Servidor" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Servidores</SelectItem>
+              {servers.map(s => (
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Dialog for create/edit */}
