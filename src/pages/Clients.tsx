@@ -265,6 +265,7 @@ export default function Clients() {
     setBulkDeleteDialog({ type, count });
   };
 
+  const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const newStatus = status === "active" ? "suspended" : "active";
       const { error } = await supabase.from("clients").update({ status: newStatus }).eq("id", id);
