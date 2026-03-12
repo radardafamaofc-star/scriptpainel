@@ -189,6 +189,7 @@ export default function Dashboard() {
     setTestDialogOpen(true);
   };
 
+  if (isLoading) {
     return (
       <Layout>
         <div className="flex items-center justify-center py-20">
