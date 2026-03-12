@@ -571,8 +571,52 @@ export default function Clients() {
               ))}
             </SelectContent>
           </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="border-destructive/50 text-destructive hover:bg-destructive/10">
+                <Trash2 className="h-4 w-4 mr-1" /> Apagar em Massa
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => handleBulkDelete("expired")} className="text-warning">
+                <AlertTriangle className="h-4 w-4 mr-2" /> Todos Expirados
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleBulkDelete("active")} className="text-success">
+                <CheckCircle className="h-4 w-4 mr-2" /> Todos Ativos
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => handleBulkDelete("tests")} className="text-primary">
+                <Key className="h-4 w-4 mr-2" /> Todos Testes
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           </div>
         </div>
+
+        {/* Bulk delete confirmation */}
+        <AlertDialog open={!!bulkDeleteDialog} onOpenChange={(v) => { if (!v) setBulkDeleteDialog(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-destructive">Confirmar exclusão em massa</AlertDialogTitle>
+              <AlertDialogDescription>
+                Você está prestes a apagar <strong>{bulkDeleteDialog?.count}</strong>{" "}
+                {bulkDeleteDialog?.type === "expired" ? "clientes expirados" : bulkDeleteDialog?.type === "active" ? "clientes ativos" : "testes"}.
+                <br />Esta ação é <strong>irreversível</strong>.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => bulkDeleteDialog && bulkDeleteMutation.mutate(bulkDeleteDialog.type)}
+                disabled={bulkDeleteMutation.isPending}
+              >
+                {bulkDeleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+                Apagar {bulkDeleteDialog?.count} itens
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Dialog for create/edit */}
         <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
