@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  DollarSign, BarChart3, Tag
+  DollarSign, BarChart3, Tag, Palette
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
