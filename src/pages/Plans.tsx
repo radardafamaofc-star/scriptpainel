@@ -27,12 +27,13 @@ interface PlanForm {
   duration_unit: DurationUnit;
   max_connections: number;
   bouquets: number;
+  template: string;
 }
 
 const emptyForm: PlanForm = {
   name: "", server_id: "", order: 0, status: "active", is_test: false,
   price: 0, credits: 1, duration_value: 1, duration_unit: "months",
-  max_connections: 2, bouquets: 0,
+  max_connections: 2, bouquets: 0, template: "",
 };
 
 function durationToDays(value: number, unit: DurationUnit): number {
