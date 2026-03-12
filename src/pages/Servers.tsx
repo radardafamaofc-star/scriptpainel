@@ -21,10 +21,11 @@ interface ServerForm {
   api_version: string;
   use_proxy: boolean;
   max_clients: number;
+  template: string;
 }
 
 const emptyForm: ServerForm = {
-  name: "", url: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500,
+  name: "", url: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500, template: DEFAULT_TEMPLATE,
 };
 
 function parseUrl(url: string) {
