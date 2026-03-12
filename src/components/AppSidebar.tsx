@@ -4,7 +4,6 @@ import {
 "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
-import xsyncLogoDefault from "@/assets/xsync-logo.png";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useBranding } from "@/hooks/use-branding";
@@ -44,8 +43,8 @@ export function AppSidebar() {
 
   const { data: branding } = useBranding();
 
-  const logoSrc = branding?.logo_url || xsyncLogoDefault;
-  const panelName = branding?.panel_name || "xSync";
+  const logoSrc = branding?.logo_url || null;
+  const panelName = branding?.panel_name || "";
 
   const displayName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Usuário";
 
@@ -104,15 +103,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-        <img src={logoSrc} alt={panelName} className="w-8 h-8 object-contain" />
-        {!collapsed &&
-        <div>
-            <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
-            <p className="text-[10px] text-sidebar-foreground uppercase tracking-widest">Panel</p>
-          </div>
-        }
-      </div>
+      {(logoSrc || panelName) && (
+        <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
+          {logoSrc && <img src={logoSrc} alt={panelName || "Painel"} className="w-8 h-8 object-contain" />}
+          {!collapsed && panelName && (
+            <div>
+              <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
+              <p className="text-[10px] text-sidebar-foreground uppercase tracking-widest">Panel</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {!collapsed && user &&
       <div className="px-4 py-3 border-b border-sidebar-border">

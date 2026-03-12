@@ -7,14 +7,14 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import xsyncLogoDefault from "@/assets/xsync-logo.png";
+
 import { BRANDING_QUERY_KEY, BrandingSettings, cacheBranding, useBranding } from "@/hooks/use-branding";
 
 export default function Estilo() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [panelName, setPanelName] = useState("xSync");
+  const [panelName, setPanelName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -22,7 +22,7 @@ export default function Estilo() {
 
   useEffect(() => {
     if (branding) {
-      setPanelName(branding.panel_name || "xSync");
+      setPanelName(branding.panel_name || "");
       setPreviewUrl(branding.logo_url || null);
     }
   }, [branding]);
@@ -103,11 +103,11 @@ export default function Estilo() {
           <div className="flex items-center gap-6">
             {/* Preview */}
             <div className="w-20 h-20 rounded-xl border border-border bg-secondary flex items-center justify-center overflow-hidden relative">
-              <img
-                src={previewUrl || xsyncLogoDefault}
-                alt="Logo"
-                className="w-16 h-16 object-contain"
-              />
+              {previewUrl ? (
+                <img src={previewUrl} alt="Logo" className="w-16 h-16 object-contain" />
+              ) : (
+                <span className="text-xs text-muted-foreground">Sem logo</span>
+              )}
               {previewUrl && (
                 <button
                   onClick={removeLogo}
