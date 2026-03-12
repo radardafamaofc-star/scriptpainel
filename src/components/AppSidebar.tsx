@@ -39,7 +39,7 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, role } = useAuth();
+  const { signOut, role, user, loading } = useAuth();
 
   const { data: branding } = useQuery({
     queryKey: ["panel-settings", "branding"],
@@ -52,6 +52,29 @@ export function AppSidebar() {
 
   const logoSrc = branding?.logo_url || xsyncLogoDefault;
   const panelName = branding?.panel_name || "xSync";
+
+  const displayName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Usuário";
+
+  const { data: myBalance = 0 } = useQuery({
+    queryKey: ["my-reseller-balance", user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+      const { data } = await supabase
+        .from("resellers")
+        .select("balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return Number(data?.balance || 0);
+    },
+    enabled: !!user && !loading && role !== "admin" && role !== "reseller_ultra",
+    staleTime: 30000,
+  });
+
+  const creditsLabel = loading
+    ? "Carregando créditos..."
+    : (role === "admin" || role === "reseller_ultra")
+      ? "∞ créditos ilimitados"
+      : `${myBalance.toLocaleString("pt-BR")} créditos`;
 
   const filterByRole = (items: typeof mainItems) =>
     items.filter((item) => !role || item.roles.includes(role));
@@ -96,6 +119,14 @@ export function AppSidebar() {
           </div>
         )}
       </div>
+
+      {!collapsed && user && (
+        <div className="px-4 py-3 border-b border-sidebar-border">
+          <p className="text-sm font-medium text-sidebar-accent-foreground truncate">{displayName}</p>
+          <p className="text-xs text-sidebar-foreground/80 mt-0.5">{creditsLabel}</p>
+        </div>
+      )}
+
       <SidebarContent className="pt-2">
         <SidebarGroup>
           {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Principal</SidebarGroupLabel>}
