@@ -538,18 +538,13 @@ export default function Clients() {
               <DialogTitle className="text-foreground">{editId ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
             </DialogHeader>
 
-            {/* Tabs: Detalhes */}
-            <div className="border-b border-border mb-4">
-              <span className="text-primary font-medium text-sm pb-2 border-b-2 border-primary inline-block">Detalhes</span>
-            </div>
-
-            <div className="space-y-4">
+            <div className="space-y-5">
               {/* Server Select */}
               <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Servidor <span className="text-destructive">*</span></Label>
+                <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Servidor <span className="text-destructive">*</span></Label>
                 <Select value={form.server_id} onValueChange={v => setForm(prev => ({ ...prev, server_id: v, plan_id: "" }))}>
                   <SelectTrigger className="bg-secondary border-border">
-                    <SelectValue placeholder="Selecione" />
+                    <SelectValue placeholder="Selecione o servidor" />
                   </SelectTrigger>
                   <SelectContent>
                     {servers.map(s => (
@@ -559,13 +554,13 @@ export default function Clients() {
                 </Select>
               </div>
 
-              {/* Plan Select - shown after server is selected */}
+              {/* Plan Select */}
               {form.server_id && (
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Plano <span className="text-destructive">*</span></Label>
+                  <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Plano <span className="text-destructive">*</span></Label>
                   <Select value={form.plan_id} onValueChange={onPlanChange}>
                     <SelectTrigger className="bg-secondary border-border">
-                      <SelectValue placeholder="Selecione" />
+                      <SelectValue placeholder="Selecione o plano" />
                     </SelectTrigger>
                     <SelectContent>
                       {paidPlans.length > 0 && (
@@ -573,12 +568,7 @@ export default function Clients() {
                           <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider">Pago</SelectLabel>
                           {paidPlans.map((p: any) => (
                             <SelectItem key={p.id} value={p.id}>
-                              <div className="flex items-center justify-between w-full gap-4">
-                                <span>{getServerName(p.server_id)} • {p.name}</span>
-                                <span className="text-xs text-muted-foreground ml-auto">
-                                  {p.max_connections} conexões&nbsp;&nbsp;{p.bouquets} créditos
-                                </span>
-                              </div>
+                              {getServerName(p.server_id)} • {p.name} • {formatPlanDuration(p)}
                             </SelectItem>
                           ))}
                         </SelectGroup>
@@ -588,10 +578,7 @@ export default function Clients() {
                           <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider">Teste</SelectLabel>
                           {testPlansForDialog.map((p: any) => (
                             <SelectItem key={p.id} value={p.id}>
-                              <div className="flex items-center justify-between w-full gap-4">
-                                <span>{getServerName(p.server_id)} • {p.name}</span>
-                                <span className="text-xs text-muted-foreground ml-auto">Teste</span>
-                              </div>
+                              {getServerName(p.server_id)} • {p.name} • {formatPlanDuration(p)}
                             </SelectItem>
                           ))}
                         </SelectGroup>
@@ -601,37 +588,169 @@ export default function Clients() {
                 </div>
               )}
 
-              {/* Username/Password - auto-generated, shown for edit or after plan selected */}
-              {(editId || form.plan_id) && (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
+              {/* === Plan details section — shown after plan is selected === */}
+              {form.plan_id && (() => {
+                const selectedPlan = plans.find((p: any) => p.id === form.plan_id);
+                if (!selectedPlan) return null;
+                const isTest = selectedPlan.is_test;
+                const planPrice = Number(selectedPlan.price || 0);
+                const totalPrice = form.custom_price ? Number(form.custom_price) : planPrice * form.max_connections;
+
+                return (
+                  <>
+                    {/* Connections */}
                     <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">Usuário</Label>
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Conexões <span className="text-destructive">*</span></Label>
+                      <div className="flex items-center gap-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-r-none border-border"
+                          onClick={() => setForm(prev => ({ ...prev, max_connections: Math.max(1, prev.max_connections - 1) }))}
+                          disabled={form.max_connections <= 1}
+                        >
+                          <Minus className="h-4 w-4" />
+                        </Button>
+                        <Input
+                          type="number"
+                          min={1}
+                          className="bg-secondary border-border rounded-none text-center w-20 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          value={form.max_connections}
+                          onChange={e => setForm(prev => ({ ...prev, max_connections: Math.max(1, parseInt(e.target.value) || 1) }))}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="h-10 w-10 rounded-l-none border-border"
+                          onClick={() => setForm(prev => ({ ...prev, max_connections: prev.max_connections + 1 }))}
+                        >
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-primary">
+                        <Info className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+                        Este pacote vem com {selectedPlan.max_connections} conexão(ões). Você pode ajustar conforme necessário.
+                      </div>
+                    </div>
+
+                    {/* Credits info */}
+                    {selectedPlan.bouquets > 0 && (
+                      <div className="rounded-md border border-accent/30 bg-accent/5 px-3 py-2 text-xs text-accent-foreground">
+                        <Info className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+                        Custo: {selectedPlan.bouquets} crédito(s) por conexão
+                      </div>
+                    )}
+
+                    {/* Username */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Usuário <span className="text-destructive">*</span></Label>
                       <div className="flex gap-1">
-                        <Input className="bg-secondary border-border" value={form.username} onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))} />
+                        <Input className="bg-secondary border-border font-mono" value={form.username} onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))} />
                         {!editId && (
                           <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const u = await genUser(); setForm(prev => ({ ...prev, username: u })); }}>
                             <RefreshCw className="h-3 w-3" />
                           </Button>
                         )}
                       </div>
+                      <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+                        <p>• Pode conter letras, números e traços</p>
+                        <p>• Mínimo de 6 caracteres</p>
+                      </div>
                     </div>
+
+                    {/* Password */}
                     <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">{editId ? "Nova Senha (vazio = manter)" : "Senha"}</Label>
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">{editId ? "Nova Senha (vazio = manter)" : "Senha"} <span className="text-destructive">*</span></Label>
                       <div className="flex gap-1">
                         <Input className="bg-secondary border-border font-mono" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} />
                         <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const p = await genPass(); setForm(prev => ({ ...prev, password: p })); }}>
-                          <Key className="h-3 w-3" />
+                          <RefreshCw className="h-3 w-3" />
                         </Button>
                       </div>
+                      <div className="rounded-md border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+                        <p>• Pode conter letras, números, traços e underline</p>
+                        <p>• Mínimo de 6 caracteres</p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Email (opcional)</Label>
-                    <Input type="email" placeholder="cliente@email.com" className="bg-secondary border-border" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} />
-                  </div>
-                </>
-              )}
+
+                    {/* Expiry Date */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Vencimento (Opcional)</Label>
+                      <p className="text-xs text-muted-foreground">Deixe em branco para calcular a data com base na duração do plano.</p>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <Input
+                          type="datetime-local"
+                          className="bg-secondary border-border pl-10"
+                          value={form.expiry_date}
+                          onChange={e => setForm(prev => ({ ...prev, expiry_date: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Custom Price */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Valor do Plano</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        placeholder={`Opcional, usar valor do plano (R$ ${planPrice.toFixed(2)})`}
+                        className="bg-secondary border-border"
+                        value={form.custom_price}
+                        onChange={e => setForm(prev => ({ ...prev, custom_price: e.target.value }))}
+                      />
+                    </div>
+
+                    {/* Price summary */}
+                    <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2.5 text-xs text-primary font-medium">
+                      <Info className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+                      O cliente pagará <strong>R$ {totalPrice.toFixed(2)}</strong> por {form.max_connections} conexão(ões) — calculado com base nas configurações atuais do plano.
+                    </div>
+
+                    {/* Separator */}
+                    <div className="border-t border-border" />
+
+                    {/* Personal data section */}
+                    <div className="rounded-md border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-muted-foreground">
+                      <Lock className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+                      Apenas você pode visualizar os dados pessoais deste cliente.
+                    </div>
+
+                    {/* Name */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Nome</Label>
+                      <Input placeholder="Opcional" className="bg-secondary border-border" value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} />
+                    </div>
+
+                    {/* Email */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">E-mail</Label>
+                      <Input type="email" placeholder="Opcional" className="bg-secondary border-border" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} />
+                    </div>
+
+                    {/* Telegram */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Telegram</Label>
+                      <Input placeholder="Opcional" className="bg-secondary border-border" value={form.telegram} onChange={e => setForm(prev => ({ ...prev, telegram: e.target.value }))} />
+                    </div>
+
+                    {/* WhatsApp */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">WhatsApp</Label>
+                      <Input placeholder="Opcional" className="bg-secondary border-border" value={form.whatsapp} onChange={e => setForm(prev => ({ ...prev, whatsapp: e.target.value }))} />
+                      <p className="text-xs text-muted-foreground">Incluindo o código do país - com ou sem espaço e traços - ex. 55 11 99999 3333</p>
+                    </div>
+
+                    {/* Observations */}
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs font-semibold uppercase tracking-wider">Observações</Label>
+                      <Textarea placeholder="Opcional" className="bg-secondary border-border min-h-[80px]" value={form.notes} onChange={e => setForm(prev => ({ ...prev, notes: e.target.value }))} />
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             <DialogFooter className="flex-col items-center gap-3 mt-4">
