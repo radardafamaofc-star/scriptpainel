@@ -36,6 +36,7 @@ export default function Clients() {
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [filterServer, setFilterServer] = useState<string>("all");
   const [detailsClient, setDetailsClient] = useState<any>(null);
   const [convertDialog, setConvertDialog] = useState<any>(null);
   const [convertPlanId, setConvertPlanId] = useState("");
