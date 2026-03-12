@@ -39,14 +39,14 @@ export default function Login() {
         </div>
 
         <div className="w-full max-w-md relative z-10">
-          <div className="flex flex-col items-center mb-0">
-            {branding?.logo_url && (
+          {branding?.logo_url && (
+            <div className="flex justify-center -mb-4">
               <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-36 h-36 object-contain" />
-            )}
-            {branding?.panel_name ? (
-              <h1 className="text-2xl font-bold text-foreground">{branding.panel_name}</h1>
-            ) : null}
-          </div>
+            </div>
+          )}
+          {branding?.panel_name && (
+            <h1 className="text-2xl font-bold text-foreground text-center mb-2">{branding.panel_name}</h1>
+          )}
 
           <div className="glass-card p-8">
             <form onSubmit={handleSubmit} className="space-y-5">
