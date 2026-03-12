@@ -32,19 +32,19 @@ export default function Login() {
 
   return (
     <div className="dark">
-      <div className="min-h-screen flex items-start justify-center bg-background p-4 pt-10">
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl" />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl" />
         </div>
 
         <div className="w-full max-w-md relative z-10">
-          <div className="flex flex-col items-center mb-3">
+          <div className="flex flex-col items-center mb-0">
             {branding?.logo_url && (
-              <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-full max-w-[380px] h-auto object-contain" />
+              <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-36 h-36 object-contain" />
             )}
             {branding?.panel_name ? (
-              <h1 className="text-2xl font-bold text-foreground mt-1">{branding.panel_name}</h1>
+              <h1 className="text-2xl font-bold text-foreground">{branding.panel_name}</h1>
             ) : null}
           </div>
 
