@@ -11,9 +11,17 @@ const BRANDING_STORAGE_KEY = "panel-branding-cache-v1";
 
 const normalizeBranding = (value: unknown): BrandingSettings => {
   const obj = (value ?? {}) as Partial<BrandingSettings>;
+  const panel_name = typeof obj.panel_name === "string" && obj.panel_name.trim() ? obj.panel_name.trim() : "";
+  const logo_url = typeof obj.logo_url === "string" && obj.logo_url.trim() ? obj.logo_url : null;
+
+  // Compatibilidade com branding antigo padrão: nunca exibir xSync como fallback
+  if (panel_name.toLowerCase() === "xsync") {
+    return { logo_url: null, panel_name: "" };
+  }
+
   return {
-    logo_url: typeof obj.logo_url === "string" && obj.logo_url.trim() ? obj.logo_url : null,
-    panel_name: typeof obj.panel_name === "string" && obj.panel_name.trim() ? obj.panel_name : "",
+    logo_url,
+    panel_name,
   };
 };
 
