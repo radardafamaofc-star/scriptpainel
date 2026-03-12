@@ -366,28 +366,29 @@ export default function Servers() {
         ) : (
           <div className="grid gap-4">
             {servers.map((server) => (
-              <div key={server.id} className="glass-card p-5 flex items-center justify-between animate-slide-in">
-                <div className="flex items-center gap-4">
-                  <div className={`p-3 rounded-xl ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                    {server.status === "online" ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+              <div key={server.id} className="glass-card p-4 sm:p-5 animate-slide-in">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 sm:gap-4">
+                    <div className={`p-2.5 sm:p-3 rounded-xl ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                      {server.status === "online" ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">{server.name}</h3>
+                      <p className="text-sm text-muted-foreground font-mono truncate max-w-[200px] sm:max-w-none">{server.host}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{server.name}</h3>
-                    <p className="text-sm text-muted-foreground font-mono">{server.host}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-8">
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Máx. Clientes</p>
-                    <p className="text-sm font-semibold text-foreground">{server.max_clients}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Uptime</p>
-                    <p className="text-sm font-semibold text-foreground">{server.uptime || "N/A"}</p>
-                  </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
-                    {server.status === "online" ? "ONLINE" : "OFFLINE"}
-                  </span>
+                  <div className="flex items-center gap-4 sm:gap-8 ml-12 sm:ml-0">
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs text-muted-foreground">Máx. Clientes</p>
+                      <p className="text-sm font-semibold text-foreground">{server.max_clients}</p>
+                    </div>
+                    <div className="text-left sm:text-right">
+                      <p className="text-xs text-muted-foreground">Uptime</p>
+                      <p className="text-sm font-semibold text-foreground">{server.uptime || "N/A"}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
+                      {server.status === "online" ? "ONLINE" : "OFFLINE"}
+                    </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
