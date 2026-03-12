@@ -104,13 +104,10 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       {(logoSrc || panelName) && (
-        <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-          {logoSrc && <img src={logoSrc} alt={panelName || "Painel"} className="w-10 h-10 object-contain" />}
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-border">
+          {logoSrc && <img src={logoSrc} alt={panelName || "Painel"} className="w-12 h-12 object-contain" />}
           {!collapsed && panelName && (
-            <div>
-              <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
-              <p className="text-[10px] text-sidebar-foreground uppercase tracking-widest">Panel</p>
-            </div>
+            <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
           )}
         </div>
       )}
