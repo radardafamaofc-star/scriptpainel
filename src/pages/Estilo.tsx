@@ -7,7 +7,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import xsyncLogoDefault from "@/assets/xsync-logo.png";
+
 import { BRANDING_QUERY_KEY, BrandingSettings, cacheBranding, useBranding } from "@/hooks/use-branding";
 
 export default function Estilo() {
