@@ -14,7 +14,7 @@ export default function Estilo() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [panelName, setPanelName] = useState("xSync");
+  const [panelName, setPanelName] = useState("");
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
