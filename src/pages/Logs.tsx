@@ -1,25 +1,40 @@
 import { Layout } from "@/components/Layout";
-import { Search, Info, AlertTriangle, XCircle, CheckCircle } from "lucide-react";
+import { Search, Info, AlertTriangle, XCircle, CheckCircle, Loader2, ScrollText } from "lucide-react";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
 
-const mockLogs = [
-  { id: 1, time: "2026-03-12 14:32:10", type: "info", action: "Login", detail: "Admin fez login com sucesso", user: "admin" },
-  { id: 2, time: "2026-03-12 14:30:05", type: "success", action: "Cliente criado", detail: "joao_silva criado no Servidor Principal", user: "admin" },
-  { id: 3, time: "2026-03-12 14:28:00", type: "warning", action: "Sincronização", detail: "Servidor EU-West demorou 15s para responder", user: "system" },
-  { id: 4, time: "2026-03-12 14:25:30", type: "error", action: "Erro API", detail: "Falha ao conectar com Servidor EU-West", user: "system" },
-  { id: 5, time: "2026-03-12 14:20:00", type: "info", action: "Revendedor criado", detail: "revenda_ba criado com limite de 300 clientes", user: "admin" },
-  { id: 6, time: "2026-03-12 14:15:00", type: "success", action: "Renovação", detail: "maria_santos renovada por 30 dias", user: "revenda_sp" },
-  { id: 7, time: "2026-03-12 14:10:00", type: "info", action: "Sincronização", detail: "Servidor Principal sincronizado - 420 usuários", user: "system" },
-];
-
-const icons = { info: Info, success: CheckCircle, warning: AlertTriangle, error: XCircle };
+const icons: Record<string, any> = { info: Info, success: CheckCircle, warning: AlertTriangle, error: XCircle };
 const colors: Record<string, string> = { info: "text-primary", success: "text-success", warning: "text-warning", error: "text-destructive" };
 const bgColors: Record<string, string> = { info: "bg-primary/10", success: "bg-success/10", warning: "bg-warning/10", error: "bg-destructive/10" };
 
 export default function Logs() {
   const [search, setSearch] = useState("");
-  const filtered = mockLogs.filter(l => l.action.toLowerCase().includes(search.toLowerCase()) || l.detail.toLowerCase().includes(search.toLowerCase()));
+  const [filterType, setFilterType] = useState("all");
+
+  const { data: logs = [], isLoading } = useQuery({
+    queryKey: ["system-logs"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("system_logs")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: 15000,
+  });
+
+  const filtered = logs.filter((l: any) => {
+    const matchSearch = l.action.toLowerCase().includes(search.toLowerCase()) ||
+      (l.detail && l.detail.toLowerCase().includes(search.toLowerCase()));
+    const matchType = filterType === "all" || l.type === filterType;
+    return matchSearch && matchType;
+  });
 
   return (
     <Layout>
@@ -28,30 +43,59 @@ export default function Logs() {
           <h1 className="text-2xl font-bold text-foreground">Logs do Sistema</h1>
           <p className="text-sm text-muted-foreground mt-1">Registro de atividades</p>
         </div>
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Buscar logs..." className="pl-10 bg-card border-border" value={search} onChange={e => setSearch(e.target.value)} />
+
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Buscar logs..." className="pl-10 bg-card border-border" value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-36 bg-card border-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              <SelectItem value="info">Info</SelectItem>
+              <SelectItem value="success">Sucesso</SelectItem>
+              <SelectItem value="warning">Aviso</SelectItem>
+              <SelectItem value="error">Erro</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div className="space-y-2">
-          {filtered.map(log => {
-            const Icon = icons[log.type as keyof typeof icons];
-            return (
-              <div key={log.id} className="glass-card px-5 py-3 flex items-center gap-4 animate-slide-in">
-                <div className={`p-2 rounded-lg ${bgColors[log.type]}`}>
-                  <Icon className={`h-4 w-4 ${colors[log.type]}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{log.action}</span>
-                    <span className="text-xs text-muted-foreground">por {log.user}</span>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="glass-card p-12 text-center">
+            <ScrollText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-foreground">Nenhum log encontrado</h3>
+            <p className="text-sm text-muted-foreground mt-1">Os logs aparecerão conforme o sistema for utilizado</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filtered.map((log: any) => {
+              const Icon = icons[log.type] || Info;
+              return (
+                <div key={log.id} className="glass-card px-5 py-3 flex items-center gap-4 animate-slide-in">
+                  <div className={`p-2 rounded-lg ${bgColors[log.type] || bgColors.info}`}>
+                    <Icon className={`h-4 w-4 ${colors[log.type] || colors.info}`} />
                   </div>
-                  <p className="text-xs text-muted-foreground truncate">{log.detail}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-foreground">{log.action}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{log.detail || "—"}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">
+                    {format(new Date(log.created_at), "dd/MM/yyyy HH:mm:ss")}
+                  </span>
                 </div>
-                <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{log.time}</span>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </Layout>
   );
