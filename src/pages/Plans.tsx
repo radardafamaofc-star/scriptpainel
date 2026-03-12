@@ -277,6 +277,33 @@ export default function Plans() {
                   </p>
                 </div>
 
+                {/* Template (Opcional) */}
+                <div className="space-y-1.5 border border-dashed border-border rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-foreground text-xs">Template (Opcional)</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[10px] border-primary text-primary hover:bg-primary/10"
+                      onClick={() => handleChange("template", DEFAULT_TEMPLATE)}
+                    >
+                      <FileText className="h-3 w-3 mr-1" /> Aplicar Modelo
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-warning">Deixe em branco para usar o padrão no cadastro do servidor</p>
+                  <textarea
+                    className="w-full min-h-[120px] rounded-lg bg-secondary border border-border p-3 text-xs text-foreground font-mono resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={form.template}
+                    onChange={e => handleChange("template", e.target.value)}
+                    placeholder="Deixe em branco para usar o padrão no cadastro do servidor"
+                  />
+                  {!form.is_test && form.price > 0 && form.credits === 0 && (
+                    <div className="p-2 rounded bg-warning/10 border border-warning/30 text-xs text-warning">
+                      Você definiu este plano como um plano pago, mas não está cobrando nenhum crédito por este plano. Tem certeza de que deseja fazer isso?
+                    </div>
+                  )}
+                </div>
+
                 <Button
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={() => saveMutation.mutate(form)}

@@ -287,6 +287,28 @@ export default function Servers() {
                   </RadioGroup>
                 </div>
 
+                {/* Template */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-foreground text-sm font-medium">Template</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-primary text-primary hover:bg-primary/10"
+                      onClick={() => handleChange("template", DEFAULT_TEMPLATE)}
+                    >
+                      <FileText className="h-3 w-3 mr-1" /> Aplicar Modelo
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Você pode copiar o exemplo abaixo e colar na caixa acima.</p>
+                  <textarea
+                    className="w-full min-h-[200px] rounded-lg bg-secondary border border-border p-3 text-xs text-foreground font-mono resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={form.template}
+                    onChange={e => handleChange("template", e.target.value)}
+                    placeholder="Template do servidor..."
+                  />
+                </div>
+
                 {testResult && (
                   <div className={`p-3 rounded-lg text-sm ${testResult.success ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
                     {testResult.message}
