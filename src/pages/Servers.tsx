@@ -196,14 +196,14 @@ export default function Servers() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Servidores</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground">Servidores</h1>
             <p className="text-sm text-muted-foreground mt-1">Gerencie seus servidores XUI One</p>
           </div>
           <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
             <DialogTrigger asChild>
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 w-full sm:w-auto">
                 <Plus className="h-4 w-4 mr-2" /> Adicionar Servidor
               </Button>
             </DialogTrigger>

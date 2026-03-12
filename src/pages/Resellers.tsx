@@ -339,8 +339,8 @@ export default function Resellers() {
         </div>
 
         {/* Search + Pagination Info */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="relative max-w-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1 sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar revendedores..." className="pl-10 bg-card border-border h-9" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
