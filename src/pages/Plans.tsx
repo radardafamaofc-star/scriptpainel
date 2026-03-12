@@ -65,6 +65,7 @@ export default function Plans() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<PlanForm>(emptyForm);
   const [search, setSearch] = useState("");
+  const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -85,6 +86,37 @@ export default function Plans() {
       if (error) throw error;
       return data;
     },
+  });
+
+  // Fetch XUI packages when a server is selected
+  const { data: xuiPackages = [], isLoading: packagesLoading } = useQuery({
+    queryKey: ["xui-packages", form.server_id],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return [];
+      const res = await supabase.functions.invoke("xui-proxy", {
+        body: {
+          action: "xui_command",
+          server_id: form.server_id,
+          xui_action: "get_packages",
+        },
+      });
+      if (res.error) throw res.error;
+      const result = res.data;
+      if (!result?.success || !result?.data) return [];
+      // XUI returns packages as an object { "1": { id: 1, package_name: "..." }, ... }
+      const pkgs = result.data;
+      if (Array.isArray(pkgs)) return pkgs;
+      return Object.values(pkgs).map((p: any) => ({
+        id: String(p.id),
+        name: p.package_name || p.name || `Package ${p.id}`,
+        is_trial: p.is_trial === "1" || p.is_trial === 1,
+        is_official: p.is_official === "1" || p.is_official === 1,
+      }));
+    },
+    enabled: !!form.server_id && open,
+    staleTime: 30000,
+    retry: 1,
   });
 
   const saveMutation = useMutation({
@@ -128,7 +160,7 @@ export default function Plans() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
+  const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); setSelectedPackageId(""); };
 
   const openEdit = (plan: any) => {
     const hours = plan.duration_hours || (plan.duration_days * 24);
@@ -153,6 +185,7 @@ export default function Plans() {
       bouquets: plan.bouquets,
       template: (plan as any).template || "",
     });
+    setSelectedPackageId(String(plan.bouquets || ""));
     setOpen(true);
   };
 
@@ -200,7 +233,43 @@ export default function Plans() {
                   <p className="text-[10px] text-warning">O servidor não pode ser alterado depois de salvo.</p>
                 </div>
 
-                {/* Ordem */}
+                {/* ID do Plano no Servidor (XUI Packages) */}
+                {form.server_id && (
+                  <div className="space-y-1.5">
+                    <Label className="text-foreground text-xs">ID do Plano no Servidor *</Label>
+                    {packagesLoading ? (
+                      <div className="flex items-center gap-2 py-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Carregando pacotes do servidor...</span>
+                      </div>
+                    ) : xuiPackages.length === 0 ? (
+                      <div className="p-2 rounded bg-warning/10 border border-warning/30">
+                        <p className="text-xs text-warning">Nenhum pacote encontrado neste servidor. Verifique a configuração da API.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {xuiPackages.map((pkg: any) => (
+                          <label key={pkg.id} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="xui_package"
+                              className="accent-primary"
+                              checked={selectedPackageId === pkg.id}
+                              onChange={() => {
+                                setSelectedPackageId(pkg.id);
+                                handleChange("bouquets", parseInt(pkg.id) || 0);
+                              }}
+                            />
+                            <span className="text-sm text-foreground">{pkg.name}</span>
+                            <span className="text-xs text-muted-foreground">(ID {pkg.id})</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-primary">Selecione o pacote (package) configurado no XUI One para este plano.</p>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <Label className="text-foreground text-xs">Ordem</Label>
                   <Input type="number" className="bg-secondary border-border" value={form.order} onChange={e => handleChange("order", parseInt(e.target.value) || 0)} />
