@@ -155,8 +155,8 @@ export default function Dashboard() {
 
   const createTestMutation = useMutation({
     mutationFn: async (plan: { serverId: string | null; durationDays: number }) => {
-      const username = "test_" + Math.random().toString(36).substring(2, 8);
-      const password = Math.random().toString(36).substring(2, 10);
+      const { generateUsername, generatePassword } = await import("@/lib/credentials");
+      const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
       const hours = Math.max(1, Math.round((plan.durationDays || 1) * 24));
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + hours);

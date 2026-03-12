@@ -421,7 +421,7 @@ export default function Clients() {
                   <Label className="text-muted-foreground text-xs">{editId ? "Nova Senha (vazio = manter)" : "Senha"}</Label>
                   <div className="flex gap-1">
                     <Input className="bg-secondary border-border font-mono" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} />
-                    <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={() => setForm(prev => ({ ...prev, password: generatePassword() }))}>
+                    <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const p = await genPass(); setForm(prev => ({ ...prev, password: p })); }}>
                       <Key className="h-3 w-3" />
                     </Button>
                   </div>
