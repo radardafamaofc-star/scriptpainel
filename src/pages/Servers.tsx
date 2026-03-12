@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -13,16 +15,25 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface ServerForm {
   name: string;
-  host: string;
-  port: number;
-  access_code: string;
+  url: string;
   api_key: string;
+  api_version: string;
+  use_proxy: boolean;
   max_clients: number;
 }
 
 const emptyForm: ServerForm = {
-  name: "", host: "", port: 25461, access_code: "", api_key: "", max_clients: 500,
+  name: "", url: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500,
 };
+
+function parseUrl(url: string) {
+  try {
+    const u = new URL(url);
+    return { host: u.hostname, port: parseInt(u.port) || (u.protocol === 'https:' ? 443 : 80), path: u.pathname };
+  } catch {
+    return null;
+  }
+}
 
 export default function Servers() {
   const [open, setOpen] = useState(false);
@@ -46,13 +57,15 @@ export default function Servers() {
 
   const saveMutation = useMutation({
     mutationFn: async (formData: ServerForm) => {
+      const parsed = parseUrl(formData.url);
       const payload = {
         name: formData.name,
-        host: formData.host,
-        port: formData.port,
-        access_code: formData.access_code,
+        host: formData.url,
+        port: parsed?.port || 25461,
         api_key: formData.api_key,
+        access_code: formData.api_version,
         max_clients: formData.max_clients,
+        username: formData.use_proxy ? "proxy" : null,
       };
 
       if (editId) {
@@ -102,10 +115,10 @@ export default function Servers() {
     setEditId(server.id);
     setForm({
       name: server.name,
-      host: server.host,
-      port: server.port,
-      access_code: (server as any).access_code || "",
+      url: server.host,
       api_key: server.api_key || "",
+      api_version: (server as any).access_code || "1",
+      use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
     });
     setTestResult(null);
@@ -113,8 +126,8 @@ export default function Servers() {
   };
 
   const testConnection = async () => {
-    if (!form.host || !form.access_code || !form.api_key) {
-      toast({ title: "Preencha host, Access Code e API Key para testar", variant: "destructive" });
+    if (!form.url || !form.api_key) {
+      toast({ title: "Preencha URL/IP e Chave de API para testar", variant: "destructive" });
       return;
     }
     setTesting(true);
@@ -124,10 +137,10 @@ export default function Servers() {
         body: {
           action: "test_connection",
           server_config: {
-            host: form.host,
-            port: form.port,
-            access_code: form.access_code,
+            url: form.url,
             api_key: form.api_key,
+            api_version: form.api_version,
+            use_proxy: form.use_proxy,
           },
         },
       });
@@ -136,7 +149,6 @@ export default function Servers() {
 
       const result = res.data;
       if (result.success) {
-        const stats = result.data;
         setTestResult({
           success: true,
           message: `✅ Conectado ao XUI One com sucesso!`,
@@ -170,7 +182,7 @@ export default function Servers() {
     }
   };
 
-  const handleChange = (field: keyof ServerForm, value: string | number) => {
+  const handleChange = (field: keyof ServerForm, value: string | number | boolean) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
@@ -194,54 +206,81 @@ export default function Servers() {
                   {editId ? "Editar Servidor" : "Novo Servidor XUI One"}
                 </DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 mt-4">
+              <div className="space-y-5 mt-4">
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Nome do servidor</Label>
+                  <Label className="text-foreground text-sm font-medium">Nome do servidor</Label>
                   <Input placeholder="Ex: Servidor Principal" className="bg-secondary border-border" value={form.name} onChange={e => handleChange("name", e.target.value)} />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2 space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">IP ou Domínio</Label>
-                    <Input placeholder="bestdomain.com" className="bg-secondary border-border" value={form.host} onChange={e => handleChange("host", e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Porta</Label>
-                    <Input type="number" className="bg-secondary border-border" value={form.port} onChange={e => handleChange("port", parseInt(e.target.value) || 0)} />
-                  </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-sm font-medium">URL/IP</Label>
+                  <Input
+                    placeholder="O formato deve ser http://123.456.789.110/subdir ou http://example.com/subdir"
+                    className="bg-secondary border-border text-xs"
+                    value={form.url}
+                    onChange={e => handleChange("url", e.target.value)}
+                  />
+                  {editId && (
+                    <p className="text-xs text-muted-foreground">Oculto, deixe em branco para manter o mesmo</p>
+                  )}
                 </div>
 
-                <div className="p-3 rounded-lg bg-muted/50 border border-border space-y-3">
-                  <p className="text-xs text-muted-foreground font-medium">
-                    Credenciais da API — Obtidas em Management → Access Control → Access Codes e Perfil do Usuário
-                  </p>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">Access Code</Label>
-                    <Input placeholder="Ex: rnVKrSLe" className="bg-secondary border-border font-mono" value={form.access_code} onChange={e => handleChange("access_code", e.target.value)} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">API Key</Label>
-                    <div className="relative">
-                      <Input
-                        type={showApiKey ? "text" : "password"}
-                        placeholder="Ex: 1A2C5C80056A80F5AB6ECAD3937875DE"
-                        className="bg-secondary border-border font-mono pr-10"
-                        value={form.api_key}
-                        onChange={e => handleChange("api_key", e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      >
-                        {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </button>
-                    </div>
+                <div className="space-y-1.5">
+                  <Label className="text-foreground text-sm font-medium">Chave de API/Token</Label>
+                  <div className="relative">
+                    <Input
+                      type={showApiKey ? "text" : "password"}
+                      placeholder={editId ? "Oculto, deixe em branco para manter o mesmo" : "Cole sua API Key aqui"}
+                      className="bg-secondary border-border pr-10"
+                      value={form.api_key}
+                      onChange={e => handleChange("api_key", e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Máx. Clientes</Label>
-                  <Input type="number" className="bg-secondary border-border" value={form.max_clients} onChange={e => handleChange("max_clients", parseInt(e.target.value) || 0)} />
+                  <Label className="text-foreground text-sm font-medium">Versão da API</Label>
+                  <Select value={form.api_version} onValueChange={v => handleChange("api_version", v)}>
+                    <SelectTrigger className="bg-secondary border-border">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">1</SelectItem>
+                      <SelectItem value="2">2</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 mt-2">
+                    <p className="text-xs text-primary/80 leading-relaxed">
+                      Se estiver enfrentando problemas com a sincronização dos clientes, tente alterar a versão da API para a versão 2.
+                      <br />
+                      <span className="text-primary/60">Atenção: o uso da versão 2 causará um atraso ao criar/renovar clientes, pois pode levar até 5 minutos para um cliente ser ativado no servidor devido ao cache do XUI ONE.</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-foreground text-sm font-medium">Usar Proxy <span className="text-destructive">*</span></Label>
+                  <RadioGroup
+                    value={form.use_proxy ? "yes" : "no"}
+                    onValueChange={v => handleChange("use_proxy", v === "yes")}
+                    className="flex gap-6"
+                  >
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="no" id="proxy-no" />
+                      <Label htmlFor="proxy-no" className="text-sm text-foreground cursor-pointer">Não</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="yes" id="proxy-yes" />
+                      <Label htmlFor="proxy-yes" className="text-sm text-foreground cursor-pointer">Sim</Label>
+                    </div>
+                  </RadioGroup>
                 </div>
 
                 {testResult && (
@@ -251,17 +290,23 @@ export default function Servers() {
                 )}
 
                 <div className="flex gap-2 pt-2">
-                  <Button variant="outline" className="flex-1 border-border" onClick={testConnection} disabled={testing}>
+                  <Button
+                    variant="default"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={testConnection}
+                    disabled={testing}
+                  >
                     {testing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <TestTube className="h-4 w-4 mr-2" />}
                     Testar Conexão
                   </Button>
                   <Button
-                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                    variant="outline"
+                    className="flex-1 border-border"
                     onClick={() => saveMutation.mutate(form)}
-                    disabled={saveMutation.isPending || !form.name || !form.host || !form.access_code || !form.api_key}
+                    disabled={saveMutation.isPending || !form.name || !form.url || !form.api_key}
                   >
                     {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    {editId ? "Salvar Alterações" : "Adicionar"}
+                    {editId ? "Salvar Alterações" : "Adicionar Servidor"}
                   </Button>
                 </div>
               </div>
@@ -289,7 +334,7 @@ export default function Servers() {
                   </div>
                   <div>
                     <h3 className="font-semibold text-foreground">{server.name}</h3>
-                    <p className="text-sm text-muted-foreground font-mono">{server.host}:{server.port}</p>
+                    <p className="text-sm text-muted-foreground font-mono">{server.host}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-8">
