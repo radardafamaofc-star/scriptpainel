@@ -28,6 +28,7 @@ const financeItems = [
 
 const systemItems = [
   { title: "Logs", url: "/logs", icon: ScrollText, roles: ["admin"] },
+  { title: "Estilo", url: "/estilo", icon: Palette, roles: ["admin"] },
   { title: "Configurações", url: "/settings", icon: Settings, roles: ["admin"] },
 ];
 
