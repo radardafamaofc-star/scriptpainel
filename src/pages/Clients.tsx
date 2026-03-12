@@ -255,21 +255,50 @@ export default function Clients() {
     setOpen(true);
   };
 
+  const [stayOpen, setStayOpen] = useState(false);
+
+  const getPlanDurationHours = (plan: any): number => {
+    if (plan.duration_hours && plan.duration_hours > 0 && plan.duration_hours !== 720) return plan.duration_hours;
+    if (plan.duration_days && plan.duration_days > 0) return plan.duration_days * 24;
+    return plan.duration_hours || 720;
+  };
+
   const onPlanChange = (planId: string) => {
-    const plan = plans.find(p => p.id === planId);
+    const plan = plans.find((p: any) => p.id === planId);
     if (plan) {
+      const totalHours = getPlanDurationHours(plan);
       const expiry = new Date();
-      expiry.setDate(expiry.getDate() + plan.duration_days);
+      expiry.setTime(expiry.getTime() + totalHours * 60 * 60 * 1000);
       setForm(prev => ({
         ...prev,
         plan_id: planId,
         max_connections: plan.max_connections,
         server_id: plan.server_id || prev.server_id,
-        expiry_date: format(expiry, "yyyy-MM-dd"),
+        expiry_date: format(expiry, "yyyy-MM-dd'T'HH:mm"),
       }));
     } else {
       setForm(prev => ({ ...prev, plan_id: planId }));
     }
+  };
+
+  const formatPlanDuration = (plan: any): string => {
+    const hours = getPlanDurationHours(plan);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days} dias`;
+    const months = Math.round(days / 30);
+    if (months <= 12) return `${months} ${months === 1 ? 'mês' : 'meses'}`;
+    const years = Math.round(months / 12);
+    return `${years} ${years === 1 ? 'ano' : 'anos'}`;
+  };
+
+  const filteredPlans = plans.filter((p: any) => !form.server_id || p.server_id === form.server_id);
+  const paidPlans = filteredPlans.filter((p: any) => !p.is_test);
+  const testPlansForDialog = filteredPlans.filter((p: any) => p.is_test);
+
+  const getServerName = (serverId: string) => {
+    const s = servers.find((sv: any) => sv.id === serverId);
+    return s?.name || "";
   };
 
   const copyCredentials = (client: any) => {
