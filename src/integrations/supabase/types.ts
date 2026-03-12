@@ -212,6 +212,7 @@ export type Database = {
           created_at: string
           created_by: string
           duration_days: number
+          duration_hours: number
           id: string
           is_test: boolean
           max_connections: number
@@ -226,6 +227,7 @@ export type Database = {
           created_at?: string
           created_by: string
           duration_days?: number
+          duration_hours?: number
           id?: string
           is_test?: boolean
           max_connections?: number
@@ -240,6 +242,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           duration_days?: number
+          duration_hours?: number
           id?: string
           is_test?: boolean
           max_connections?: number
