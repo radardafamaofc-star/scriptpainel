@@ -90,7 +90,7 @@ export default function Dashboard() {
         creditsData.push({ name: dayStr, created: dc, used: du });
         creditsUsedData.push({ name: dayStr, value: du });
 
-        resellerGrowth.push({ name: dayStr, value: resellers.filter(r => new Date(r.created_at || "2020-01-01") <= day).length });
+        resellerGrowth.push({ name: dayStr, value: resellers.length });
 
         const tests = testsRes.data || [];
         testGrowth.push({ name: dayStr, value: tests.filter(t => new Date(t.created_at) <= day).length });
