@@ -41,6 +41,18 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { signOut, role } = useAuth();
 
+  const { data: branding } = useQuery({
+    queryKey: ["panel-settings", "branding"],
+    queryFn: async () => {
+      const { data } = await supabase.from("panel_settings").select("value").eq("key", "branding").single();
+      return data?.value as { logo_url: string | null; panel_name: string } | null;
+    },
+    staleTime: 60000,
+  });
+
+  const logoSrc = branding?.logo_url || xsyncLogoDefault;
+  const panelName = branding?.panel_name || "xSync";
+
   const filterByRole = (items: typeof mainItems) =>
     items.filter((item) => !role || item.roles.includes(role));
 
