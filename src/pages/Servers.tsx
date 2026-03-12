@@ -61,26 +61,39 @@ export default function Servers() {
   const saveMutation = useMutation({
     mutationFn: async (formData: ServerForm) => {
       const parsed = parseUrl(formData.url);
-      const payload = {
-        name: formData.name,
-        host: formData.url,
-        port: parsed?.port || 25461,
-        dns: formData.dns || null,
-        api_key: formData.api_key,
-        access_code: formData.api_version,
-        max_clients: formData.max_clients,
-        username: formData.use_proxy ? "proxy" : null,
-        template: formData.template || null,
-      };
 
       if (editId) {
-        const { error } = await supabase.from("servers").update(payload).eq("id", editId);
+        // Only update fields that were actually changed (non-empty)
+        const updates: Record<string, any> = {
+          name: formData.name,
+          max_clients: formData.max_clients,
+          username: formData.use_proxy ? "proxy" : null,
+          template: formData.template || null,
+        };
+        if (formData.url) {
+          updates.host = formData.url;
+          updates.port = parsed?.port || 25461;
+        }
+        if (formData.dns) updates.dns = formData.dns;
+        if (formData.api_key) updates.api_key = formData.api_key;
+        if (formData.api_version) updates.access_code = formData.api_version;
+
+        const { error } = await supabase.from("servers").update(updates).eq("id", editId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("servers").insert({
-          ...payload,
+        const payload = {
+          name: formData.name,
+          host: formData.url,
+          port: parsed?.port || 25461,
+          dns: formData.dns || null,
+          api_key: formData.api_key,
+          access_code: formData.api_version,
+          max_clients: formData.max_clients,
+          username: formData.use_proxy ? "proxy" : null,
+          template: formData.template || null,
           created_by: user!.id,
-        });
+        };
+        const { error } = await supabase.from("servers").insert(payload);
         if (error) throw error;
       }
     },
@@ -118,11 +131,12 @@ export default function Servers() {
 
   const openEdit = (server: typeof servers[0]) => {
     setEditId(server.id);
+    // Don't load sensitive fields - they stay hidden
     setForm({
       name: server.name,
-      url: server.host,
-      dns: (server as any).dns || "",
-      api_key: server.api_key || "",
+      url: "",        // Hidden - leave blank to keep current
+      dns: "",         // Hidden - leave blank to keep current
+      api_key: "",     // Hidden - leave blank to keep current
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
@@ -342,7 +356,7 @@ export default function Servers() {
                     variant="outline"
                     className="flex-1 border-border"
                     onClick={() => saveMutation.mutate(form)}
-                    disabled={saveMutation.isPending || !form.name || !form.url || !form.api_key}
+                    disabled={saveMutation.isPending || !form.name || (!editId && (!form.url || !form.api_key))}
                   >
                     {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                     {editId ? "Salvar Alterações" : "Adicionar Servidor"}
@@ -374,7 +388,7 @@ export default function Servers() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{server.name}</h3>
-                      <p className="text-sm text-muted-foreground font-mono truncate max-w-[200px] sm:max-w-none">{server.host}</p>
+                      <p className="text-sm text-muted-foreground font-mono">••••••••••••</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 sm:gap-8 ml-12 sm:ml-0">
