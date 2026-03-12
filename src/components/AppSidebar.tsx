@@ -147,11 +147,16 @@ export function AppSidebar() {
           </SidebarGroup>
         }
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border p-3">
+      <SidebarFooter className="border-t border-sidebar-border p-3 space-y-1">
+        <button
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          className="flex items-center gap-3 px-3 py-2 text-sidebar-foreground hover:text-sidebar-accent-foreground transition-colors text-sm w-full rounded-lg hover:bg-sidebar-accent">
+          {theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
+          {!collapsed && <span>{theme === "dark" ? "Modo Claro" : "Modo Escuro"}</span>}
+        </button>
         <button
           onClick={handleLogout}
           className="flex items-center gap-3 px-3 py-2 text-sidebar-foreground hover:text-destructive transition-colors text-sm w-full rounded-lg hover:bg-sidebar-accent">
-          
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Sair</span>}
         </button>
