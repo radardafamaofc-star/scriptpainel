@@ -160,7 +160,7 @@ export default function Plans() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
+  const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); setSelectedPackageId(""); };
 
   const openEdit = (plan: any) => {
     const hours = plan.duration_hours || (plan.duration_days * 24);
