@@ -443,7 +443,7 @@ export default function Resellers() {
                 Revendedor: <span className="text-foreground font-medium">{creditProfile?.display_name || creditProfile?.email || "—"}</span>
               </p>
               <p className="text-sm text-muted-foreground">
-                Saldo atual: <span className="text-foreground font-medium">{Number(creditTarget?.balance || 0)}</span>
+                Créditos atuais: <span className="text-foreground font-medium">{Number(creditTarget?.balance || 0)}</span>
               </p>
               <div className="space-y-1.5">
                 <Label className="text-muted-foreground text-xs">Valor</Label>
