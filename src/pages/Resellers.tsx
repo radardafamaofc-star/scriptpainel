@@ -478,8 +478,8 @@ export default function Resellers() {
             <p className="text-sm text-muted-foreground mt-1">Crie seu primeiro revendedor para começar</p>
           </div>
         ) : (
-          <div className="glass-card overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="glass-card overflow-x-auto">
+            <table className="w-full text-sm min-w-[700px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>

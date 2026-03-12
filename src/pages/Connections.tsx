@@ -80,8 +80,8 @@ export default function Connections() {
             <p className="text-sm text-muted-foreground mt-1">As conexões aparecerão aqui em tempo real</p>
           </div>
         ) : (
-          <div className="glass-card overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="glass-card overflow-x-auto">
+            <table className="w-full text-sm min-w-[600px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>
