@@ -101,8 +101,17 @@ export default function Clients() {
     staleTime: 10000,
   });
 
+  const [lastCreatedClient, setLastCreatedClient] = useState<any>(null);
+
   const saveMutation = useMutation({
     mutationFn: async (f: ClientForm) => {
+      // Convert local datetime to proper ISO string with timezone
+      let expiryISO: string | null = null;
+      if (f.expiry_date) {
+        const d = new Date(f.expiry_date);
+        expiryISO = d.toISOString();
+      }
+
       const payload = {
         username: f.username,
         password: f.password,
@@ -110,22 +119,35 @@ export default function Clients() {
         plan_id: f.plan_id || null,
         server_id: f.server_id || null,
         max_connections: f.max_connections,
-        expiry_date: f.expiry_date || null,
+        expiry_date: expiryISO,
       };
       if (editId) {
         const updatePayload: any = { ...payload };
         if (!f.password) delete updatePayload.password;
         const { error } = await supabase.from("clients").update(updatePayload).eq("id", editId);
         if (error) throw error;
+        return null;
       } else {
-        const { error } = await supabase.from("clients").insert({ ...payload, created_by: user!.id });
+        const { data, error } = await supabase.from("clients").insert({ ...payload, created_by: user!.id }).select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, dns, template)").single();
         if (error) throw error;
+        return data;
       }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
-      toast({ title: editId ? "Cliente atualizado!" : "Cliente criado!" });
-      closeDialog();
+      if (data && !editId) {
+        toast({ title: "Cliente criado!" });
+        if (!stayOpen) {
+          setDetailsClient({ ...data, _type: "client" });
+          closeDialog();
+        } else {
+          // Stay open: reset form for next client
+          genUser().then(u => genPass().then(p => setForm(prev => ({ ...prev, username: u, password: p, email: "" }))));
+        }
+      } else {
+        toast({ title: "Cliente atualizado!" });
+        closeDialog();
+      }
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -570,15 +592,7 @@ export default function Clients() {
                 <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
                 <Button
                   className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  onClick={() => {
-                    saveMutation.mutate(form, {
-                      onSuccess: () => {
-                        if (stayOpen) {
-                          genUser().then(u => genPass().then(p => setForm(prev => ({ ...prev, username: u, password: p, email: "" }))));
-                        }
-                      }
-                    });
-                  }}
+                  onClick={() => saveMutation.mutate(form)}
                   disabled={saveMutation.isPending || !form.username || (!editId && !form.password) || !form.server_id || !form.plan_id}
                 >
                   {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
