@@ -23,7 +23,8 @@ const tooltipStyle = {
 };
 
 export default function Dashboard() {
-  const { role, user } = useAuth();
+  const auth = useAuth();
+  const { role, user } = auth;
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
