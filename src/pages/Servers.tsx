@@ -68,6 +68,7 @@ export default function Servers() {
         access_code: formData.api_version,
         max_clients: formData.max_clients,
         username: formData.use_proxy ? "proxy" : null,
+        template: formData.template || null,
       };
 
       if (editId) {
