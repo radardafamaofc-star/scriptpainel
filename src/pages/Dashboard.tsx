@@ -396,7 +396,7 @@ export default function Dashboard() {
                       <Label className="text-muted-foreground text-xs">Plano selecionado</Label>
                       <div className="rounded-md border border-border bg-secondary px-3 py-2.5">
                         <p className="text-sm font-medium text-foreground">{testPlan?.serverName} • {testPlan?.name}</p>
-                        <p className="text-xs text-muted-foreground mt-1">Duração: {testPlan?.durationDays || 1} dia(s)</p>
+                        <p className="text-xs text-muted-foreground mt-1">Duração: {testPlan ? formatDuration(testPlan.durationHours) : "-"}</p>
                       </div>
                     </div>
                     <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
@@ -406,7 +406,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays, durationHours: testPlan.durationHours });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >
