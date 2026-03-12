@@ -319,9 +319,8 @@ export default function Resellers() {
 
   const getParentName = (r: any) => {
     if (!r.created_by) return "—";
-    const parentReseller = resellers.find((pr: any) => pr.user_id === r.created_by);
-    if (!parentReseller) return "—";
-    const parentProfile = (resellerProfiles as any)[parentReseller.user_id];
+    // Look up profile directly by created_by user id
+    const parentProfile = (resellerProfiles as any)[r.created_by];
     return parentProfile?.display_name || parentProfile?.email || "—";
   };
 
