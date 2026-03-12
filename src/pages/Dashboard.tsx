@@ -22,6 +22,16 @@ const tooltipStyle = {
   fontSize: 11,
 };
 
+const formatDuration = (hours: number): string => {
+  const normalizedHours = Math.max(1, hours || 0);
+  const days = Math.floor(normalizedHours / 24);
+  const remainingHours = normalizedHours % 24;
+
+  if (days === 0) return `${normalizedHours}h`;
+  if (remainingHours === 0) return `${days} dia(s)`;
+  return `${days}d ${remainingHours}h`;
+};
+
 export default function Dashboard() {
   const auth = useAuth();
   const { role, user } = auth;
@@ -29,7 +39,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationDays: number; durationHours: number; serverName: string } | null>(null);
+  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string } | null>(null);
   const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
@@ -100,14 +110,20 @@ export default function Dashboard() {
       // Plans for quick test
       const testPlans = plans
         .filter((p: any) => p.is_test)
-        .map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          serverId: p.server_id,
-          durationDays: p.duration_days,
-          durationHours: p.duration_hours || 0,
-          serverName: p.servers?.name || "—",
-        }));
+        .map((p: any) => {
+          const totalDurationHours =
+            typeof p.duration_hours === "number" && p.duration_hours > 0
+              ? p.duration_hours
+              : Math.max(1, (p.duration_days ?? 0) * 24);
+
+          return {
+            id: p.id,
+            name: p.name,
+            serverId: p.server_id,
+            durationHours: totalDurationHours,
+            serverName: p.servers?.name || "—",
+          };
+        });
 
       return {
         totalClients: clientsRes.count || 0,
@@ -155,10 +171,10 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { serverId: string | null; durationDays: number; durationHours: number }) => {
+    mutationFn: async (plan: { serverId: string | null; durationHours: number }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
-      const totalHours = Math.max(1, (plan.durationDays || 0) * 24 + (plan.durationHours || 0));
+      const totalHours = Math.max(1, plan.durationHours || 0);
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + totalHours);
 
@@ -200,7 +216,7 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationDays: number; durationHours: number; serverName: string }) => {
+  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string }) => {
     setTestPlan(plan);
     setTestResult(null);
     setTestDialogOpen(true);
@@ -244,13 +260,7 @@ export default function Dashboard() {
                     <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
                       onClick={() => handleQuickTest(plan)}>
                       <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">
-                        {plan.durationDays > 0 && plan.durationHours > 0
-                          ? `${plan.durationDays}d ${plan.durationHours}h`
-                          : plan.durationDays > 0
-                            ? `${plan.durationDays} dia(s)`
-                            : `${plan.durationHours}h`}
-                      </span>
+                      <span className="text-[10px] text-muted-foreground uppercase">{formatDuration(plan.durationHours)}</span>
                     </div>
                   ))
                 )}
@@ -386,7 +396,7 @@ export default function Dashboard() {
                       <Label className="text-muted-foreground text-xs">Plano selecionado</Label>
                       <div className="rounded-md border border-border bg-secondary px-3 py-2.5">
                         <p className="text-sm font-medium text-foreground">{testPlan?.serverName} • {testPlan?.name}</p>
-                        <p className="text-xs text-muted-foreground mt-1">Duração: {testPlan?.durationDays || 1} dia(s)</p>
+                        <p className="text-xs text-muted-foreground mt-1">Duração: {testPlan ? formatDuration(testPlan.durationHours) : "-"}</p>
                       </div>
                     </div>
                     <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
@@ -396,7 +406,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays, durationHours: testPlan.durationHours });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >
