@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import xsyncLogo from "@/assets/xsync-logo.png";
 import { Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,6 +19,18 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
+
+  const { data: branding } = useQuery({
+    queryKey: ["panel-settings", "branding"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("panel_settings")
+        .select("value")
+        .eq("key", "branding")
+        .single();
+      return data?.value as { logo_url?: string; panel_name?: string } | null;
+    },
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,8 +65,8 @@ export default function Login() {
 
         <div className="w-full max-w-md relative z-10">
           <div className="flex flex-col items-center mb-8">
-            <img src={xsyncLogo} alt="xSync" className="w-14 h-14 mb-4" />
-            <h1 className="text-2xl font-bold text-foreground">xSync Panel</h1>
+            <img src={branding?.logo_url || xsyncLogo} alt={branding?.panel_name || "xSync"} className="w-14 h-14 mb-4 object-contain" />
+            <h1 className="text-2xl font-bold text-foreground">{branding?.panel_name || "xSync"} Panel</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {isLogin ? "Entre na sua conta" : "Crie sua conta"}
             </p>
