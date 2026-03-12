@@ -23,13 +23,21 @@ const tooltipStyle = {
 };
 
 const formatDuration = (hours: number): string => {
-  const normalizedHours = Math.max(1, hours || 0);
+  const normalizedHours = Math.max(1, Number(hours) || 0);
   const days = Math.floor(normalizedHours / 24);
   const remainingHours = normalizedHours % 24;
 
   if (days === 0) return `${normalizedHours}h`;
   if (remainingHours === 0) return `${days} dia(s)`;
   return `${days}d ${remainingHours}h`;
+};
+
+const normalizeDurationHours = (plan: { duration_hours?: number | null; duration_days?: number | null }): number => {
+  const hours = Number(plan.duration_hours ?? 0);
+  if (Number.isFinite(hours) && hours > 0) return hours;
+
+  const days = Number(plan.duration_days ?? 0);
+  return Math.max(1, days * 24);
 };
 
 export default function Dashboard() {
@@ -110,20 +118,13 @@ export default function Dashboard() {
       // Plans for quick test
       const testPlans = plans
         .filter((p: any) => p.is_test)
-        .map((p: any) => {
-          const totalDurationHours =
-            typeof p.duration_hours === "number" && p.duration_hours > 0
-              ? p.duration_hours
-              : Math.max(1, (p.duration_days ?? 0) * 24);
-
-          return {
-            id: p.id,
-            name: p.name,
-            serverId: p.server_id,
-            durationHours: totalDurationHours,
-            serverName: p.servers?.name || "—",
-          };
-        });
+        .map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          serverId: p.server_id,
+          durationHours: normalizeDurationHours(p),
+          serverName: p.servers?.name || "—",
+        }));
 
       return {
         totalClients: clientsRes.count || 0,
@@ -216,8 +217,20 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string }) => {
-    setTestPlan(plan);
+  const handleQuickTest = async (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string }) => {
+    let nextPlan = plan;
+
+    const { data } = await supabase
+      .from("plans")
+      .select("duration_days, duration_hours")
+      .eq("id", plan.id)
+      .maybeSingle();
+
+    if (data) {
+      nextPlan = { ...plan, durationHours: normalizeDurationHours(data) };
+    }
+
+    setTestPlan(nextPlan);
     setTestResult(null);
     setTestDialogOpen(true);
   };
@@ -258,7 +271,7 @@ export default function Dashboard() {
                 ) : (
                   (stats?.testPlans || []).map((plan: any) => (
                     <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => handleQuickTest(plan)}>
+                      onClick={() => { void handleQuickTest(plan); }}>
                       <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
                       <span className="text-[10px] text-muted-foreground uppercase">{formatDuration(plan.durationHours)}</span>
                     </div>
