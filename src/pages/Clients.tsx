@@ -533,8 +533,8 @@ export default function Clients() {
             </p>
           </div>
         ) : (
-          <div className="glass-card overflow-hidden">
-            <table className="w-full text-sm">
+          <div className="glass-card overflow-x-auto">
+            <table className="w-full text-sm min-w-[800px]">
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>
