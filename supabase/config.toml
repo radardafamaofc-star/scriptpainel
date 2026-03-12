@@ -1,1 +1,4 @@
 project_id = "lpsmzkhqspxggldzggbb"
+
+[functions.xui-proxy]
+verify_jwt = false
