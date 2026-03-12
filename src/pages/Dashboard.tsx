@@ -1,12 +1,18 @@
-import { Users, UserPlus, Wifi, Loader2, DollarSign, Plus, Circle } from "lucide-react";
+import { Users, UserPlus, Wifi, Loader2, DollarSign, Plus, Circle, TestTube, Copy } from "lucide-react";
 import { Layout } from "@/components/Layout";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { format, subDays } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { renderTemplate, DEFAULT_TEMPLATE } from "@/lib/template";
 
 const chartStyle = { fontSize: 10, fill: "hsl(215, 15%, 55%)" };
 const tooltipStyle = {
@@ -17,8 +23,14 @@ const tooltipStyle = {
 };
 
 export default function Dashboard() {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testServerId, setTestServerId] = useState("");
+  const [testDuration, setTestDuration] = useState("4");
+  const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
@@ -128,6 +140,54 @@ export default function Dashboard() {
     },
     refetchInterval: 30000,
   });
+
+  const { data: servers4test = [] } = useQuery({
+    queryKey: ["servers-for-test"],
+    queryFn: async () => {
+      const { data } = await supabase.from("servers").select("id, name, status, host, port, template").order("name");
+      return data || [];
+    },
+  });
+
+  const createTestMutation = useMutation({
+    mutationFn: async (sId: string) => {
+      const username = "test_" + Math.random().toString(36).substring(2, 8);
+      const password = Math.random().toString(36).substring(2, 10);
+      const hours = parseInt(testDuration);
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + hours);
+
+      const { error } = await supabase.from("test_lines").insert({
+        username, password, server_id: sId || null,
+        created_by: user!.id, duration_hours: hours,
+        expires_at: expiresAt.toISOString(),
+      });
+      if (error) throw error;
+
+      const srv = servers4test.find(s => s.id === sId);
+      const dns = srv ? `http://${srv.host}:${srv.port}` : "";
+      const dnsHost = srv?.host || "";
+      const tpl = srv?.template || DEFAULT_TEMPLATE;
+      const rendered = renderTemplate(tpl, {
+        username, password, dns, dns_host: dnsHost,
+        expires_at: format(expiresAt, "dd/MM/yyyy HH:mm"),
+        package: "Teste", plan_price: "Grátis", pay_url: "", connections: "1",
+      });
+      return { username, password, template: rendered };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      setTestResult(result);
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const handleQuickTest = (sId: string) => {
+    setTestServerId(sId);
+    setTestDuration("4");
+    setTestResult(null);
+    setTestDialogOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -277,19 +337,85 @@ export default function Dashboard() {
             <div className="glass-card p-4">
               <h3 className="text-sm font-bold text-foreground mb-3">Teste Rápido</h3>
               <div className="space-y-1">
-                {(stats?.testPlans || []).length === 0 ? (
-                  <p className="text-xs text-muted-foreground py-2">Nenhum plano cadastrado. Adicione planos para gerar testes rápidos.</p>
+                {servers4test.filter(s => s.status === "online").length === 0 ? (
+                  <p className="text-xs text-muted-foreground py-2">Nenhum servidor online. Adicione servidores para gerar testes.</p>
                 ) : (
-                  (stats?.testPlans || []).map((plan: any) => (
-                    <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => navigate("/tests")}>
-                      <span className="text-xs font-medium text-primary">{plan.serverName} • {plan.name}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">{plan.serverName}</span>
+                  servers4test.filter(s => s.status === "online").map((srv: any) => (
+                    <div key={srv.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
+                      onClick={() => handleQuickTest(srv.id)}>
+                      <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{srv.name}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">Gerar Teste</span>
                     </div>
                   ))
                 )}
               </div>
             </div>
+
+            {/* Test Dialog */}
+            <Dialog open={testDialogOpen} onOpenChange={(v) => { setTestDialogOpen(v); if (!v) setTestResult(null); }}>
+              <DialogContent className="bg-card border-border sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle className="text-foreground">Gerar Teste Rápido</DialogTitle>
+                </DialogHeader>
+                {!testResult ? (
+                  <div className="space-y-4 mt-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">Duração</Label>
+                      <Select value={testDuration} onValueChange={setTestDuration}>
+                        <SelectTrigger className="bg-secondary border-border">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 hora</SelectItem>
+                          <SelectItem value="2">2 horas</SelectItem>
+                          <SelectItem value="4">4 horas</SelectItem>
+                          <SelectItem value="6">6 horas</SelectItem>
+                          <SelectItem value="12">12 horas</SelectItem>
+                          <SelectItem value="24">24 horas</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <p className="text-xs text-primary/80">Testes não consomem créditos. Use para demonstrar o serviço.</p>
+                    </div>
+                    <Button
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={() => createTestMutation.mutate(testServerId)}
+                      disabled={createTestMutation.isPending}
+                    >
+                      {createTestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Gerar Teste
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4 mt-2">
+                    <pre className="whitespace-pre-wrap text-xs text-foreground bg-secondary p-4 rounded-lg border border-border max-h-80 overflow-y-auto font-mono leading-relaxed">{testResult.template}</pre>
+                    <div className="flex gap-2">
+                      <Button className="flex-1" variant="outline" onClick={() => {
+                        navigator.clipboard.writeText(testResult.template || "");
+                        toast({ title: "Copiado!" });
+                      }}>
+                        <Copy className="h-4 w-4 mr-2" /> Copiar
+                      </Button>
+                      <Button className="flex-1" variant="outline" onClick={() => {
+                        const text = encodeURIComponent(testResult.template || "");
+                        window.open(`https://wa.me/?text=${text}`, "_blank");
+                      }}>
+                        WhatsApp
+                      </Button>
+                      <Button className="flex-1 bg-primary text-primary-foreground" onClick={() => {
+                        navigator.clipboard.writeText(testResult.template || "");
+                        toast({ title: "Copiado!" });
+                        setTestDialogOpen(false);
+                        setTestResult(null);
+                      }}>
+                        Copiar e Fechar
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
 
             {/* Adicionar Cliente button */}
             <Button className="w-full bg-success hover:bg-success/90 text-success-foreground font-medium" onClick={() => navigate("/clients")}>

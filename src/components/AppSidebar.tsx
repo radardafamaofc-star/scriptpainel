@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  TestTube, DollarSign, BarChart3, Tag, FileText
+  DollarSign, BarChart3, Tag, FileText
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -15,7 +15,6 @@ const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "reseller", "client"] },
   { title: "Servidores", url: "/servers", icon: Server, roles: ["admin"] },
   { title: "Clientes", url: "/clients", icon: Users, roles: ["admin", "reseller"] },
-  { title: "Testes", url: "/tests", icon: TestTube, roles: ["admin", "reseller"] },
   { title: "Revendedores", url: "/resellers", icon: UserPlus, roles: ["admin"] },
   { title: "Planos", url: "/plans", icon: CreditCard, roles: ["admin"] },
   { title: "Conexões", url: "/connections", icon: Wifi, roles: ["admin"] },
