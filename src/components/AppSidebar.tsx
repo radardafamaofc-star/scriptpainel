@@ -41,6 +41,7 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, role, user, loading } = useAuth();
+  const { theme, setTheme } = useTheme();
 
   const { data: branding } = useBranding();
 
