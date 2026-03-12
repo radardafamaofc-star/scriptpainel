@@ -252,6 +252,7 @@ export default function Resellers() {
   });
 
   const canManageCredits = role === "admin" || role === "reseller_master" || role === "reseller_ultra";
+  const creditProfile = creditTarget ? (resellerProfiles as any)[creditTarget.user_id] : null;
 
   return (
     <Layout>
