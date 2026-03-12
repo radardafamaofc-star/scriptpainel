@@ -22,7 +22,7 @@ export default function Estilo() {
 
   useEffect(() => {
     if (branding) {
-      setPanelName(branding.panel_name || "xSync");
+      setPanelName(branding.panel_name || "");
       setPreviewUrl(branding.logo_url || null);
     }
   }, [branding]);
