@@ -307,10 +307,10 @@ export default function Dashboard() {
               connections={stats?.totalConnections || 0} />
 
             {/* Expiring clients table */}
-            <div className="glass-card p-4">
+            <div className="glass-card p-4 overflow-x-auto">
               <h3 className="text-sm font-bold text-foreground">Clientes que venceram nos últimos 7 dias e que vão vencer em 7 dias</h3>
               <p className="text-xs text-muted-foreground mb-3">{stats?.expiringList?.length || 0} clientes</p>
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[500px]">
                 <thead>
                   <tr className="border-b border-border text-left text-muted-foreground">
                     <th className="pb-2 font-medium">Usuário</th>
