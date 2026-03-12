@@ -1,7 +1,8 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  DollarSign, BarChart3, Tag, Palette } from
+  DollarSign, BarChart3, Tag, Palette, Sun, Moon } from
 "lucide-react";
+import { useTheme } from "next-themes";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
