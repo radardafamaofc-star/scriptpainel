@@ -142,6 +142,7 @@ export default function Plans() {
       duration_unit: unit,
       max_connections: plan.max_connections,
       bouquets: plan.bouquets,
+      template: (plan as any).template || "",
     });
     setOpen(true);
   };
