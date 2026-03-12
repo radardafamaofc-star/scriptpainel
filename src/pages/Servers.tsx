@@ -121,6 +121,7 @@ export default function Servers() {
     setForm({
       name: server.name,
       url: server.host,
+      dns: (server as any).dns || "",
       api_key: server.api_key || "",
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
