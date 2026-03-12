@@ -20,6 +20,18 @@ export default function Login() {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
 
+  const { data: branding } = useQuery({
+    queryKey: ["panel-settings", "branding"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("panel_settings")
+        .select("value")
+        .eq("key", "branding")
+        .single();
+      return data?.value as { logo_url?: string; panel_name?: string } | null;
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
