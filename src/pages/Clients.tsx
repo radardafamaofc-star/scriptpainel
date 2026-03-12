@@ -356,9 +356,10 @@ export default function Clients() {
   const filtered = unifiedList.filter((item: any) => {
     const matchSearch = item.username.toLowerCase().includes(search.toLowerCase()) ||
       (item.email && item.email.toLowerCase().includes(search.toLowerCase()));
+    const itemStatus = item._type === "test" ? item.status : getClientStatus(item);
     const matchStatus = filterStatus === "all" ||
       (filterStatus === "test" && item._type === "test") ||
-      (filterStatus !== "test" && item._type === "client" && getClientStatus(item) === filterStatus);
+      (filterStatus !== "test" && itemStatus === filterStatus);
     return matchSearch && matchStatus;
   });
 
