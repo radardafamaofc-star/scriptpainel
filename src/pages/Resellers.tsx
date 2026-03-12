@@ -113,18 +113,20 @@ export default function Resellers() {
   });
 
   const resellerUserIds = resellers.map((r: any) => r.user_id);
+  const creatorUserIds = [...new Set(resellers.map((r: any) => r.created_by).filter(Boolean))];
+  const allProfileIds = [...new Set([...resellerUserIds, ...creatorUserIds])];
 
-  // Profiles
+  // Profiles (resellers + creators)
   const { data: resellerProfiles = {} } = useQuery({
-    queryKey: ["reseller-profiles", resellerUserIds.join(",")],
+    queryKey: ["reseller-profiles", allProfileIds.join(",")],
     queryFn: async () => {
-      if (resellerUserIds.length === 0) return {};
-      const { data } = await supabase.from("profiles").select("user_id, display_name, email").in("user_id", resellerUserIds);
+      if (allProfileIds.length === 0) return {};
+      const { data } = await supabase.from("profiles").select("user_id, display_name, email").in("user_id", allProfileIds);
       const map: Record<string, any> = {};
       (data || []).forEach((p: any) => { map[p.user_id] = p; });
       return map;
     },
-    enabled: resellerUserIds.length > 0,
+    enabled: allProfileIds.length > 0,
     staleTime: 10000,
   });
 
@@ -317,9 +319,8 @@ export default function Resellers() {
 
   const getParentName = (r: any) => {
     if (!r.created_by) return "—";
-    const parentReseller = resellers.find((pr: any) => pr.user_id === r.created_by);
-    if (!parentReseller) return "—";
-    const parentProfile = (resellerProfiles as any)[parentReseller.user_id];
+    // Look up profile directly by created_by user id
+    const parentProfile = (resellerProfiles as any)[r.created_by];
     return parentProfile?.display_name || parentProfile?.email || "—";
   };
 
