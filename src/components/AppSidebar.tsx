@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  DollarSign, BarChart3, Tag, FileText
+  DollarSign, BarChart3, Tag
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -12,18 +12,18 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "reseller", "client"] },
+  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "reseller", "reseller_master", "reseller_ultra", "client"] },
   { title: "Servidores", url: "/servers", icon: Server, roles: ["admin"] },
-  { title: "Clientes", url: "/clients", icon: Users, roles: ["admin", "reseller"] },
-  { title: "Revendedores", url: "/resellers", icon: UserPlus, roles: ["admin"] },
+  { title: "Clientes", url: "/clients", icon: Users, roles: ["admin", "reseller", "reseller_master", "reseller_ultra"] },
+  { title: "Revendedores", url: "/resellers", icon: UserPlus, roles: ["admin", "reseller_master", "reseller_ultra"] },
   { title: "Planos", url: "/plans", icon: CreditCard, roles: ["admin"] },
-  { title: "Conexões", url: "/connections", icon: Wifi, roles: ["admin"] },
+  { title: "Conexões", url: "/connections", icon: Wifi, roles: ["admin", "reseller", "reseller_master", "reseller_ultra"] },
 ];
 
 const financeItems = [
-  { title: "Créditos", url: "/credits", icon: DollarSign, roles: ["admin", "reseller"] },
-  { title: "Cupons", url: "/coupons", icon: Tag, roles: ["admin"] },
-  { title: "Relatórios", url: "/reports", icon: BarChart3, roles: ["admin", "reseller"] },
+  { title: "Créditos", url: "/credits", icon: DollarSign, roles: ["admin", "reseller", "reseller_master", "reseller_ultra"] },
+  { title: "Cupons", url: "/coupons", icon: Tag, roles: ["admin", "reseller", "reseller_master", "reseller_ultra"] },
+  { title: "Relatórios", url: "/reports", icon: BarChart3, roles: ["admin", "reseller", "reseller_master", "reseller_ultra"] },
 ];
 
 const systemItems = [
@@ -82,7 +82,6 @@ export function AppSidebar() {
         )}
       </div>
       <SidebarContent className="pt-2">
-        {/* Main */}
         <SidebarGroup>
           {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Principal</SidebarGroupLabel>}
           <SidebarGroupContent>
@@ -90,7 +89,6 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {/* Finance */}
         {filteredFinance.length > 0 && (
           <SidebarGroup>
             {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Financeiro</SidebarGroupLabel>}
@@ -100,7 +98,6 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {/* System */}
         {filteredSystem.length > 0 && (
           <SidebarGroup>
             {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Sistema</SidebarGroupLabel>}
