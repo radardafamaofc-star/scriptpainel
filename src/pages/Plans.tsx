@@ -1,5 +1,7 @@
 import { Layout } from "@/components/Layout";
-import { Plus, Loader2, Package, Copy, Search } from "lucide-react";
+import { Plus, Loader2, Package, Copy, Search, FileText } from "lucide-react";
+import { DEFAULT_TEMPLATE } from "@/lib/template";
+import { Textarea } from "@/components/ui/textarea";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
