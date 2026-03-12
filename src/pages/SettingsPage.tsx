@@ -149,7 +149,7 @@ export default function SettingsPage() {
                   max={32}
                   value={credLength}
                   onChange={e => setCredLength(Math.max(6, parseInt(e.target.value) || 6))}
-                  className="bg-secondary border-border mt-1"
+                  className="bg-secondary border-border mt-1 text-foreground"
                 />
                 <p className="text-xs text-muted-foreground mt-1">Mínimo 6 caracteres</p>
               </div>
