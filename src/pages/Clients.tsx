@@ -407,8 +407,9 @@ export default function Clients() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar por usuário ou email..." className="pl-10 bg-card border-border" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
+          <div className="flex gap-2">
           <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-40 bg-card border-border">
+            <SelectTrigger className="flex-1 sm:w-40 bg-card border-border">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
