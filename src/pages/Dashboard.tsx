@@ -165,8 +165,14 @@ export default function Dashboard() {
       if (error) throw error;
 
       const srv = servers4test.find(s => s.id === sId);
-      const dns = srv ? `http://${srv.host}:${srv.port}` : "";
-      const dnsHost = srv?.host || "";
+      const dnsRaw = (srv as any)?.dns || (srv ? `http://${srv.host}:${srv.port}` : "");
+      let dns = dnsRaw;
+      let dnsHost = srv?.host || "";
+      try {
+        const parsed = new URL(dnsRaw);
+        dns = `${parsed.protocol}//${parsed.host}`;
+        dnsHost = parsed.host;
+      } catch { /* keep raw */ }
       const tpl = srv?.template || DEFAULT_TEMPLATE;
       const rendered = renderTemplate(tpl, {
         username, password, dns, dns_host: dnsHost,
