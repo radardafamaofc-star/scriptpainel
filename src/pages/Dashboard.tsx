@@ -217,8 +217,20 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string }) => {
-    setTestPlan(plan);
+  const handleQuickTest = async (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string }) => {
+    let nextPlan = plan;
+
+    const { data } = await supabase
+      .from("plans")
+      .select("duration_days, duration_hours")
+      .eq("id", plan.id)
+      .maybeSingle();
+
+    if (data) {
+      nextPlan = { ...plan, durationHours: normalizeDurationHours(data) };
+    }
+
+    setTestPlan(nextPlan);
     setTestResult(null);
     setTestDialogOpen(true);
   };
