@@ -1,22 +1,33 @@
 import {
-  LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut
+  LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
+  TestTube, DollarSign, BarChart3, Tag, FileText
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation, useNavigate } from "react-router-dom";
 import xsyncLogo from "@/assets/xsync-logo.png";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
+  Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 
-const navItems = [
+const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "reseller", "client"] },
   { title: "Servidores", url: "/servers", icon: Server, roles: ["admin"] },
   { title: "Clientes", url: "/clients", icon: Users, roles: ["admin", "reseller"] },
+  { title: "Testes", url: "/tests", icon: TestTube, roles: ["admin", "reseller"] },
   { title: "Revendedores", url: "/resellers", icon: UserPlus, roles: ["admin"] },
   { title: "Planos", url: "/plans", icon: CreditCard, roles: ["admin"] },
   { title: "Conexões", url: "/connections", icon: Wifi, roles: ["admin"] },
+];
+
+const financeItems = [
+  { title: "Créditos", url: "/credits", icon: DollarSign, roles: ["admin", "reseller"] },
+  { title: "Cupons", url: "/coupons", icon: Tag, roles: ["admin"] },
+  { title: "Relatórios", url: "/reports", icon: BarChart3, roles: ["admin", "reseller"] },
+];
+
+const systemItems = [
   { title: "Logs", url: "/logs", icon: ScrollText, roles: ["admin"] },
   { title: "Configurações", url: "/settings", icon: Settings, roles: ["admin"] },
 ];
@@ -28,14 +39,37 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { signOut, role } = useAuth();
 
-  const filteredItems = navItems.filter(
-    (item) => !role || item.roles.includes(role)
-  );
+  const filterByRole = (items: typeof mainItems) =>
+    items.filter((item) => !role || item.roles.includes(role));
+
+  const filteredMain = filterByRole(mainItems);
+  const filteredFinance = filterByRole(financeItems);
+  const filteredSystem = filterByRole(systemItems);
 
   const handleLogout = async () => {
     await signOut();
     navigate("/login");
   };
+
+  const renderItems = (items: typeof mainItems) =>
+    items.map((item) => {
+      const active = location.pathname === item.url;
+      return (
+        <SidebarMenuItem key={item.title}>
+          <SidebarMenuButton asChild>
+            <NavLink
+              to={item.url}
+              end
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${active ? "bg-sidebar-accent text-sidebar-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+              activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+            >
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span className="text-sm">{item.title}</span>}
+            </NavLink>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      );
+    });
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -49,30 +83,33 @@ export function AppSidebar() {
         )}
       </div>
       <SidebarContent className="pt-2">
+        {/* Main */}
         <SidebarGroup>
+          {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Principal</SidebarGroupLabel>}
           <SidebarGroupContent>
-            <SidebarMenu>
-              {filteredItems.map((item) => {
-                const active = location.pathname === item.url;
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild>
-                      <NavLink
-                        to={item.url}
-                        end
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${active ? "bg-sidebar-accent text-sidebar-primary" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
-                        activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
-                      >
-                        <item.icon className="h-4 w-4 shrink-0" />
-                        {!collapsed && <span className="text-sm">{item.title}</span>}
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
+            <SidebarMenu>{renderItems(filteredMain)}</SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/* Finance */}
+        {filteredFinance.length > 0 && (
+          <SidebarGroup>
+            {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Financeiro</SidebarGroupLabel>}
+            <SidebarGroupContent>
+              <SidebarMenu>{renderItems(filteredFinance)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* System */}
+        {filteredSystem.length > 0 && (
+          <SidebarGroup>
+            {!collapsed && <SidebarGroupLabel className="text-sidebar-foreground/50 text-[10px] uppercase tracking-wider px-3">Sistema</SidebarGroupLabel>}
+            <SidebarGroupContent>
+              <SidebarMenu>{renderItems(filteredSystem)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-3">
         <button
