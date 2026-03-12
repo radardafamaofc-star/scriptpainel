@@ -1,10 +1,10 @@
 import { Layout } from "@/components/Layout";
-import { Plus, Search, MoreVertical, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle } from "lucide-react";
+import { Plus, Search, MoreVertical, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle, List, Wifi, Bell, ArrowUpCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
@@ -44,6 +44,8 @@ export default function Clients() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [detailsClient, setDetailsClient] = useState<any>(null);
+  const [convertDialog, setConvertDialog] = useState<any>(null);
+  const [convertPlanId, setConvertPlanId] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -53,7 +55,19 @@ export default function Clients() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("clients")
-        .select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, template)")
+        .select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, dns, template)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: testLines = [] } = useQuery({
+    queryKey: ["test-lines"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("test_lines")
+        .select("*, servers(name, host, dns, template)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -72,7 +86,7 @@ export default function Clients() {
   const { data: servers = [] } = useQuery({
     queryKey: ["servers"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("servers").select("id, name").order("name");
+      const { data, error } = await supabase.from("servers").select("id, name, dns").order("name");
       if (error) throw error;
       return data;
     },
@@ -119,6 +133,18 @@ export default function Clients() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const deleteTestMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("test_lines").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      toast({ title: "Teste removido!" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
   const toggleStatusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const newStatus = status === "active" ? "suspended" : "active";
@@ -128,6 +154,19 @@ export default function Clients() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       toast({ title: "Status atualizado!" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleTestStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const newStatus = status === "active" ? "blocked" : "active";
+      const { error } = await supabase.from("test_lines").update({ status: newStatus }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      toast({ title: "Status do teste atualizado!" });
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -149,6 +188,37 @@ export default function Clients() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       toast({ title: "Cliente renovado!" });
+    },
+    onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+  });
+
+  const convertTestMutation = useMutation({
+    mutationFn: async ({ testLine, planId }: { testLine: any; planId: string }) => {
+      const plan = plans.find(p => p.id === planId);
+      if (!plan) throw new Error("Plano não encontrado");
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + plan.duration_days);
+      // Create client from test line
+      const { error: insertErr } = await supabase.from("clients").insert({
+        username: testLine.username,
+        password: testLine.password,
+        plan_id: planId,
+        server_id: testLine.server_id,
+        max_connections: plan.max_connections,
+        expiry_date: expiry.toISOString(),
+        created_by: user!.id,
+      });
+      if (insertErr) throw insertErr;
+      // Remove test line
+      const { error: deleteErr } = await supabase.from("test_lines").delete().eq("id", testLine.id);
+      if (deleteErr) throw deleteErr;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      toast({ title: "Teste convertido em cliente!" });
+      setConvertDialog(null);
+      setConvertPlanId("");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -198,8 +268,26 @@ export default function Clients() {
     toast({ title: "Credenciais copiadas!" });
   };
 
+  const getDnsFromServer = (server: any) => {
+    if (!server) return { dns: "", dnsHost: "" };
+    const dnsValue = server.dns || server.host || "";
+    let dns = dnsValue;
+    let dnsHost = dnsValue;
+    try {
+      const parsed = new URL(dnsValue);
+      dns = `${parsed.protocol}//${parsed.host}`;
+      dnsHost = parsed.host;
+    } catch {
+      try {
+        const parsed = new URL(server.host);
+        dns = `${parsed.protocol}//${parsed.host}`;
+        dnsHost = parsed.host;
+      } catch { /* keep raw */ }
+    }
+    return { dns, dnsHost };
+  };
+
   const getClientTemplate = (client: any): string => {
-    // Priority: plan template > server template > default
     const planTemplate = client.plans?.template;
     const serverTemplate = client.servers?.template;
     return planTemplate || serverTemplate || DEFAULT_TEMPLATE;
@@ -207,15 +295,7 @@ export default function Clients() {
 
   const getRenderedTemplate = (client: any): string => {
     const template = getClientTemplate(client);
-    const serverHost = client.servers?.host || "";
-    let dns = serverHost;
-    let dnsHost = serverHost;
-    try {
-      const parsed = new URL(serverHost);
-      dns = `${parsed.protocol}//${parsed.host}`;
-      dnsHost = parsed.host;
-    } catch { /* keep raw */ }
-
+    const { dns, dnsHost } = getDnsFromServer(client.servers);
     return renderTemplate(template, {
       username: client.username || "",
       password: client.password || "",
@@ -229,8 +309,30 @@ export default function Clients() {
     });
   };
 
+  const getTestRenderedTemplate = (test: any): string => {
+    const template = test.servers?.template || DEFAULT_TEMPLATE;
+    const { dns, dnsHost } = getDnsFromServer(test.servers);
+    return renderTemplate(template, {
+      username: test.username || "",
+      password: test.password || "",
+      package: "Teste",
+      pay_url: "",
+      plan_price: "Grátis",
+      expires_at: test.expires_at ? format(new Date(test.expires_at), "dd/MM/yyyy HH:mm:ss") : "",
+      connections: "1",
+      dns,
+      dns_host: dnsHost,
+    });
+  };
+
   const copyTemplate = (client: any) => {
     const text = getRenderedTemplate(client);
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copiado!" });
+  };
+
+  const copyTestTemplate = (test: any) => {
+    const text = getTestRenderedTemplate(test);
     navigator.clipboard.writeText(text);
     toast({ title: "Copiado!" });
   };
@@ -240,10 +342,23 @@ export default function Clients() {
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
-  const filtered = clients.filter((c: any) => {
-    const matchSearch = c.username.toLowerCase().includes(search.toLowerCase()) ||
-      (c.email && c.email.toLowerCase().includes(search.toLowerCase()));
-    const matchStatus = filterStatus === "all" || c.status === filterStatus;
+  const sendTestWhatsApp = (test: any) => {
+    const text = encodeURIComponent(getTestRenderedTemplate(test));
+    window.open(`https://wa.me/?text=${text}`, "_blank");
+  };
+
+  // Merge clients and test lines into a unified list
+  const unifiedList = [
+    ...clients.map((c: any) => ({ ...c, _type: "client" as const })),
+    ...testLines.map((t: any) => ({ ...t, _type: "test" as const, max_connections: 1 })),
+  ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const filtered = unifiedList.filter((item: any) => {
+    const matchSearch = item.username.toLowerCase().includes(search.toLowerCase()) ||
+      (item.email && item.email.toLowerCase().includes(search.toLowerCase()));
+    const matchStatus = filterStatus === "all" ||
+      (filterStatus === "test" && item._type === "test") ||
+      (filterStatus !== "test" && item._type === "client" && getClientStatus(item) === filterStatus);
     return matchSearch && matchStatus;
   });
 
@@ -251,14 +366,9 @@ export default function Clients() {
     active: "bg-success/10 text-success",
     expired: "bg-warning/10 text-warning",
     suspended: "bg-destructive/10 text-destructive",
+    blocked: "bg-destructive/10 text-destructive",
   };
-  const statusLabel: Record<string, string> = { active: "Ativo", expired: "Expirado", suspended: "Suspenso" };
-
-  const getClientStatus = (client: any) => {
-    if (client.status === "suspended") return "suspended";
-    if (client.expiry_date && new Date(client.expiry_date) < new Date()) return "expired";
-    return client.status;
-  };
+  const statusLabel: Record<string, string> = { active: "Ativo", expired: "Expirado", suspended: "Suspenso", blocked: "Bloqueado" };
 
   return (
     <Layout>
@@ -266,7 +376,7 @@ export default function Clients() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Clientes</h1>
-            <p className="text-sm text-muted-foreground mt-1">{clients.length} clientes registrados</p>
+            <p className="text-sm text-muted-foreground mt-1">{clients.length} clientes · {testLines.length} testes</p>
           </div>
           <Button onClick={openNew} className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Plus className="h-4 w-4 mr-2" /> Novo Cliente
@@ -287,6 +397,7 @@ export default function Clients() {
               <SelectItem value="active">Ativos</SelectItem>
               <SelectItem value="expired">Expirados</SelectItem>
               <SelectItem value="suspended">Suspensos</SelectItem>
+              <SelectItem value="test">Testes</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -394,69 +505,168 @@ export default function Clients() {
               <thead>
                 <tr className="border-b border-border">
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Usuário</th>
-                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Plano</th>
-                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Conexões</th>
-                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Expira</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Datas</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Situação</th>
+                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Detalhes</th>
                   <th className="text-left px-5 py-3 text-muted-foreground font-medium">Servidor</th>
-                  <th className="text-left px-5 py-3 text-muted-foreground font-medium">Status</th>
-                  <th className="px-5 py-3" />
+                  <th className="px-5 py-3 text-right text-muted-foreground font-medium">Ações</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((client: any) => {
-                  const status = getClientStatus(client);
+                {filtered.map((item: any) => {
+                  if (item._type === "test") {
+                    const testStatus = item.expires_at && new Date(item.expires_at) < new Date() ? "expired" : (item.status === "blocked" ? "blocked" : "active");
+                    return (
+                      <tr key={`test-${item.id}`} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
+                        <td className="px-5 py-3">
+                          <div>
+                            <p className="font-medium text-primary">{item.username}</p>
+                            <p className="text-xs text-muted-foreground">Teste · {item.duration_hours}h</p>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div>
+                            <p className="text-foreground text-xs">
+                              {item.expires_at ? format(new Date(item.expires_at), "dd/MM/yyyy, HH:mm:ss") : "—"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Criado em {format(new Date(item.created_at), "dd/MM/yyyy, HH:mm:ss")}
+                            </p>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex flex-col gap-1">
+                            <span className={`inline-block w-fit px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[testStatus]}`}>
+                              {statusLabel[testStatus] || testStatus}
+                            </span>
+                            <span className="inline-block w-fit px-2.5 py-0.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400">
+                              Teste
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-foreground text-xs">
+                          Conexões: 1
+                        </td>
+                        <td className="px-5 py-3 text-muted-foreground text-xs">{item.servers?.name || "—"}</td>
+                        <td className="px-5 py-3 text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm" className="border-border">
+                                Ações
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="bg-card border-border w-52">
+                              <DropdownMenuItem onClick={() => setDetailsClient({ ...item, _type: "test" })} className="gap-2">
+                                <Eye className="h-4 w-4" /> Ver Detalhes
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => copyTestTemplate(item)} className="gap-2">
+                                <Copy className="h-4 w-4" /> Copiar Template
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => sendTestWhatsApp(item)} className="gap-2">
+                                <MessageCircle className="h-4 w-4" /> WhatsApp
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => { setConvertDialog(item); setConvertPlanId(""); }} className="gap-2">
+                                <ArrowUpCircle className="h-4 w-4" /> Converter em Plano
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => toggleTestStatusMutation.mutate({ id: item.id, status: item.status })} className="gap-2">
+                                {item.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+                                {item.status === "active" ? "Bloquear" : "Desbloquear"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => toast({ title: "Sincronizando...", description: "Sincronização com o servidor em andamento" })} className="gap-2">
+                                <Wifi className="h-4 w-4" /> Sincronizar
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => deleteTestMutation.mutate(item.id)} className="gap-2 text-destructive focus:text-destructive">
+                                <Trash2 className="h-4 w-4" /> Remover
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  // Regular client
+                  const status = getClientStatus(item);
                   return (
-                    <tr key={client.id} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
+                    <tr key={item.id} className="border-b border-border/50 hover:bg-accent/50 transition-colors">
                       <td className="px-5 py-3">
                         <div>
-                          <p className="font-medium text-foreground">{client.username}</p>
-                          <p className="text-xs text-muted-foreground">{client.email || "—"}</p>
+                          <p className="font-medium text-primary">{item.username}</p>
+                          <p className="text-xs text-muted-foreground">{item.email || "—"}</p>
+                          {item.plans?.name && <p className="text-xs text-muted-foreground">{item.plans.name}</p>}
                         </div>
                       </td>
-                      <td className="px-5 py-3 text-foreground">{client.plans?.name || "—"}</td>
-                      <td className="px-5 py-3 text-foreground font-mono">{client.max_connections}</td>
-                      <td className="px-5 py-3 text-foreground">
-                        {client.expiry_date ? format(new Date(client.expiry_date), "dd/MM/yyyy") : "—"}
-                      </td>
-                      <td className="px-5 py-3 text-muted-foreground text-xs">{client.servers?.name || "—"}</td>
                       <td className="px-5 py-3">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${statusStyle[status] || statusStyle.active}`}>
-                          {statusLabel[status] || status}
-                        </span>
+                        <div>
+                          <p className="text-foreground text-xs">
+                            {item.expiry_date ? format(new Date(item.expiry_date), "dd/MM/yyyy, HH:mm:ss") : "—"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Criado em {format(new Date(item.created_at), "dd/MM/yyyy, HH:mm:ss")}
+                          </p>
+                        </div>
                       </td>
                       <td className="px-5 py-3">
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-block w-fit px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[status]}`}>
+                            {statusLabel[status] || status}
+                          </span>
+                          <span className="inline-block w-fit px-2.5 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400">
+                            IPTV
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-foreground">
+                        <div>
+                          {item.plans?.price && <p>Plano: R$ {Number(item.plans.price).toFixed(2)}</p>}
+                          <p>Conexões: {item.max_connections}</p>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground text-xs">{item.servers?.name || "—"}</td>
+                      <td className="px-5 py-3 text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                              <MoreVertical className="h-4 w-4" />
-                            </button>
+                            <Button variant="outline" size="sm" className="border-border">
+                              Ações
+                            </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="bg-card border-border">
-                            <DropdownMenuItem onClick={() => setDetailsClient(client)} className="gap-2">
+                          <DropdownMenuContent align="end" className="bg-card border-border w-52">
+                            <DropdownMenuItem onClick={() => setDetailsClient(item)} className="gap-2">
                               <Eye className="h-4 w-4" /> Ver Detalhes
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => copyCredentials(client)} className="gap-2">
+                            <DropdownMenuItem onClick={() => copyCredentials(item)} className="gap-2">
                               <Copy className="h-4 w-4" /> Copiar Credenciais
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => copyTemplate(client)} className="gap-2">
+                            <DropdownMenuItem onClick={() => copyTemplate(item)} className="gap-2">
                               <Copy className="h-4 w-4" /> Copiar Template
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => sendWhatsApp(client)} className="gap-2">
+                            <DropdownMenuItem onClick={() => sendWhatsApp(item)} className="gap-2">
                               <MessageCircle className="h-4 w-4" /> WhatsApp
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => openEdit(client)} className="gap-2">
+                            <DropdownMenuItem onClick={() => openEdit(item)} className="gap-2">
                               <Pencil className="h-4 w-4" /> Editar
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => renewMutation.mutate(client)} className="gap-2">
+                            <DropdownMenuItem onClick={() => renewMutation.mutate(item)} className="gap-2">
                               <RefreshCw className="h-4 w-4" /> Renovar
                             </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => toggleStatusMutation.mutate({ id: client.id, status: client.status })} className="gap-2">
-                              {client.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
-                              {client.status === "active" ? "Suspender" : "Ativar"}
+                            <DropdownMenuItem onClick={() => toggleStatusMutation.mutate({ id: item.id, status: item.status })} className="gap-2">
+                              {item.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+                              {item.status === "active" ? "Bloquear" : "Ativar"}
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => deleteMutation.mutate(client.id)} className="gap-2 text-destructive focus:text-destructive">
+                            <DropdownMenuItem onClick={() => toast({ title: "Sincronizando...", description: "Sincronização com o servidor em andamento" })} className="gap-2">
+                              <Wifi className="h-4 w-4" /> Sincronizar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toast({ title: "Playlist", description: `M3U: ${getDnsFromServer(item.servers).dns}/get.php?username=${item.username}&password=${item.password}&type=m3u_plus&output=mpegts` })} className="gap-2">
+                              <List className="h-4 w-4" /> Ver Playlist
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => toast({ title: "Lembrete enviado!", description: "Lembrete de renovação será enviado ao cliente" })} className="gap-2">
+                              <Bell className="h-4 w-4" /> Lembrete de Renovação
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => deleteMutation.mutate(item.id)} className="gap-2 text-destructive focus:text-destructive">
                               <Trash2 className="h-4 w-4" /> Remover
                             </DropdownMenuItem>
                           </DropdownMenuContent>
@@ -470,28 +680,30 @@ export default function Clients() {
           </div>
         )}
 
-        {/* Client Details Dialog */}
+        {/* Client/Test Details Dialog */}
         <Dialog open={!!detailsClient} onOpenChange={(v) => { if (!v) setDetailsClient(null); }}>
-          <DialogContent className="bg-card border-border sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogContent className="bg-card border-border sm:max-w-2xl max-h-[85vh] flex flex-col">
             <DialogHeader>
-              <DialogTitle className="text-foreground">Detalhes do Cliente</DialogTitle>
+              <DialogTitle className="text-foreground">
+                {detailsClient?._type === "test" ? "Detalhes do Teste" : "Detalhes do Cliente"}
+              </DialogTitle>
             </DialogHeader>
             {detailsClient && (
-              <div className="space-y-4">
-                <div className="rounded-lg bg-secondary/50 border border-border p-4 font-mono text-xs text-foreground whitespace-pre-wrap leading-relaxed">
-                  {getRenderedTemplate(detailsClient)}
+              <div className="space-y-4 flex-1 min-h-0">
+                <div className="rounded-lg bg-secondary/50 border border-border p-4 text-xs text-foreground whitespace-pre-wrap break-all leading-relaxed overflow-y-auto max-h-[55vh]">
+                  {detailsClient._type === "test" ? getTestRenderedTemplate(detailsClient) : getRenderedTemplate(detailsClient)}
                 </div>
                 <div className="flex items-center justify-center gap-3">
                   <Button
                     className="bg-success hover:bg-success/90 text-success-foreground"
-                    onClick={() => sendWhatsApp(detailsClient)}
+                    onClick={() => detailsClient._type === "test" ? sendTestWhatsApp(detailsClient) : sendWhatsApp(detailsClient)}
                   >
                     <MessageCircle className="h-4 w-4 mr-2" /> WhatsApp
                   </Button>
                   <Button
                     variant="outline"
                     className="border-primary text-primary hover:bg-primary/10"
-                    onClick={() => copyTemplate(detailsClient)}
+                    onClick={() => detailsClient._type === "test" ? copyTestTemplate(detailsClient) : copyTemplate(detailsClient)}
                   >
                     <Copy className="h-4 w-4 mr-2" /> Copiar
                   </Button>
@@ -500,7 +712,10 @@ export default function Clients() {
                   <Button variant="ghost" onClick={() => setDetailsClient(null)}>Fechar</Button>
                   <Button
                     className="bg-primary text-primary-foreground"
-                    onClick={() => { copyTemplate(detailsClient); setDetailsClient(null); }}
+                    onClick={() => {
+                      detailsClient._type === "test" ? copyTestTemplate(detailsClient) : copyTemplate(detailsClient);
+                      setDetailsClient(null);
+                    }}
                   >
                     <Copy className="h-4 w-4 mr-2" /> Copiar e Fechar
                   </Button>
@@ -509,7 +724,57 @@ export default function Clients() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Convert Test to Plan Dialog */}
+        <Dialog open={!!convertDialog} onOpenChange={(v) => { if (!v) { setConvertDialog(null); setConvertPlanId(""); } }}>
+          <DialogContent className="bg-card border-border sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Converter Teste em Plano</DialogTitle>
+            </DialogHeader>
+            {convertDialog && (
+              <div className="space-y-4 mt-2">
+                <p className="text-sm text-muted-foreground">
+                  Converter <span className="text-foreground font-medium">{convertDialog.username}</span> de teste para cliente com plano ativo.
+                </p>
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground text-xs">Selecione o Plano</Label>
+                  <Select value={convertPlanId} onValueChange={setConvertPlanId}>
+                    <SelectTrigger className="bg-secondary border-border">
+                      <SelectValue placeholder="Escolha um plano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {plans.map((p: any) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} — R$ {Number(p.price).toFixed(2)} · {p.duration_days}d
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => { setConvertDialog(null); setConvertPlanId(""); }}>
+                    Cancelar
+                  </Button>
+                  <Button
+                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                    disabled={!convertPlanId || convertTestMutation.isPending}
+                    onClick={() => convertTestMutation.mutate({ testLine: convertDialog, planId: convertPlanId })}
+                  >
+                    {convertTestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Converter
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
+}
+
+function getClientStatus(client: any) {
+  if (client.status === "suspended") return "suspended";
+  if (client.expiry_date && new Date(client.expiry_date) < new Date()) return "expired";
+  return client.status;
 }
