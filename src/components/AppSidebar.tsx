@@ -2,28 +2,40 @@ import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import xsyncLogo from "@/assets/xsync-logo.png";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarFooter, useSidebar,
 } from "@/components/ui/sidebar";
 
 const navItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Servidores", url: "/servers", icon: Server },
-  { title: "Clientes", url: "/clients", icon: Users },
-  { title: "Revendedores", url: "/resellers", icon: UserPlus },
-  { title: "Planos", url: "/plans", icon: CreditCard },
-  { title: "Conexões", url: "/connections", icon: Wifi },
-  { title: "Logs", url: "/logs", icon: ScrollText },
-  { title: "Configurações", url: "/settings", icon: Settings },
+  { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "reseller", "client"] },
+  { title: "Servidores", url: "/servers", icon: Server, roles: ["admin"] },
+  { title: "Clientes", url: "/clients", icon: Users, roles: ["admin", "reseller"] },
+  { title: "Revendedores", url: "/resellers", icon: UserPlus, roles: ["admin"] },
+  { title: "Planos", url: "/plans", icon: CreditCard, roles: ["admin"] },
+  { title: "Conexões", url: "/connections", icon: Wifi, roles: ["admin"] },
+  { title: "Logs", url: "/logs", icon: ScrollText, roles: ["admin"] },
+  { title: "Configurações", url: "/settings", icon: Settings, roles: ["admin"] },
 ];
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const location = useLocation();
+  const navigate = useNavigate();
+  const { signOut, role } = useAuth();
+
+  const filteredItems = navItems.filter(
+    (item) => !role || item.roles.includes(role)
+  );
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate("/login");
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -40,7 +52,7 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {filteredItems.map((item) => {
                 const active = location.pathname === item.url;
                 return (
                   <SidebarMenuItem key={item.title}>
@@ -63,7 +75,10 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        <button className="flex items-center gap-3 px-3 py-2 text-sidebar-foreground hover:text-destructive transition-colors text-sm w-full rounded-lg hover:bg-sidebar-accent">
+        <button
+          onClick={handleLogout}
+          className="flex items-center gap-3 px-3 py-2 text-sidebar-foreground hover:text-destructive transition-colors text-sm w-full rounded-lg hover:bg-sidebar-accent"
+        >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span>Sair</span>}
         </button>
