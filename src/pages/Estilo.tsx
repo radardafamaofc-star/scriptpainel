@@ -103,11 +103,11 @@ export default function Estilo() {
           <div className="flex items-center gap-6">
             {/* Preview */}
             <div className="w-20 h-20 rounded-xl border border-border bg-secondary flex items-center justify-center overflow-hidden relative">
-              <img
-                src={previewUrl || xsyncLogoDefault}
-                alt="Logo"
-                className="w-16 h-16 object-contain"
-              />
+              {previewUrl ? (
+                <img src={previewUrl} alt="Logo" className="w-16 h-16 object-contain" />
+              ) : (
+                <span className="text-xs text-muted-foreground">Sem logo</span>
+              )}
               {previewUrl && (
                 <button
                   onClick={removeLogo}

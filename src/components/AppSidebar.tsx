@@ -103,15 +103,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
-        <img src={logoSrc} alt={panelName} className="w-8 h-8 object-contain" />
-        {!collapsed &&
-        <div>
-            <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
-            <p className="text-[10px] text-sidebar-foreground uppercase tracking-widest">Panel</p>
-          </div>
-        }
-      </div>
+      {(logoSrc || panelName) && (
+        <div className="flex items-center gap-3 px-4 py-5 border-b border-sidebar-border">
+          {logoSrc && <img src={logoSrc} alt={panelName || "Painel"} className="w-8 h-8 object-contain" />}
+          {!collapsed && panelName && (
+            <div>
+              <h1 className="text-lg font-bold text-sidebar-accent-foreground">{panelName}</h1>
+              <p className="text-[10px] text-sidebar-foreground uppercase tracking-widest">Panel</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {!collapsed && user &&
       <div className="px-4 py-3 border-b border-sidebar-border">
