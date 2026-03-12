@@ -43,6 +43,7 @@ export default function Clients() {
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [detailsClient, setDetailsClient] = useState<any>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
