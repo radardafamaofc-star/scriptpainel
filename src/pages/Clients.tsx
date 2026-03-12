@@ -136,11 +136,14 @@ export default function Clients() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       if (data && !editId) {
-        // Show template details for newly created client
         toast({ title: "Cliente criado!" });
-        setLastCreatedClient(data);
-        setDetailsClient({ ...data, _type: "client" });
-        closeDialog();
+        if (!stayOpen) {
+          setDetailsClient({ ...data, _type: "client" });
+          closeDialog();
+        } else {
+          // Stay open: reset form for next client
+          genUser().then(u => genPass().then(p => setForm(prev => ({ ...prev, username: u, password: p, email: "" }))));
+        }
       } else {
         toast({ title: "Cliente atualizado!" });
         closeDialog();
