@@ -392,15 +392,16 @@ export default function Resellers() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {filtered.map((r: any) => {
               const rRole = (resellerRoles as any)[r.user_id] || "reseller";
+              const rProfile = (resellerProfiles as any)[r.user_id];
               return (
                 <div key={r.id} className="glass-card p-5">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                        {(r.profiles?.display_name || r.profiles?.email || "R").charAt(0).toUpperCase()}
+                        {(rProfile?.display_name || rProfile?.email || "R").charAt(0).toUpperCase()}
                       </div>
                       <div>
-                        <h3 className="font-semibold text-foreground">{r.profiles?.display_name || r.profiles?.email}</h3>
+                        <h3 className="font-semibold text-foreground">{rProfile?.display_name || rProfile?.email || "Sem nome"}</h3>
                         <div className="flex items-center gap-2">
                           <span className={`text-xs font-medium ${r.status === "active" ? "text-success" : "text-destructive"}`}>
                             {r.status === "active" ? "Ativo" : "Suspenso"}
