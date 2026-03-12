@@ -106,17 +106,29 @@ export default function Plans() {
       if (!result?.success || !result?.data) return [];
       // XUI returns packages in various formats
       const pkgs = result.data;
-      console.log("[XUI Packages raw]", JSON.stringify(pkgs).substring(0, 500));
+      console.log("[XUI Packages raw]", JSON.stringify(pkgs).substring(0, 1000));
+      
+      const extractName = (p: any): string => {
+        if (!p || typeof p !== "object") return `Package`;
+        // Try all known XUI field names for package name
+        return p.package_name || p.name || p.output_name || p.title || p.packageName || `Package ${p.id || "?"}`;
+      };
+
       if (Array.isArray(pkgs)) {
         return pkgs.map((p: any) => ({
           id: String(p.id),
-          name: p.package_name || p.name || p.output_name || `Package ${p.id}`,
+          name: extractName(p),
         }));
       }
-      return Object.entries(pkgs).map(([key, p]: [string, any]) => ({
-        id: String(p?.id ?? key),
-        name: p?.package_name || p?.name || p?.output_name || `Package ${p?.id ?? key}`,
-      }));
+      return Object.entries(pkgs).map(([key, p]: [string, any]) => {
+        // Some XUI versions return { "1": { id: 1, package_name: "X" } }
+        // Others return { "1": "PackageName" }
+        if (typeof p === "string") return { id: key, name: p };
+        return {
+          id: String(p?.id ?? key),
+          name: extractName(p),
+        };
+      });
     },
     enabled: !!form.server_id && open,
     staleTime: 30000,
