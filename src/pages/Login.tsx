@@ -39,12 +39,12 @@ export default function Login() {
         </div>
 
         <div className="w-full max-w-md relative z-10">
-          <div className="flex flex-col items-center mb-8">
+          <div className="flex flex-col items-center mb-4">
             {branding?.logo_url && (
-              <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-40 h-40 mb-4 object-contain" />
+              <img src={branding.logo_url} alt={branding.panel_name || "Painel"} className="w-28 h-28 mb-2 object-contain" />
             )}
             {branding?.panel_name ? (
-              <h1 className="text-3xl font-bold text-foreground">{branding.panel_name}</h1>
+              <h1 className="text-2xl font-bold text-foreground">{branding.panel_name}</h1>
             ) : null}
             <p className="text-sm text-muted-foreground mt-1">Entre na sua conta</p>
           </div>
