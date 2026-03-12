@@ -41,7 +41,7 @@ export default function Dashboard() {
         supabase.from("servers").select("id, name, status, created_at"),
         supabase.from("active_connections").select("id, client_id", { count: "exact" }),
         supabase.from("credit_transactions").select("amount, type, created_at"),
-        supabase.from("plans").select("id, name, server_id, servers(name)"),
+        supabase.from("plans").select("id, name, server_id, duration_days, is_test, servers(name)"),
       ]);
 
       const clients = clientsRes.data || [];
