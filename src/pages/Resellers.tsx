@@ -87,13 +87,13 @@ export default function Resellers() {
     return [];
   };
 
-  // Single query: resellers + profiles
+  // Query principal de revendedores
   const { data: resellers = [], isLoading } = useQuery({
     queryKey: ["resellers"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("resellers")
-        .select("*, profiles(display_name, email)")
+        .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -101,8 +101,33 @@ export default function Resellers() {
     staleTime: 10000,
   });
 
-  // Fetch roles for resellers (only if we have resellers)
   const resellerUserIds = resellers.map((r: any) => r.user_id);
+
+  // Perfis dos revendedores (consulta separada, sem depender de FK)
+  const { data: resellerProfiles = {} } = useQuery({
+    queryKey: ["reseller-profiles", resellerUserIds.join(",")],
+    queryFn: async () => {
+      if (resellerUserIds.length === 0) return {};
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, email")
+        .in("user_id", resellerUserIds);
+      if (error) throw error;
+
+      const map: Record<string, { display_name: string | null; email: string | null }> = {};
+      (data || []).forEach((p: any) => {
+        map[p.user_id] = {
+          display_name: p.display_name,
+          email: p.email,
+        };
+      });
+      return map;
+    },
+    enabled: resellerUserIds.length > 0,
+    staleTime: 10000,
+  });
+
+  // Fetch roles for resellers (only if we have resellers)
   const { data: resellerRoles = {} } = useQuery({
     queryKey: ["reseller-roles", resellerUserIds.join(",")],
     queryFn: async () => {
