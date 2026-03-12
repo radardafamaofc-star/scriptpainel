@@ -100,14 +100,20 @@ export default function Dashboard() {
       // Plans for quick test
       const testPlans = plans
         .filter((p: any) => p.is_test)
-        .map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          serverId: p.server_id,
-          durationDays: p.duration_days,
-          durationHours: p.duration_hours || 0,
-          serverName: p.servers?.name || "—",
-        }));
+        .map((p: any) => {
+          const totalDurationHours =
+            typeof p.duration_hours === "number" && p.duration_hours > 0
+              ? p.duration_hours
+              : Math.max(1, (p.duration_days ?? 0) * 24);
+
+          return {
+            id: p.id,
+            name: p.name,
+            serverId: p.server_id,
+            durationHours: totalDurationHours,
+            serverName: p.servers?.name || "—",
+          };
+        });
 
       return {
         totalClients: clientsRes.count || 0,
