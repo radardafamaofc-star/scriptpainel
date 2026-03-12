@@ -368,7 +368,7 @@ export default function Dashboard() {
             </div>
 
             {/* Test Dialog */}
-            <Dialog open={testDialogOpen} onOpenChange={(v) => { setTestDialogOpen(v); if (!v) setTestResult(null); }}>
+            <Dialog open={testDialogOpen} onOpenChange={(v) => { setTestDialogOpen(v); if (!v) { setTestResult(null); setTestPlan(null); } }}>
               <DialogContent className="bg-background border-border sm:max-w-lg max-h-[85vh] flex flex-col">
                 <DialogHeader>
                   <DialogTitle className="text-foreground text-lg">Gerar Teste Rápido</DialogTitle>

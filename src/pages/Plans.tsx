@@ -367,11 +367,11 @@ export default function Plans() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${
-                        plan.duration_days <= 1
+                        plan.is_test
                           ? "bg-warning/15 text-warning border border-warning/30"
                           : "bg-muted text-muted-foreground border border-border"
                       }`}>
-                        {plan.duration_days <= 1 ? "Sim" : "Não"}
+                        {plan.is_test ? "Sim" : "Não"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-foreground">
