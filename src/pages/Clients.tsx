@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { DEFAULT_TEMPLATE, renderTemplate } from "@/lib/template";
+import { generateUsername as genUser, generatePassword as genPass } from "@/lib/credentials";
 
 interface ClientForm {
   username: string;
