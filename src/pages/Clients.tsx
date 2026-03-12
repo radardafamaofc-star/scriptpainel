@@ -397,6 +397,7 @@ export default function Clients() {
               <SelectItem value="active">Ativos</SelectItem>
               <SelectItem value="expired">Expirados</SelectItem>
               <SelectItem value="suspended">Suspensos</SelectItem>
+              <SelectItem value="blocked">Bloqueados</SelectItem>
               <SelectItem value="test">Testes</SelectItem>
             </SelectContent>
           </Select>
