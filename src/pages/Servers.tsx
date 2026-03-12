@@ -389,26 +389,26 @@ export default function Servers() {
                     <span className={`px-3 py-1 rounded-full text-xs font-medium ${server.status === "online" ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive"}`}>
                       {server.status === "online" ? "ONLINE" : "OFFLINE"}
                     </span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-card border-border">
-                      <DropdownMenuItem onClick={() => refreshServer(server.id)} className="gap-2">
-                        <RefreshCw className="h-4 w-4" /> Atualizar Status
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => openEdit(server)} className="gap-2">
-                        <Pencil className="h-4 w-4" /> Editar
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => deleteMutation.mutate(server.id)} className="gap-2 text-destructive focus:text-destructive">
-                        <Trash2 className="h-4 w-4" /> Remover
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-card border-border">
+                        <DropdownMenuItem onClick={() => refreshServer(server.id)} className="gap-2">
+                          <RefreshCw className="h-4 w-4" /> Atualizar Status
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEdit(server)} className="gap-2">
+                          <Pencil className="h-4 w-4" /> Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => deleteMutation.mutate(server.id)} className="gap-2 text-destructive focus:text-destructive">
+                          <Trash2 className="h-4 w-4" /> Remover
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
-              </div>
             ))}
           </div>
         )}
