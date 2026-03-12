@@ -580,6 +580,7 @@ export default function Clients() {
                           Conexões: 1
                         </td>
                         <td className="px-5 py-3 text-muted-foreground text-xs">{item.servers?.name || "—"}</td>
+                        <td className="px-5 py-3 text-muted-foreground text-xs">{getCreatorName(item)}</td>
                         <td className="px-5 py-3 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
