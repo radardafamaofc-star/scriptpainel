@@ -105,6 +105,9 @@ export default function Clients() {
 
   const saveMutation = useMutation({
     mutationFn: async (f: ClientForm) => {
+      const selectedPlan = plans.find((p: any) => p.id === f.plan_id);
+      const isTestPlan = selectedPlan?.is_test === true;
+
       // Convert local datetime to proper ISO string with timezone
       let expiryISO: string | null = null;
       if (f.expiry_date) {
@@ -112,36 +115,72 @@ export default function Clients() {
         expiryISO = d.toISOString();
       }
 
-      const payload = {
-        username: f.username,
-        password: f.password,
-        email: f.email || null,
-        plan_id: f.plan_id || null,
-        server_id: f.server_id || null,
-        max_connections: f.max_connections,
-        expiry_date: expiryISO,
-      };
       if (editId) {
-        const updatePayload: any = { ...payload };
-        if (!f.password) delete updatePayload.password;
-        const { error } = await supabase.from("clients").update(updatePayload).eq("id", editId);
+        // Edit always goes to clients table
+        const payload = {
+          username: f.username,
+          password: f.password || undefined,
+          email: f.email || null,
+          plan_id: f.plan_id || null,
+          server_id: f.server_id || null,
+          max_connections: f.max_connections,
+          expiry_date: expiryISO,
+        };
+        if (!f.password) delete payload.password;
+        const { error } = await supabase.from("clients").update(payload).eq("id", editId);
         if (error) throw error;
-        return null;
+        return { data: null, isTest: false };
+      }
+
+      if (isTestPlan) {
+        // Insert into test_lines
+        const totalHours = getPlanDurationHours(selectedPlan);
+        const testPayload = {
+          username: f.username,
+          password: f.password,
+          server_id: f.server_id || null,
+          duration_hours: totalHours,
+          expires_at: expiryISO!,
+          created_by: user!.id,
+        };
+        const { data, error } = await supabase
+          .from("test_lines")
+          .insert(testPayload)
+          .select("*, servers(name, host, dns, template)")
+          .single();
+        if (error) throw error;
+        return { data, isTest: true };
       } else {
-        const { data, error } = await supabase.from("clients").insert({ ...payload, created_by: user!.id }).select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, dns, template)").single();
+        // Insert into clients
+        const payload = {
+          username: f.username,
+          password: f.password,
+          email: f.email || null,
+          plan_id: f.plan_id || null,
+          server_id: f.server_id || null,
+          max_connections: f.max_connections,
+          expiry_date: expiryISO,
+          created_by: user!.id,
+        };
+        const { data, error } = await supabase
+          .from("clients")
+          .insert(payload)
+          .select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, dns, template)")
+          .single();
         if (error) throw error;
-        return data;
+        return { data, isTest: false };
       }
     },
-    onSuccess: (data) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
-      if (data && !editId) {
-        toast({ title: "Cliente criado!" });
+      queryClient.invalidateQueries({ queryKey: ["test-lines"] });
+      
+      if (!editId && result?.data) {
+        toast({ title: result.isTest ? "Teste criado!" : "Cliente criado!" });
         if (!stayOpen) {
-          setDetailsClient({ ...data, _type: "client" });
+          setDetailsClient({ ...result.data, _type: result.isTest ? "test" : "client" });
           closeDialog();
         } else {
-          // Stay open: reset form for next client
           genUser().then(u => genPass().then(p => setForm(prev => ({ ...prev, username: u, password: p, email: "" }))));
         }
       } else {
