@@ -500,7 +500,7 @@ export default function Clients() {
                     </SelectTrigger>
                     <SelectContent>
                       {paidPlans.length > 0 && (
-                        <>
+                        <SelectGroup>
                           <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider">Pago</SelectLabel>
                           {paidPlans.map((p: any) => (
                             <SelectItem key={p.id} value={p.id}>
@@ -512,11 +512,11 @@ export default function Clients() {
                               </div>
                             </SelectItem>
                           ))}
-                        </>
+                        </SelectGroup>
                       )}
                       {testPlansForDialog.length > 0 && (
-                        <>
-                          <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Teste</SelectLabel>
+                        <SelectGroup>
+                          <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider">Teste</SelectLabel>
                           {testPlansForDialog.map((p: any) => (
                             <SelectItem key={p.id} value={p.id}>
                               <div className="flex items-center justify-between w-full gap-4">
@@ -525,7 +525,7 @@ export default function Clients() {
                               </div>
                             </SelectItem>
                           ))}
-                        </>
+                        </SelectGroup>
                       )}
                     </SelectContent>
                   </Select>
