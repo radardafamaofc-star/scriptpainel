@@ -46,7 +46,7 @@ function durationToHours(value: number, unit: DurationUnit): number {
 }
 
 function durationToDays(value: number, unit: DurationUnit): number {
-  return Math.max(1, Math.round(durationToHours(value, unit) / 24));
+  return Math.floor(durationToHours(value, unit) / 24);
 }
 
 function durationLabel(hours: number): string {
