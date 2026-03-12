@@ -386,7 +386,7 @@ export default function Plans() {
                     </td>
                     <td className="px-4 py-3 text-foreground">{plan.bouquets || 0}</td>
                     <td className="px-4 py-3 text-foreground">{plan.max_connections}</td>
-                    <td className="px-4 py-3 text-foreground">{durationLabel(plan.duration_days)}</td>
+                    <td className="px-4 py-3 text-foreground">{durationLabel(plan.duration_hours || plan.duration_days * 24)}</td>
                     <td className="px-4 py-3 text-foreground">0</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1.5">
