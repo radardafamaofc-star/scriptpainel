@@ -232,7 +232,43 @@ export default function Plans() {
                   <p className="text-[10px] text-warning">O servidor não pode ser alterado depois de salvo.</p>
                 </div>
 
-                {/* Ordem */}
+                {/* ID do Plano no Servidor (XUI Packages) */}
+                {form.server_id && (
+                  <div className="space-y-1.5">
+                    <Label className="text-foreground text-xs">ID do Plano no Servidor *</Label>
+                    {packagesLoading ? (
+                      <div className="flex items-center gap-2 py-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Carregando pacotes do servidor...</span>
+                      </div>
+                    ) : xuiPackages.length === 0 ? (
+                      <div className="p-2 rounded bg-warning/10 border border-warning/30">
+                        <p className="text-xs text-warning">Nenhum pacote encontrado neste servidor. Verifique a configuração da API.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {xuiPackages.map((pkg: any) => (
+                          <label key={pkg.id} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="xui_package"
+                              className="accent-primary"
+                              checked={selectedPackageId === pkg.id}
+                              onChange={() => {
+                                setSelectedPackageId(pkg.id);
+                                handleChange("bouquets", parseInt(pkg.id) || 0);
+                              }}
+                            />
+                            <span className="text-sm text-foreground">{pkg.name}</span>
+                            <span className="text-xs text-muted-foreground">(ID {pkg.id})</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[10px] text-primary">Selecione o pacote (package) configurado no XUI One para este plano.</p>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <Label className="text-foreground text-xs">Ordem</Label>
                   <Input type="number" className="bg-secondary border-border" value={form.order} onChange={e => handleChange("order", parseInt(e.target.value) || 0)} />
