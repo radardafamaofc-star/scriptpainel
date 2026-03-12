@@ -182,12 +182,12 @@ export default function Clients() {
 
   const renewMutation = useMutation({
     mutationFn: async (client: any) => {
-      const days = client.plans?.duration_days || 30;
+      const plan = client.plans;
+      const totalHours = plan ? getPlanDurationHours(plan) : 30 * 24;
       const baseDate = client.expiry_date && new Date(client.expiry_date) > new Date()
         ? new Date(client.expiry_date)
         : new Date();
-      const newExpiry = new Date(baseDate);
-      newExpiry.setDate(newExpiry.getDate() + days);
+      const newExpiry = new Date(baseDate.getTime() + totalHours * 60 * 60 * 1000);
       const { error } = await supabase.from("clients").update({
         expiry_date: newExpiry.toISOString(),
         status: "active",
