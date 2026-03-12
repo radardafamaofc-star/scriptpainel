@@ -49,7 +49,7 @@ export default function Tests() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const creds = generateTestCredentials();
+      const creds = await generateTestCredentials();
       const hours = parseInt(duration);
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + hours);
