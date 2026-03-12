@@ -154,21 +154,22 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (sId: string) => {
+    mutationFn: async (plan: { serverId: string | null; durationDays: number }) => {
       const username = "test_" + Math.random().toString(36).substring(2, 8);
       const password = Math.random().toString(36).substring(2, 10);
-      const hours = parseInt(testDuration);
+      const hours = Math.max(1, Math.round((plan.durationDays || 1) * 24));
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + hours);
 
+      const serverId = plan.serverId || "";
       const { error } = await supabase.from("test_lines").insert({
-        username, password, server_id: sId || null,
+        username, password, server_id: serverId || null,
         created_by: user!.id, duration_hours: hours,
         expires_at: expiresAt.toISOString(),
       });
       if (error) throw error;
 
-      const srv: any = servers4test.find((s: any) => s.id === sId);
+      const srv: any = servers4test.find((s: any) => s.id === serverId);
       const serverDns = srv?.dns || "";
       const serverHost = srv?.host || "";
       const fallbackUrl = serverHost.startsWith("http") ? serverHost : `http://${serverHost}:${srv?.port || 80}`;
