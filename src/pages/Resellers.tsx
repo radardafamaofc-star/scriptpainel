@@ -539,7 +539,9 @@ function ResellerRow({
           <div>
             <span className="font-semibold text-primary cursor-pointer hover:underline">{rProfile?.display_name || rProfile?.email || "Sem nome"}</span>
             <div className="flex flex-col gap-0.5 mt-1">
-              <span className="text-xs text-muted-foreground">{Number(r.balance).toLocaleString("pt-BR")} créditos</span>
+              <span className="text-xs text-muted-foreground">
+                {(rRole === "admin" || rRole === "reseller_ultra") ? "∞ créditos ilimitados" : `${Number(r.balance).toLocaleString("pt-BR")} créditos`}
+              </span>
               <span className={`text-xs font-medium ${ROLE_COLORS[rRole] || "text-muted-foreground"}`}>
                 {ROLE_LABELS[rRole] || rRole}
               </span>
