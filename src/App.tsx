@@ -8,9 +8,13 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Servers from "./pages/Servers";
 import Clients from "./pages/Clients";
+import Tests from "./pages/Tests";
 import Resellers from "./pages/Resellers";
 import Plans from "./pages/Plans";
 import Connections from "./pages/Connections";
+import Credits from "./pages/Credits";
+import Coupons from "./pages/Coupons";
+import Reports from "./pages/Reports";
 import Logs from "./pages/Logs";
 import SettingsPage from "./pages/SettingsPage";
 import Login from "./pages/Login";
@@ -31,9 +35,13 @@ const App = () => (
               <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="/servers" element={<ProtectedRoute allowedRoles={["admin"]}><Servers /></ProtectedRoute>} />
               <Route path="/clients" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Clients /></ProtectedRoute>} />
+              <Route path="/tests" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Tests /></ProtectedRoute>} />
               <Route path="/resellers" element={<ProtectedRoute allowedRoles={["admin"]}><Resellers /></ProtectedRoute>} />
               <Route path="/plans" element={<ProtectedRoute allowedRoles={["admin"]}><Plans /></ProtectedRoute>} />
               <Route path="/connections" element={<ProtectedRoute allowedRoles={["admin"]}><Connections /></ProtectedRoute>} />
+              <Route path="/credits" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Credits /></ProtectedRoute>} />
+              <Route path="/coupons" element={<ProtectedRoute allowedRoles={["admin"]}><Coupons /></ProtectedRoute>} />
+              <Route path="/reports" element={<ProtectedRoute allowedRoles={["admin", "reseller"]}><Reports /></ProtectedRoute>} />
               <Route path="/logs" element={<ProtectedRoute allowedRoles={["admin"]}><Logs /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin"]}><SettingsPage /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
