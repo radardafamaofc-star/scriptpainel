@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -182,12 +182,12 @@ export default function Clients() {
 
   const renewMutation = useMutation({
     mutationFn: async (client: any) => {
-      const days = client.plans?.duration_days || 30;
+      const plan = client.plans;
+      const totalHours = plan ? getPlanDurationHours(plan) : 30 * 24;
       const baseDate = client.expiry_date && new Date(client.expiry_date) > new Date()
         ? new Date(client.expiry_date)
         : new Date();
-      const newExpiry = new Date(baseDate);
-      newExpiry.setDate(newExpiry.getDate() + days);
+      const newExpiry = new Date(baseDate.getTime() + totalHours * 60 * 60 * 1000);
       const { error } = await supabase.from("clients").update({
         expiry_date: newExpiry.toISOString(),
         status: "active",
@@ -203,11 +203,10 @@ export default function Clients() {
 
   const convertTestMutation = useMutation({
     mutationFn: async ({ testLine, planId }: { testLine: any; planId: string }) => {
-      const plan = plans.find(p => p.id === planId);
+      const plan = plans.find((p: any) => p.id === planId);
       if (!plan) throw new Error("Plano não encontrado");
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + plan.duration_days);
-      // Create client from test line
+      const totalHours = getPlanDurationHours(plan);
+      const expiry = new Date(Date.now() + totalHours * 60 * 60 * 1000);
       const { error: insertErr } = await supabase.from("clients").insert({
         username: testLine.username,
         password: testLine.password,
@@ -218,7 +217,6 @@ export default function Clients() {
         created_by: user!.id,
       });
       if (insertErr) throw insertErr;
-      // Remove test line
       const { error: deleteErr } = await supabase.from("test_lines").delete().eq("id", testLine.id);
       if (deleteErr) throw deleteErr;
     },
@@ -255,21 +253,50 @@ export default function Clients() {
     setOpen(true);
   };
 
+  const [stayOpen, setStayOpen] = useState(false);
+
+  const getPlanDurationHours = (plan: any): number => {
+    if (plan.duration_hours && plan.duration_hours > 0 && plan.duration_hours !== 720) return plan.duration_hours;
+    if (plan.duration_days && plan.duration_days > 0) return plan.duration_days * 24;
+    return plan.duration_hours || 720;
+  };
+
   const onPlanChange = (planId: string) => {
-    const plan = plans.find(p => p.id === planId);
+    const plan = plans.find((p: any) => p.id === planId);
     if (plan) {
+      const totalHours = getPlanDurationHours(plan);
       const expiry = new Date();
-      expiry.setDate(expiry.getDate() + plan.duration_days);
+      expiry.setTime(expiry.getTime() + totalHours * 60 * 60 * 1000);
       setForm(prev => ({
         ...prev,
         plan_id: planId,
         max_connections: plan.max_connections,
         server_id: plan.server_id || prev.server_id,
-        expiry_date: format(expiry, "yyyy-MM-dd"),
+        expiry_date: format(expiry, "yyyy-MM-dd'T'HH:mm"),
       }));
     } else {
       setForm(prev => ({ ...prev, plan_id: planId }));
     }
+  };
+
+  const formatPlanDuration = (plan: any): string => {
+    const hours = getPlanDurationHours(plan);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days} dias`;
+    const months = Math.round(days / 30);
+    if (months <= 12) return `${months} ${months === 1 ? 'mês' : 'meses'}`;
+    const years = Math.round(months / 12);
+    return `${years} ${years === 1 ? 'ano' : 'anos'}`;
+  };
+
+  const filteredPlans = plans.filter((p: any) => !form.server_id || p.server_id === form.server_id);
+  const paidPlans = filteredPlans.filter((p: any) => !p.is_test);
+  const testPlansForDialog = filteredPlans.filter((p: any) => p.is_test);
+
+  const getServerName = (serverId: string) => {
+    const s = servers.find((sv: any) => sv.id === serverId);
+    return s?.name || "";
   };
 
   const copyCredentials = (client: any) => {
@@ -437,84 +464,132 @@ export default function Clients() {
 
         {/* Dialog for create/edit */}
         <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog(); else setOpen(true); }}>
-          <DialogContent className="bg-card border-border sm:max-w-lg">
+          <DialogContent className="bg-card border-border sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-foreground">{editId ? "Editar Cliente" : "Novo Cliente"}</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 mt-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Usuário</Label>
-                  <div className="flex gap-1">
-                    <Input className="bg-secondary border-border" value={form.username} onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))} />
-                    {!editId && (
-                      <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const u = await genUser(); setForm(prev => ({ ...prev, username: u })); }}>
-                        <RefreshCw className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">{editId ? "Nova Senha (vazio = manter)" : "Senha"}</Label>
-                  <div className="flex gap-1">
-                    <Input className="bg-secondary border-border font-mono" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} />
-                    <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const p = await genPass(); setForm(prev => ({ ...prev, password: p })); }}>
-                      <Key className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
+
+            {/* Tabs: Detalhes */}
+            <div className="border-b border-border mb-4">
+              <span className="text-primary font-medium text-sm pb-2 border-b-2 border-primary inline-block">Detalhes</span>
+            </div>
+
+            <div className="space-y-4">
+              {/* Server Select */}
               <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Email (opcional)</Label>
-                <Input type="email" placeholder="cliente@email.com" className="bg-secondary border-border" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} />
+                <Label className="text-muted-foreground text-xs">Servidor <span className="text-destructive">*</span></Label>
+                <Select value={form.server_id} onValueChange={v => setForm(prev => ({ ...prev, server_id: v, plan_id: "" }))}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {servers.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              {/* Plan Select - shown after server is selected */}
+              {form.server_id && (
                 <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Plano</Label>
+                  <Label className="text-muted-foreground text-xs">Plano <span className="text-destructive">*</span></Label>
                   <Select value={form.plan_id} onValueChange={onPlanChange}>
                     <SelectTrigger className="bg-secondary border-border">
                       <SelectValue placeholder="Selecione" />
                     </SelectTrigger>
                     <SelectContent>
-                      {plans.map((p: any) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name} — R$ {Number(p.price).toFixed(2)}</SelectItem>
-                      ))}
+                      {paidPlans.length > 0 && (
+                        <>
+                          <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider">Pago</SelectLabel>
+                          {paidPlans.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              <div className="flex items-center justify-between w-full gap-4">
+                                <span>{getServerName(p.server_id)} • {p.name}</span>
+                                <span className="text-xs text-muted-foreground ml-auto">
+                                  {p.max_connections} conexões&nbsp;&nbsp;{p.bouquets} créditos
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      {testPlansForDialog.length > 0 && (
+                        <>
+                          <SelectLabel className="text-xs text-muted-foreground uppercase tracking-wider mt-2">Teste</SelectLabel>
+                          {testPlansForDialog.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              <div className="flex items-center justify-between w-full gap-4">
+                                <span>{getServerName(p.server_id)} • {p.name}</span>
+                                <span className="text-xs text-muted-foreground ml-auto">Teste</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Servidor</Label>
-                  <Select value={form.server_id} onValueChange={v => setForm(prev => ({ ...prev, server_id: v }))}>
-                    <SelectTrigger className="bg-secondary border-border">
-                      <SelectValue placeholder="Selecione" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {servers.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Máx. Conexões</Label>
-                  <Input type="number" min={1} className="bg-secondary border-border" value={form.max_connections} onChange={e => setForm(prev => ({ ...prev, max_connections: parseInt(e.target.value) || 1 }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-muted-foreground text-xs">Data de Expiração</Label>
-                  <Input type="date" className="bg-secondary border-border" value={form.expiry_date} onChange={e => setForm(prev => ({ ...prev, expiry_date: e.target.value }))} />
-                </div>
-              </div>
-              <Button
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                onClick={() => saveMutation.mutate(form)}
-                disabled={saveMutation.isPending || !form.username || (!editId && !form.password)}
-              >
-                {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                {editId ? "Salvar Alterações" : "Criar Cliente"}
-              </Button>
+              )}
+
+              {/* Username/Password - auto-generated, shown for edit or after plan selected */}
+              {(editId || form.plan_id) && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">Usuário</Label>
+                      <div className="flex gap-1">
+                        <Input className="bg-secondary border-border" value={form.username} onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))} />
+                        {!editId && (
+                          <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const u = await genUser(); setForm(prev => ({ ...prev, username: u })); }}>
+                            <RefreshCw className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">{editId ? "Nova Senha (vazio = manter)" : "Senha"}</Label>
+                      <div className="flex gap-1">
+                        <Input className="bg-secondary border-border font-mono" value={form.password} onChange={e => setForm(prev => ({ ...prev, password: e.target.value }))} />
+                        <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const p = await genPass(); setForm(prev => ({ ...prev, password: p })); }}>
+                          <Key className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs">Email (opcional)</Label>
+                    <Input type="email" placeholder="cliente@email.com" className="bg-secondary border-border" value={form.email} onChange={e => setForm(prev => ({ ...prev, email: e.target.value }))} />
+                  </div>
+                </>
+              )}
             </div>
+
+            <DialogFooter className="flex-col items-center gap-3 mt-4">
+              <div className="flex gap-2 w-full justify-center">
+                <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
+                <Button
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  onClick={() => {
+                    saveMutation.mutate(form, {
+                      onSuccess: () => {
+                        if (stayOpen) {
+                          genUser().then(u => genPass().then(p => setForm(prev => ({ ...prev, username: u, password: p, email: "" }))));
+                        }
+                      }
+                    });
+                  }}
+                  disabled={saveMutation.isPending || !form.username || (!editId && !form.password) || !form.server_id || !form.plan_id}
+                >
+                  {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  💾 Salvar
+                </Button>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                <input type="checkbox" checked={stayOpen} onChange={e => setStayOpen(e.target.checked)} className="rounded border-border" />
+                Continue nesta tela após clicar em salvar
+              </label>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
