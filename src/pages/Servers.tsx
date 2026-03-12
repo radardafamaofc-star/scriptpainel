@@ -135,7 +135,7 @@ export default function Servers() {
     setForm({
       name: server.name,
       url: "",        // Hidden - leave blank to keep current
-      dns: "",         // Hidden - leave blank to keep current
+      dns: (server as any).dns || "",  // DNS stays visible
       api_key: "",     // Hidden - leave blank to keep current
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
