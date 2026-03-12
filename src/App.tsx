@@ -8,7 +8,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
 import Servers from "./pages/Servers";
 import Clients from "./pages/Clients";
-import Tests from "./pages/Tests";
+
 import Resellers from "./pages/Resellers";
 import Plans from "./pages/Plans";
 import Connections from "./pages/Connections";
