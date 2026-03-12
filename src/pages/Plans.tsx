@@ -130,11 +130,12 @@ export default function Plans() {
   const closeDialog = () => { setOpen(false); setEditId(null); setForm(emptyForm); };
 
   const openEdit = (plan: any) => {
-    const days = plan.duration_days;
-    let unit: DurationUnit = "days";
-    let value = days;
-    if (days >= 365 && days % 365 === 0) { unit = "years"; value = days / 365; }
-    else if (days >= 30 && days % 30 === 0) { unit = "months"; value = days / 30; }
+    const hours = plan.duration_hours || (plan.duration_days * 24);
+    let unit: DurationUnit = "hours";
+    let value = hours;
+    if (hours >= 365 * 24 && hours % (365 * 24) === 0) { unit = "years"; value = hours / (365 * 24); }
+    else if (hours >= 30 * 24 && hours % (30 * 24) === 0) { unit = "months"; value = hours / (30 * 24); }
+    else if (hours >= 24 && hours % 24 === 0) { unit = "days"; value = hours / 24; }
 
     setEditId(plan.id);
     setForm({
