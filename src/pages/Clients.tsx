@@ -469,6 +469,46 @@ export default function Clients() {
             </table>
           </div>
         )}
+
+        {/* Client Details Dialog */}
+        <Dialog open={!!detailsClient} onOpenChange={(v) => { if (!v) setDetailsClient(null); }}>
+          <DialogContent className="bg-card border-border sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Detalhes do Cliente</DialogTitle>
+            </DialogHeader>
+            {detailsClient && (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-secondary/50 border border-border p-4 font-mono text-xs text-foreground whitespace-pre-wrap leading-relaxed">
+                  {getRenderedTemplate(detailsClient)}
+                </div>
+                <div className="flex items-center justify-center gap-3">
+                  <Button
+                    className="bg-success hover:bg-success/90 text-success-foreground"
+                    onClick={() => sendWhatsApp(detailsClient)}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" /> WhatsApp
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-primary text-primary hover:bg-primary/10"
+                    onClick={() => copyTemplate(detailsClient)}
+                  >
+                    <Copy className="h-4 w-4 mr-2" /> Copiar
+                  </Button>
+                </div>
+                <DialogFooter className="flex gap-2 sm:justify-center">
+                  <Button variant="ghost" onClick={() => setDetailsClient(null)}>Fechar</Button>
+                  <Button
+                    className="bg-primary text-primary-foreground"
+                    onClick={() => { copyTemplate(detailsClient); setDetailsClient(null); }}
+                  >
+                    <Copy className="h-4 w-4 mr-2" /> Copiar e Fechar
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
