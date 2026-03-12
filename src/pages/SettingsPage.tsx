@@ -103,15 +103,15 @@ export default function SettingsPage() {
           <div className="space-y-4">
             <div>
               <Label className="text-muted-foreground text-sm">Nome</Label>
-              <Input value={displayName} onChange={e => setDisplayName(e.target.value)} className="bg-secondary border-border mt-1" />
+              <Input value={displayName} onChange={e => setDisplayName(e.target.value)} className="bg-secondary border-border mt-1 text-foreground" />
             </div>
             <div>
               <Label className="text-muted-foreground text-sm">Email</Label>
-              <Input value={email} disabled className="bg-secondary border-border mt-1 opacity-50" />
+              <Input value={email} disabled className="bg-secondary border-border mt-1 text-foreground opacity-60" />
             </div>
             <div>
               <Label className="text-muted-foreground text-sm">Nova Senha</Label>
-              <Input type="password" placeholder="Deixe vazio para manter" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="bg-secondary border-border mt-1" />
+              <Input type="password" placeholder="Deixe vazio para manter" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="bg-secondary border-border mt-1 text-foreground placeholder:text-muted-foreground" />
             </div>
           </div>
           <Button onClick={handleSaveProfile} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
@@ -130,8 +130,8 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div>
                 <Label className="text-muted-foreground text-sm">Tipo de caracteres</Label>
-                <Select value={charset} onValueChange={setCharset}>
-                  <SelectTrigger className="bg-secondary border-border mt-1">
+                 <Select value={charset} onValueChange={setCharset}>
+                  <SelectTrigger className="bg-secondary border-border mt-1 text-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -149,7 +149,7 @@ export default function SettingsPage() {
                   max={32}
                   value={credLength}
                   onChange={e => setCredLength(Math.max(6, parseInt(e.target.value) || 6))}
-                  className="bg-secondary border-border mt-1"
+                  className="bg-secondary border-border mt-1 text-foreground"
                 />
                 <p className="text-xs text-muted-foreground mt-1">Mínimo 6 caracteres</p>
               </div>
