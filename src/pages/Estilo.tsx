@@ -18,17 +18,7 @@ export default function Estilo() {
   const [uploading, setUploading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const { data: branding } = useQuery({
-    queryKey: ["panel-settings", "branding"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("panel_settings")
-        .select("value")
-        .eq("key", "branding")
-        .single();
-      return data?.value as { logo_url: string | null; panel_name: string } || { logo_url: null, panel_name: "xSync" };
-    },
-  });
+  const { data: branding } = useBranding();
 
   useEffect(() => {
     if (branding) {
