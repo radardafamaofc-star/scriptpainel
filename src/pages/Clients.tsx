@@ -411,7 +411,7 @@ export default function Clients() {
                   <div className="flex gap-1">
                     <Input className="bg-secondary border-border" value={form.username} onChange={e => setForm(prev => ({ ...prev, username: e.target.value }))} />
                     {!editId && (
-                      <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={() => setForm(prev => ({ ...prev, username: generateUsername() }))}>
+                      <Button variant="outline" size="icon" className="shrink-0 border-border" onClick={async () => { const u = await genUser(); setForm(prev => ({ ...prev, username: u })); }}>
                         <RefreshCw className="h-3 w-3" />
                       </Button>
                     )}
