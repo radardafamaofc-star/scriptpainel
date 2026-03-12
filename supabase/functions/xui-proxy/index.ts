@@ -98,7 +98,11 @@ async function xuiRequest(
 
       try {
         const json = JSON.parse(text);
-        console.log(`[XUI] ✅ Success!`);
+        console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
+        if (action === 'get_packages') {
+          const sample = JSON.stringify(json).substring(0, 300);
+          console.log(`[XUI] Packages sample: ${sample}`);
+        }
         return json;
       } catch {
         console.log(`[XUI] Non-JSON: ${text.substring(0, 100)}`);
