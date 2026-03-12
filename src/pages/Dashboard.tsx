@@ -97,12 +97,16 @@ export default function Dashboard() {
         resellerGrowth.push({ name: dayStr, atual: Math.max(0, Math.round(Math.random() * 2)), anterior: Math.max(0, Math.round(Math.random() * 1.5)) });
       }
 
-      // Plans for quick test (plans that have test flag or all plans)
-      const testPlans = plans.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        serverName: p.servers?.name || "—",
-      }));
+      // Plans for quick test
+      const testPlans = plans
+        .filter((p: any) => p.is_test)
+        .map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          serverId: p.server_id,
+          durationDays: p.duration_days,
+          serverName: p.servers?.name || "—",
+        }));
 
       return {
         totalClients: clientsRes.count || 0,
