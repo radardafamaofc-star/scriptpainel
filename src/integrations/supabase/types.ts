@@ -119,6 +119,72 @@ export type Database = {
           },
         ]
       }
+      coupons: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string
+          discount_type: string
+          discount_value: number
+          id: string
+          max_uses: number
+          used_count: number
+          valid_from: string
+          valid_until: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by: string
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          max_uses?: number
+          used_count?: number
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string
+          discount_type?: string
+          discount_value?: number
+          id?: string
+          max_uses?: number
+          used_count?: number
+          valid_from?: string
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
+      credit_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       plans: {
         Row: {
           bouquets: number
@@ -303,6 +369,50 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      test_lines: {
+        Row: {
+          created_at: string
+          created_by: string
+          duration_hours: number
+          expires_at: string
+          id: string
+          password: string
+          server_id: string | null
+          status: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          duration_hours?: number
+          expires_at: string
+          id?: string
+          password: string
+          server_id?: string | null
+          status?: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          duration_hours?: number
+          expires_at?: string
+          id?: string
+          password?: string
+          server_id?: string | null
+          status?: string
+          username?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_lines_server_id_fkey"
+            columns: ["server_id"]
+            isOneToOne: false
+            referencedRelation: "servers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
