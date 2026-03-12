@@ -228,6 +228,7 @@ export type Database = {
       }
       servers: {
         Row: {
+          access_code: string | null
           api_key: string | null
           created_at: string
           created_by: string
@@ -243,6 +244,7 @@ export type Database = {
           username: string | null
         }
         Insert: {
+          access_code?: string | null
           api_key?: string | null
           created_at?: string
           created_by: string
@@ -258,6 +260,7 @@ export type Database = {
           username?: string | null
         }
         Update: {
+          access_code?: string | null
           api_key?: string | null
           created_at?: string
           created_by?: string
