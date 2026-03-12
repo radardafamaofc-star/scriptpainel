@@ -203,11 +203,10 @@ export default function Clients() {
 
   const convertTestMutation = useMutation({
     mutationFn: async ({ testLine, planId }: { testLine: any; planId: string }) => {
-      const plan = plans.find(p => p.id === planId);
+      const plan = plans.find((p: any) => p.id === planId);
       if (!plan) throw new Error("Plano não encontrado");
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + plan.duration_days);
-      // Create client from test line
+      const totalHours = getPlanDurationHours(plan);
+      const expiry = new Date(Date.now() + totalHours * 60 * 60 * 1000);
       const { error: insertErr } = await supabase.from("clients").insert({
         username: testLine.username,
         password: testLine.password,
@@ -218,7 +217,6 @@ export default function Clients() {
         created_by: user!.id,
       });
       if (insertErr) throw insertErr;
-      // Remove test line
       const { error: deleteErr } = await supabase.from("test_lines").delete().eq("id", testLine.id);
       if (deleteErr) throw deleteErr;
     },
