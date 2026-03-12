@@ -30,7 +30,7 @@ export function Layout({ children }: LayoutProps) {
                 <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary font-semibold text-sm">{initial}</div>
                 <div className="flex flex-col">
                   <span className="text-sm font-medium text-foreground leading-tight">{displayName}</span>
-                  {roleBadge && <span className="text-[10px] text-muted-foreground leading-tight">{roleBadge}</span>}
+                  {roleBadge && <span className="text-[10px] leading-tight text-destructive">{roleBadge}</span>}
                 </div>
               </div>
             </div>
@@ -40,6 +40,6 @@ export function Layout({ children }: LayoutProps) {
           </main>
         </div>
       </div>
-    </SidebarProvider>
-  );
+    </SidebarProvider>);
+
 }
