@@ -29,7 +29,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationDays: number; serverName: string } | null>(null);
+  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationDays: number; durationHours: number; serverName: string } | null>(null);
   const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
@@ -105,6 +105,7 @@ export default function Dashboard() {
           name: p.name,
           serverId: p.server_id,
           durationDays: p.duration_days,
+          durationHours: p.duration_hours || 0,
           serverName: p.servers?.name || "—",
         }));
 
@@ -154,17 +155,17 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { serverId: string | null; durationDays: number }) => {
+    mutationFn: async (plan: { serverId: string | null; durationDays: number; durationHours: number }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
-      const hours = Math.max(1, Math.round((plan.durationDays || 1) * 24));
+      const totalHours = Math.max(1, (plan.durationDays || 0) * 24 + (plan.durationHours || 0));
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + hours);
+      expiresAt.setHours(expiresAt.getHours() + totalHours);
 
       const serverId = plan.serverId || "";
       const { error } = await supabase.from("test_lines").insert({
         username, password, server_id: serverId || null,
-        created_by: user!.id, duration_hours: hours,
+        created_by: user!.id, duration_hours: totalHours,
         expires_at: expiresAt.toISOString(),
       });
       if (error) throw error;
@@ -199,7 +200,7 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationDays: number; serverName: string }) => {
+  const handleQuickTest = (plan: { id: string; name: string; serverId: string | null; durationDays: number; durationHours: number; serverName: string }) => {
     setTestPlan(plan);
     setTestResult(null);
     setTestDialogOpen(true);
@@ -243,7 +244,13 @@ export default function Dashboard() {
                     <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
                       onClick={() => handleQuickTest(plan)}>
                       <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
-                      <span className="text-[10px] text-muted-foreground uppercase">{plan.durationDays} dia(s)</span>
+                      <span className="text-[10px] text-muted-foreground uppercase">
+                        {plan.durationDays > 0 && plan.durationHours > 0
+                          ? `${plan.durationDays}d ${plan.durationHours}h`
+                          : plan.durationDays > 0
+                            ? `${plan.durationDays} dia(s)`
+                            : `${plan.durationHours}h`}
+                      </span>
                     </div>
                   ))
                 )}
@@ -389,7 +396,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays, durationHours: testPlan.durationHours });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >
