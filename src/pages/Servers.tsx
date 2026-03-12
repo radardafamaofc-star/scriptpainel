@@ -409,6 +409,7 @@ export default function Servers() {
                     </DropdownMenu>
                   </div>
                 </div>
+              </div>
             ))}
           </div>
         )}
