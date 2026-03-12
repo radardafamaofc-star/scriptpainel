@@ -271,7 +271,7 @@ export default function Dashboard() {
                 ) : (
                   (stats?.testPlans || []).map((plan: any) => (
                     <div key={plan.id} className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2.5 hover:bg-muted transition-colors cursor-pointer"
-                      onClick={() => handleQuickTest(plan)}>
+                      onClick={() => { void handleQuickTest(plan); }}>
                       <span className="text-xs font-medium text-primary"><TestTube className="h-3 w-3 inline mr-1" />{plan.serverName} • {plan.name}</span>
                       <span className="text-[10px] text-muted-foreground uppercase">{formatDuration(plan.durationHours)}</span>
                     </div>
