@@ -376,28 +376,22 @@ export default function Dashboard() {
                 {!testResult ? (
                   <div className="space-y-4 mt-2">
                     <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">Duração</Label>
-                      <Select value={testDuration} onValueChange={setTestDuration}>
-                        <SelectTrigger className="bg-secondary border-border">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 hora</SelectItem>
-                          <SelectItem value="2">2 horas</SelectItem>
-                          <SelectItem value="4">4 horas</SelectItem>
-                          <SelectItem value="6">6 horas</SelectItem>
-                          <SelectItem value="12">12 horas</SelectItem>
-                          <SelectItem value="24">24 horas</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-muted-foreground text-xs">Plano selecionado</Label>
+                      <div className="rounded-md border border-border bg-secondary px-3 py-2.5">
+                        <p className="text-sm font-medium text-foreground">{testPlan?.serverName} • {testPlan?.name}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Duração: {testPlan?.durationDays || 1} dia(s)</p>
+                      </div>
                     </div>
                     <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
                       <p className="text-xs text-primary/80">Testes não consomem créditos. Use para demonstrar o serviço.</p>
                     </div>
                     <Button
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-                      onClick={() => createTestMutation.mutate(testServerId)}
-                      disabled={createTestMutation.isPending}
+                      onClick={() => {
+                        if (!testPlan) return;
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationDays: testPlan.durationDays });
+                      }}
+                      disabled={createTestMutation.isPending || !testPlan}
                     >
                       {createTestMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                       Gerar Teste
