@@ -196,6 +196,7 @@ export type Database = {
           name: string
           price: number
           server_id: string | null
+          template: string | null
           updated_at: string
         }
         Insert: {
@@ -208,6 +209,7 @@ export type Database = {
           name: string
           price?: number
           server_id?: string | null
+          template?: string | null
           updated_at?: string
         }
         Update: {
@@ -220,6 +222,7 @@ export type Database = {
           name?: string
           price?: number
           server_id?: string | null
+          template?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -305,6 +308,7 @@ export type Database = {
           password: string | null
           port: number
           status: string
+          template: string | null
           updated_at: string
           uptime: string | null
           username: string | null
@@ -321,6 +325,7 @@ export type Database = {
           password?: string | null
           port?: number
           status?: string
+          template?: string | null
           updated_at?: string
           uptime?: string | null
           username?: string | null
@@ -337,6 +342,7 @@ export type Database = {
           password?: string | null
           port?: number
           status?: string
+          template?: string | null
           updated_at?: string
           uptime?: string | null
           username?: string | null

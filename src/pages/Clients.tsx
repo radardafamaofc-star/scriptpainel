@@ -1,10 +1,10 @@
 import { Layout } from "@/components/Layout";
-import { Plus, Search, MoreVertical, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key } from "lucide-react";
+import { Plus, Search, MoreVertical, Loader2, Users, Pencil, Trash2, RefreshCw, Ban, CheckCircle, Copy, Key, Eye, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { DEFAULT_TEMPLATE, renderTemplate } from "@/lib/template";
 
 interface ClientForm {
   username: string;
@@ -42,6 +43,7 @@ export default function Clients() {
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [detailsClient, setDetailsClient] = useState<any>(null);
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -51,7 +53,7 @@ export default function Clients() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("clients")
-        .select("*, plans(name, duration_days, max_connections), servers(name)")
+        .select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, template)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
@@ -194,6 +196,48 @@ export default function Clients() {
     const text = `Usuário: ${client.username}\nSenha: ${client.password}`;
     navigator.clipboard.writeText(text);
     toast({ title: "Credenciais copiadas!" });
+  };
+
+  const getClientTemplate = (client: any): string => {
+    // Priority: plan template > server template > default
+    const planTemplate = client.plans?.template;
+    const serverTemplate = client.servers?.template;
+    return planTemplate || serverTemplate || DEFAULT_TEMPLATE;
+  };
+
+  const getRenderedTemplate = (client: any): string => {
+    const template = getClientTemplate(client);
+    const serverHost = client.servers?.host || "";
+    let dns = serverHost;
+    let dnsHost = serverHost;
+    try {
+      const parsed = new URL(serverHost);
+      dns = `${parsed.protocol}//${parsed.host}`;
+      dnsHost = parsed.host;
+    } catch { /* keep raw */ }
+
+    return renderTemplate(template, {
+      username: client.username || "",
+      password: client.password || "",
+      package: client.plans?.name || "",
+      pay_url: "",
+      plan_price: client.plans?.price ? `R$ ${Number(client.plans.price).toFixed(2)}` : "R$ 0,00",
+      expires_at: client.expiry_date ? format(new Date(client.expiry_date), "dd/MM/yyyy HH:mm:ss") : "",
+      connections: String(client.max_connections || 1),
+      dns,
+      dns_host: dnsHost,
+    });
+  };
+
+  const copyTemplate = (client: any) => {
+    const text = getRenderedTemplate(client);
+    navigator.clipboard.writeText(text);
+    toast({ title: "Copiado!" });
+  };
+
+  const sendWhatsApp = (client: any) => {
+    const text = encodeURIComponent(getRenderedTemplate(client));
+    window.open(`https://wa.me/?text=${text}`, "_blank");
   };
 
   const filtered = clients.filter((c: any) => {
@@ -388,9 +432,19 @@ export default function Clients() {
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="bg-card border-border">
+                            <DropdownMenuItem onClick={() => setDetailsClient(client)} className="gap-2">
+                              <Eye className="h-4 w-4" /> Ver Detalhes
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => copyCredentials(client)} className="gap-2">
                               <Copy className="h-4 w-4" /> Copiar Credenciais
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => copyTemplate(client)} className="gap-2">
+                              <Copy className="h-4 w-4" /> Copiar Template
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => sendWhatsApp(client)} className="gap-2">
+                              <MessageCircle className="h-4 w-4" /> WhatsApp
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => openEdit(client)} className="gap-2">
                               <Pencil className="h-4 w-4" /> Editar
                             </DropdownMenuItem>
@@ -415,6 +469,46 @@ export default function Clients() {
             </table>
           </div>
         )}
+
+        {/* Client Details Dialog */}
+        <Dialog open={!!detailsClient} onOpenChange={(v) => { if (!v) setDetailsClient(null); }}>
+          <DialogContent className="bg-card border-border sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-foreground">Detalhes do Cliente</DialogTitle>
+            </DialogHeader>
+            {detailsClient && (
+              <div className="space-y-4">
+                <div className="rounded-lg bg-secondary/50 border border-border p-4 font-mono text-xs text-foreground whitespace-pre-wrap leading-relaxed">
+                  {getRenderedTemplate(detailsClient)}
+                </div>
+                <div className="flex items-center justify-center gap-3">
+                  <Button
+                    className="bg-success hover:bg-success/90 text-success-foreground"
+                    onClick={() => sendWhatsApp(detailsClient)}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-2" /> WhatsApp
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-primary text-primary hover:bg-primary/10"
+                    onClick={() => copyTemplate(detailsClient)}
+                  >
+                    <Copy className="h-4 w-4 mr-2" /> Copiar
+                  </Button>
+                </div>
+                <DialogFooter className="flex gap-2 sm:justify-center">
+                  <Button variant="ghost" onClick={() => setDetailsClient(null)}>Fechar</Button>
+                  <Button
+                    className="bg-primary text-primary-foreground"
+                    onClick={() => { copyTemplate(detailsClient); setDetailsClient(null); }}
+                  >
+                    <Copy className="h-4 w-4 mr-2" /> Copiar e Fechar
+                  </Button>
+                </DialogFooter>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

@@ -1,5 +1,6 @@
 import { Layout } from "@/components/Layout";
-import { Server, Plus, Wifi, WifiOff, MoreVertical, TestTube, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff } from "lucide-react";
+import { Server, Plus, Wifi, WifiOff, MoreVertical, TestTube, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff, FileText } from "lucide-react";
+import { DEFAULT_TEMPLATE } from "@/lib/template";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,10 +21,11 @@ interface ServerForm {
   api_version: string;
   use_proxy: boolean;
   max_clients: number;
+  template: string;
 }
 
 const emptyForm: ServerForm = {
-  name: "", url: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500,
+  name: "", url: "", api_key: "", api_version: "1", use_proxy: false, max_clients: 500, template: DEFAULT_TEMPLATE,
 };
 
 function parseUrl(url: string) {
@@ -66,6 +68,7 @@ export default function Servers() {
         access_code: formData.api_version,
         max_clients: formData.max_clients,
         username: formData.use_proxy ? "proxy" : null,
+        template: formData.template || null,
       };
 
       if (editId) {
@@ -120,6 +123,7 @@ export default function Servers() {
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
+      template: (server as any).template || DEFAULT_TEMPLATE,
     });
     setTestResult(null);
     setOpen(true);
@@ -281,6 +285,28 @@ export default function Servers() {
                       <Label htmlFor="proxy-yes" className="text-sm text-foreground cursor-pointer">Sim</Label>
                     </div>
                   </RadioGroup>
+                </div>
+
+                {/* Template */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-foreground text-sm font-medium">Template</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs border-primary text-primary hover:bg-primary/10"
+                      onClick={() => handleChange("template", DEFAULT_TEMPLATE)}
+                    >
+                      <FileText className="h-3 w-3 mr-1" /> Aplicar Modelo
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Você pode copiar o exemplo abaixo e colar na caixa acima.</p>
+                  <textarea
+                    className="w-full min-h-[200px] rounded-lg bg-secondary border border-border p-3 text-xs text-foreground font-mono resize-y focus:outline-none focus:ring-1 focus:ring-primary"
+                    value={form.template}
+                    onChange={e => handleChange("template", e.target.value)}
+                    placeholder="Template do servidor..."
+                  />
                 </div>
 
                 {testResult && (
