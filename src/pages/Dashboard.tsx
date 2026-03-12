@@ -144,7 +144,7 @@ export default function Dashboard() {
   const { data: servers4test = [] } = useQuery({
     queryKey: ["servers-for-test"],
     queryFn: async () => {
-      const { data } = await supabase.from("servers").select("id, name, status, host, port, template").order("name");
+      const { data } = await supabase.from("servers").select("id, name, status, host, port, dns, template").order("name");
       return data || [];
     },
   });
