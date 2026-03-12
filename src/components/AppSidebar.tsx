@@ -53,6 +53,29 @@ export function AppSidebar() {
   const logoSrc = branding?.logo_url || xsyncLogoDefault;
   const panelName = branding?.panel_name || "xSync";
 
+  const displayName = user?.user_metadata?.display_name || user?.email?.split("@")[0] || "Usuário";
+
+  const { data: myBalance = 0 } = useQuery({
+    queryKey: ["my-reseller-balance", user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+      const { data } = await supabase
+        .from("resellers")
+        .select("balance")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return Number(data?.balance || 0);
+    },
+    enabled: !!user && !loading && role !== "admin" && role !== "reseller_ultra",
+    staleTime: 30000,
+  });
+
+  const creditsLabel = loading
+    ? "Carregando créditos..."
+    : (role === "admin" || role === "reseller_ultra")
+      ? "∞ créditos ilimitados"
+      : `${myBalance.toLocaleString("pt-BR")} créditos`;
+
   const filterByRole = (items: typeof mainItems) =>
     items.filter((item) => !role || item.roles.includes(role));
 
