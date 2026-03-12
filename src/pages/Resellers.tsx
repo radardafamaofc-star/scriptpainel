@@ -533,19 +533,15 @@ function ResellerRow({
 }) {
   return (
     <>
-      <tr className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+      <tr className="border-b border-border/50 hover:bg-accent/50 transition-colors">
         {/* Usuário */}
-        <td className="py-4 pr-4">
+        <td className="px-5 py-3">
           <div>
-            <span className="font-semibold text-primary cursor-pointer hover:underline">{rProfile?.display_name || rProfile?.email || "Sem nome"}</span>
-            <div className="flex flex-col gap-0.5 mt-1">
-              <span className="text-xs text-muted-foreground">
-                {(rRole === "admin" || rRole === "reseller_ultra") ? "∞ créditos ilimitados" : `${Number(r.balance).toLocaleString("pt-BR")} créditos`}
-              </span>
-              <span className={`text-xs font-medium ${ROLE_COLORS[rRole] || "text-muted-foreground"}`}>
-                {ROLE_LABELS[rRole] || rRole}
-              </span>
-            </div>
+            <p className="font-medium text-primary">{rProfile?.display_name || rProfile?.email || "Sem nome"}</p>
+            <p className="text-xs text-muted-foreground">{rProfile?.email || "—"}</p>
+            <span className={`text-xs font-medium ${ROLE_COLORS[rRole] || "text-muted-foreground"}`}>
+              {ROLE_LABELS[rRole] || rRole}
+            </span>
           </div>
         </td>
 
