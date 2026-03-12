@@ -590,7 +590,7 @@ function ResellerRow({
               {r.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
             </button>
             {onDelete && (
-              <button onClick={onDelete} className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title="Remover">
+              <button onClick={onDelete} className="p-1.5 rounded text-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors" title="Remover">
                 <Trash2 className="h-4 w-4" />
               </button>
             )}
