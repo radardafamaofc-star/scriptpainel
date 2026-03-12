@@ -36,13 +36,17 @@ const emptyForm: PlanForm = {
   max_connections: 2, bouquets: 0, template: "",
 };
 
-function durationToDays(value: number, unit: DurationUnit): number {
+function durationToHours(value: number, unit: DurationUnit): number {
   switch (unit) {
-    case "hours": return Math.max(1, Math.round(value / 24));
-    case "days": return value;
-    case "months": return value * 30;
-    case "years": return value * 365;
+    case "hours": return value;
+    case "days": return value * 24;
+    case "months": return value * 30 * 24;
+    case "years": return value * 365 * 24;
   }
+}
+
+function durationToDays(value: number, unit: DurationUnit): number {
+  return Math.max(1, Math.round(durationToHours(value, unit) / 24));
 }
 
 function durationLabel(days: number): string {
