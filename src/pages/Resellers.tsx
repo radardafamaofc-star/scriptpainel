@@ -34,10 +34,10 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  admin: "text-destructive",
-  reseller: "text-primary",
-  reseller_master: "text-orange-400",
-  reseller_ultra: "text-emerald-400",
+  admin: "text-destructive font-semibold",
+  reseller: "text-primary font-semibold",
+  reseller_master: "text-warning font-semibold",
+  reseller_ultra: "text-success font-semibold",
 };
 
 function formatDate(dateStr: string | null) {
@@ -553,8 +553,8 @@ function ResellerRow({
 
         {/* Datas */}
         <td className="py-4 pr-4">
-          <div className="space-y-0.5 text-xs text-muted-foreground">
-            <p>Criado em<br /><span className="text-foreground/80">{formatDate(r.created_at)}</span></p>
+          <div className="space-y-0.5 text-xs">
+            <p className="text-foreground/60">Criado em<br /><span className="text-foreground">{formatDate(r.created_at)}</span></p>
           </div>
         </td>
 
@@ -578,19 +578,19 @@ function ResellerRow({
         {/* Ações */}
         <td className="py-4 text-right">
           <div className="flex items-center justify-end gap-1.5">
-            <button onClick={onEdit} className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" title="Editar">
+            <button onClick={onEdit} className="p-1.5 rounded text-foreground/70 hover:text-foreground hover:bg-accent transition-colors" title="Editar">
               <Pencil className="h-4 w-4" />
             </button>
             {onAddCredits && (
-              <button onClick={onAddCredits} className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors" title="Adicionar Créditos">
+              <button onClick={onAddCredits} className="p-1.5 rounded text-foreground/70 hover:text-primary hover:bg-primary/10 transition-colors" title="Adicionar Créditos">
                 <DollarSign className="h-4 w-4" />
               </button>
             )}
-            <button onClick={onToggleStatus} className={`p-1.5 rounded transition-colors ${r.status === "active" ? "text-muted-foreground hover:text-destructive hover:bg-destructive/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`} title={r.status === "active" ? "Suspender" : "Ativar"}>
+            <button onClick={onToggleStatus} className={`p-1.5 rounded transition-colors ${r.status === "active" ? "text-foreground/70 hover:text-destructive hover:bg-destructive/10" : "text-foreground/70 hover:text-primary hover:bg-primary/10"}`} title={r.status === "active" ? "Suspender" : "Ativar"}>
               {r.status === "active" ? <Ban className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
             </button>
             {onDelete && (
-              <button onClick={onDelete} className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title="Remover">
+              <button onClick={onDelete} className="p-1.5 rounded text-foreground/70 hover:text-destructive hover:bg-destructive/10 transition-colors" title="Remover">
                 <Trash2 className="h-4 w-4" />
               </button>
             )}
