@@ -53,7 +53,7 @@ export default function Clients() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("clients")
-        .select("*, plans(name, duration_days, max_connections), servers(name)")
+        .select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, template)")
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
