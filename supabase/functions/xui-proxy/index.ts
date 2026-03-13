@@ -767,7 +767,7 @@ async function provisionUserOnXui(
   if (Number.isFinite(expUnix) && expUnix > 0) {
     const expAsDate = new Date(expUnix * 1000);
     if (!Number.isNaN(expAsDate.getTime())) {
-      expVariants.push(expAsDate.toISOString().slice(0, 10));
+      expVariants.push(formatLocalDateString(expAsDate));
     }
   }
 
