@@ -527,13 +527,6 @@ async function enforceAllowedOutputsPostCreate(
 
       if (expectedBouquetIds.length) {
         getParams['bouquets_selected[]'] = expectedBouquetIds;
-        getParams.bouquets_selected = expectedBouquetIds;
-      }
-      getParams['allowed_outputs[]'] = targetAllowed;
-      getParams.allowed_outputs_selected = targetAllowed;
-      if (outputFormatNames.length) {
-        getParams['output_formats[]'] = outputFormatNames;
-        getParams.output_formats = outputFormatNames;
       }
 
       console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
