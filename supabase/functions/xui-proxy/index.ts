@@ -449,7 +449,9 @@ async function provisionUserOnXui(
     .map((id) => id.trim())
     .filter(Boolean);
 
+  let resolvedPackageId = bouquetIds.length === 1 ? bouquetIds[0] : '';
   let resolvedBouquetIds = [...bouquetIds];
+
   if (!resolvedBouquetIds.length) {
     try {
       const packages = await xuiRequest(config, 'get_packages');
@@ -457,36 +459,21 @@ async function provisionUserOnXui(
         .filter((pkg: any) => pkg && typeof pkg === 'object');
 
       const getPackageId = (pkg: any): string => String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
-      const isTrialPackage = (pkg: any): boolean => {
-        const flags = [pkg.is_trial, pkg.trial, pkg.trial_package];
-        return flags.some((value) => {
-          const n = String(value ?? '').toLowerCase();
-          return value === true || value === 1 || n === '1' || n === 'true';
-        });
-      };
 
       const allWithId = packageList.filter((pkg: any) => !!getPackageId(pkg));
-      // Pick package with most bouquets for maximum content coverage
       const sorted = [...allWithId].sort((a: any, b: any) => {
-        const bqA = Array.isArray(a.bouquets) ? a.bouquets : (typeof a.bouquets === 'string' ? JSON.parse(a.bouquets || '[]') : []);
-        const bqB = Array.isArray(b.bouquets) ? b.bouquets : (typeof b.bouquets === 'string' ? JSON.parse(b.bouquets || '[]') : []);
+        const bqA = parseIdList(a.bouquets);
+        const bqB = parseIdList(b.bouquets);
         return bqB.length - bqA.length;
       });
+
       const picked = sorted[0];
       const pickedId = picked ? getPackageId(picked) : '';
 
       if (pickedId && picked) {
-        // Extract bouquet IDs from the package's bouquets field
-        let packageBouquets: string[] = [];
-        try {
-          const rawBouquets = picked.bouquets;
-          if (typeof rawBouquets === 'string') {
-            packageBouquets = JSON.parse(rawBouquets).map(String);
-          } else if (Array.isArray(rawBouquets)) {
-            packageBouquets = rawBouquets.map(String);
-          }
-        } catch {}
+        resolvedPackageId = pickedId;
 
+        const packageBouquets = parseIdList(picked.bouquets);
         if (packageBouquets.length > 0) {
           resolvedBouquetIds = packageBouquets;
           console.log(`[XUI] Auto-selected package: ${pickedId} with bouquets: ${JSON.stringify(packageBouquets)}`);
@@ -495,62 +482,76 @@ async function provisionUserOnXui(
           console.log(`[XUI] Auto-selected package: ${pickedId} (no bouquets field, using package id)`);
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
     }
   }
 
-  const bouquetsSelected = resolvedBouquetIds.length ? JSON.stringify(resolvedBouquetIds) : '[]';
-
-  // Based on real XUI One docs: action=create_line with bouquets_selected and exp_date
-  // DO NOT send is_trial — it makes the line show as "Trial" in XUI
-  // Pass member_id to assign correct owner
   const baseParams: Record<string, string> = {
     username,
     password,
     max_connections: maxConnections,
+    enabled: '1',
   };
   if (memberId) baseParams.member_id = memberId;
+  if (resolvedPackageId) baseParams.package_id = resolvedPackageId;
 
-  const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [
+  const expectedAssignments = Array.from(new Set([
+    ...resolvedBouquetIds,
+    resolvedPackageId,
+  ].map((id) => String(id || '').trim()).filter(Boolean)));
+
+  const bouquetParamsBracket: Record<string, string | string[]> = resolvedBouquetIds.length
+    ? { 'bouquets_selected[]': resolvedBouquetIds }
+    : {};
+
+  const bouquetParamsPlain: Record<string, string | string[]> = resolvedBouquetIds.length
+    ? { bouquets_selected: resolvedBouquetIds }
+    : {};
+
+  const actionAttempts: Array<{ action: string; method: XuiHttpMethod; params: Record<string, string | string[]> }> = [
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
+      method: 'POST',
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
     },
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: `${remainingDays}days`, 'bouquets_selected[]': resolvedBouquetIds },
+      method: 'POST',
+      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParamsBracket },
     },
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: expDate, 'bouquets_selected[]': resolvedBouquetIds },
+      method: 'POST',
+      params: { ...baseParams, exp_date: expDate || `${remainingHours}hours`, ...bouquetParamsPlain },
     },
     {
-      action: 'create_user',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
+      action: 'create_line',
+      method: 'GET',
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
     },
   ];
 
-  let lastError = 'A API do XUI rejeitou a criação do usuário';
+  let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const attempt of actionAttempts) {
-    const data = await xuiRequest(config, attempt.action, attempt.params);
+    const data = await xuiRequest(config, attempt.action, attempt.params, attempt.method);
     const error = getXuiError(data);
 
     if (!error && isXuiSuccess(data)) {
-      const verified = await verifyProvisionedUser(config, username);
+      const verified = await verifyProvisionedUser(config, username, expectedAssignments);
       if (verified) {
-        console.log(`[XUI] Provision success with action: ${attempt.action}`);
+        console.log(`[XUI] Provision success with action: ${attempt.action} (${attempt.method})`);
         return { action: attempt.action, data };
       }
 
-      lastError = 'XUI retornou sucesso, mas o usuário não foi encontrado após criação';
-      console.log(`[XUI] Provision uncertain (${attempt.action}): ${lastError}`);
+      lastError = 'XUI retornou sucesso, mas a linha não apareceu com bouquets/pacote atribuídos';
+      console.log(`[XUI] Provision uncertain (${attempt.action} ${attempt.method}): ${lastError}`);
       continue;
     }
 
-    lastError = error || `Ação ${attempt.action} retornou status inválido`;
-    console.log(`[XUI] Provision failed (${attempt.action}): ${lastError}`);
+    lastError = error || `Ação ${attempt.action} (${attempt.method}) retornou status inválido`;
+    console.log(`[XUI] Provision failed (${attempt.action} ${attempt.method}): ${lastError}`);
   }
 
   throw new Error(lastError);
