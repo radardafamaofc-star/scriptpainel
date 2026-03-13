@@ -1244,11 +1244,25 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} max_connections=${maxConnections} member_id=${memberId || 'n/a'}`);
 
-  // Step 1: create_line with minimal payload only.
+  // Compute exp_date if provided
+  const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
+  let expDateFormatted = '';
+  if (rawExpDate) {
+    const ts = Number(rawExpDate);
+    if (!isNaN(ts) && ts > 1_000_000_000) {
+      expDateFormatted = formatLocalDateString(new Date(ts > 1e10 ? ts : ts * 1000));
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(rawExpDate)) {
+      expDateFormatted = rawExpDate.substring(0, 10);
+    }
+  }
+
+  // Step 1: create_line with correct XUI param names (user/pass, not username/password)
   const createParams: Record<string, string | string[]> = {
-    username,
-    password,
-    max_connections: maxConnections,
+    user: username,
+    pass: password,
+    ...(packageId ? { package: packageId } : {}),
+    ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
+    ...(memberId ? { member_id: memberId } : {}),
   };
 
   try {
