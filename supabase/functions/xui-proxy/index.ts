@@ -434,23 +434,19 @@ async function provisionUserOnXui(
   const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, bouquets_selected: bouquetsSelected },
-    },
-    {
-      action: 'create_line',
       params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
     },
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: `${remainingDays}days`, bouquets_selected: bouquetsSelected },
+      params: { ...baseParams, exp_date: `${remainingDays}days`, 'bouquets_selected[]': resolvedBouquetIds },
     },
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: expDate, bouquets_selected: bouquetsSelected },
+      params: { ...baseParams, exp_date: expDate, 'bouquets_selected[]': resolvedBouquetIds },
     },
     {
       action: 'create_user',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, bouquets_selected: bouquetsSelected },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
     },
   ];
 
