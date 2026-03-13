@@ -532,19 +532,38 @@ async function provisionUserOnXui(
   let finalUsername = username;
   let finalLineId = createdLineId;
   let active = true;
+  let finalRow: any = null;
 
   if (createdLineId) {
-    try {
-      const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
-      const rows = extractLineRows(finalLine);
-      const row = rows.find((r: any) => String(r?.id || '').trim() === createdLineId) || rows[0];
-      if (row) {
-        finalLineId = String(row.id || row.line_id || createdLineId).trim();
-        finalUsername = String(row.username || username).trim();
-        active = isLineActive(row);
-        console.log(`[XUI] After create_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
+    finalRow = await getLineRowById(config, createdLineId);
+    if (finalRow) {
+      finalLineId = String(finalRow.id || finalRow.line_id || createdLineId).trim();
+      finalUsername = String(finalRow.username || username).trim();
+      active = isLineActive(finalRow);
+      console.log(`[XUI] After create_line: bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
+    }
+
+    const needsOutputFallback = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
+    if (needsOutputFallback) {
+      console.log(`[XUI] allowed_outputs mismatch for line_id=${createdLineId}. Trying edit_line fallback...`);
+      const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
+        lineId: createdLineId,
+        username: finalUsername || username,
+        password,
+        memberId: effectiveMemberId || String(finalRow?.member_id || '').trim(),
+        ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+        bouquetIds,
+        allowedOutputIds,
+      });
+
+      if (fallbackRow) {
+        finalRow = fallbackRow;
+        finalLineId = String(fallbackRow.id || fallbackRow.line_id || finalLineId).trim();
+        finalUsername = String(fallbackRow.username || finalUsername || username).trim();
+        active = isLineActive(fallbackRow);
+        console.log(`[XUI] After fallback: bouquet=${fallbackRow.bouquet || '?'} allowed_outputs=${fallbackRow.allowed_outputs || '?'}`);
       }
-    } catch {}
+    }
   }
 
   if (finalUsername && finalUsername !== username) {
