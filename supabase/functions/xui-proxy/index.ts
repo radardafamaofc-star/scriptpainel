@@ -330,8 +330,7 @@ function normalizeOutputFormats(raw: string[]): string[] {
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
   return {
-    // Keep array syntax only (no JSON/csv/object), as required by XUI
-    'allowed_outputs[]': formats,
+    // XUIOne uses output_formats[] as the primary key
     'output_formats[]': formats,
   };
 }
