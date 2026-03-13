@@ -238,6 +238,7 @@ async function createLinePost(
     username: string;
     password: string;
     expDate?: string;
+    memberId?: string;
     bouquetIds: number[];
     allowedOutputIds: number[];
   },
@@ -247,7 +248,8 @@ async function createLinePost(
   form.set('password', params.password);
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', '1');
-  form.set('member_id', '0');
+  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  form.set('member_id', normalizedMemberId || '0');
 
   // XUIOne 1.5.12 compatibility:
   // - bouquet and allowed_outputs must be sent as JSON string (without [] fields)
@@ -336,10 +338,20 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
+async function getOwnerMemberId(config: XuiServerConfig): Promise<string> {
+  try {
+    const info = await xuiRequest(config, 'user_info');
+    const data = info?.data || info?.user_info || info || {};
+    const ownerId = String(data?.id || data?.member_id || '').replace(/\D/g, '').trim();
+    if (ownerId) return ownerId;
+  } catch {}
+  return '1';
+}
+
 const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
 const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
 
-// Main provisioning for XUIOne 1.5.x: create_line then edit_line with numeric IDs
+// Main provisioning for XUIOne 1.5.x: single-step create_line
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -363,14 +375,16 @@ async function provisionUserOnXui(
 
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
+  const effectiveMemberId = String(rawParams.member_id || memberId || '').replace(/\D/g, '').trim();
 
-  console.log(`[XUI] Provisioning ${username} member_id=${memberId || 'n/a'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId || '0'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
 
   // Single-step create_line with bouquet + allowed_outputs as JSON strings
   const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+    memberId: effectiveMemberId || '0',
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
   });
@@ -534,7 +548,8 @@ Deno.serve(async (req) => {
             const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
             xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
           } else {
-            console.log('[XUI] Admin provisioning without member_id (owner line)');
+            xuiMemberId = await getOwnerMemberId(config);
+            console.log(`[XUI] Admin provisioning with owner member_id=${xuiMemberId}`);
           }
 
           await appendSystemLog(serviceClient, {
