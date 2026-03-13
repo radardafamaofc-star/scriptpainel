@@ -220,6 +220,7 @@ export default function Clients() {
                 max_connections: String(f.max_connections),
                 exp_date: String(expTimestamp),
                 package_id: packageId,
+                plan_name: String((selectedPlan as any)?.name || ""),
               },
             },
           });
