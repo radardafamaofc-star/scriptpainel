@@ -1236,17 +1236,10 @@ async function provisionUserOnXui(
     }
   }
 
-  // ===== SIGMA QPANEL APPROACH =====
-  // 1. Fetch package config via get_package
-  // 2. Extract bouquets + allowed_outputs
-  // 3. Pass BOTH explicitly on create_line
-  let bouquetIds: string[] = [];
-  let outputFormats: string[] = OUTPUT_FORMAT_NAMES; // default: all 3 (ts, m3u8, rtmp)
-  if (packageId) {
-    const assignments = await getPackageAssignments(config, packageId);
-    bouquetIds = assignments.bouquetIds;
-    outputFormats = assignments.outputIds; // already normalized to string names
-  }
+  // ===== PACKAGE-BASED PROVISIONING =====
+  // When a package_id is set, XUI inherits ALL settings (bouquets, outputs, max_connections)
+  // from the package. We must NOT send bouquets_selected, output_formats, or edit_line.
+  // Only send: username, password, package_id, exp_date.
 
   // Convert exp_date: XUI expects YYYY-MM-DD, not unix timestamps
   let expDateFormatted = '';
@@ -1254,7 +1247,6 @@ async function provisionUserOnXui(
   if (rawExp) {
     const asNum = Number(rawExp);
     if (Number.isFinite(asNum) && asNum > 1000000000) {
-      // Unix timestamp → convert to YYYY-MM-DD
       const d = new Date(asNum * 1000);
       if (!Number.isNaN(d.getTime())) {
         expDateFormatted = formatLocalDateString(d);
@@ -1266,18 +1258,15 @@ async function provisionUserOnXui(
     }
   }
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_date=${expDateFormatted || 'n/a'} (raw: ${rawExp})`);
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} exp_date=${expDateFormatted || 'n/a'} (raw: ${rawExp})`);
 
-  const expectedOutputs = normalizeOutputFormats(outputFormats);
-
+  // Build minimal create_line params — let the package handle bouquets/outputs/connections
   const createParams: Record<string, string | string[]> = {
     username,
     password,
-    max_connections: maxConnections,
     ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
     ...(packageId ? { package_id: packageId } : {}),
     ...(memberId ? { member_id: memberId } : {}),
-    ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
   };
 
   console.log('create_line payload', createParams);
@@ -1302,51 +1291,27 @@ async function provisionUserOnXui(
       throw new Error('Linha criada, mas não foi possível resolver o ID');
     }
 
-    // STEP 2: edit_line only for output_formats[] (preserving original username/password)
-    const outputsApplied = await ensureOutputFormatsApplied(
-      config,
-      lineId,
-      expectedOutputs,
-      username,
-      password,
-      bouquetIds,
-    );
+    // Optional: validate with get_line (no edit_line needed — package manages everything)
+    try {
+      const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
+      const finalRows = extractLineRows(finalLine);
+      const finalUsername = String(finalRows[0]?.username || '').trim();
+      const finalPackageId = String(finalRows[0]?.package_id || '').trim();
 
-    // STEP 3: final validation with get_line
-    const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
-    const finalAssignments = extractLineAssignments(finalLine);
-    const finalRows = extractLineRows(finalLine);
-    const finalUsername = String(finalRows[0]?.username || '').trim();
-    const finalOutputs = normalizeOutputFormats(finalAssignments.outputIds, false);
+      console.log(`[XUI] Final state: line_id=${lineId} username=${finalUsername} package_id=${finalPackageId}`);
 
-    // When package_id is set, XUI manages bouquets at the package level
-    // so line's bouquet field may be empty — that's normal behavior
-    const hasPackage = finalAssignments.packageIds.length > 0 && finalAssignments.packageIds[0] !== '0' && finalAssignments.packageIds[0] !== '';
-    const bouquetsOk = hasPackage || bouquetIds.length === 0 || bouquetIds.every((id) => finalAssignments.bouquetIds.includes(id));
-    const usernameOk = !finalUsername || finalUsername === username;
-
-    // Outputs are also managed at package level — treat as best-effort
-    const outputsOk = expectedOutputs.every((fmt) => finalOutputs.includes(fmt));
-
-    console.log(`[XUI] Validation: hasPackage=${hasPackage} bouquetsOk=${bouquetsOk} outputsOk=${outputsOk} usernameOk=${usernameOk}`);
-
-    if (!usernameOk) {
-      throw new Error(`XUI alterou o username após provisionamento (esperado: ${username}, recebido: ${finalUsername || 'vazio'})`);
-    }
-
-    // Log warnings but don't fail when package is assigned (XUI manages at package level)
-    if (!bouquetsOk) {
-      console.log(`[XUI] ⚠️ Bouquets warning: esperado=${JSON.stringify(bouquetIds)} recebido=${JSON.stringify(finalAssignments.bouquetIds)}`);
-    }
-    if (!outputsOk) {
-      console.log(`[XUI] ⚠️ Outputs warning: esperado=${JSON.stringify(expectedOutputs)} recebido=${JSON.stringify(finalOutputs)} (managed at package level)`);
+      if (finalUsername && finalUsername !== username) {
+        throw new Error(`XUI alterou o username (esperado: ${username}, recebido: ${finalUsername})`);
+      }
+    } catch (validationErr: any) {
+      if (validationErr.message?.includes('alterou o username')) throw validationErr;
+      console.log(`[XUI] Validation get_line warning: ${validationErr.message}`);
     }
 
     return { action: 'create_line' as const, data };
   } catch (e: any) {
-    const lastError = e.message;
-    console.log(`[XUI] POST create_line strict error: ${lastError}`);
-    throw new Error(lastError);
+    console.log(`[XUI] POST create_line error: ${e.message}`);
+    throw new Error(e.message);
   }
 }
 
