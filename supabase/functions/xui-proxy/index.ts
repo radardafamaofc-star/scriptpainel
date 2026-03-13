@@ -46,25 +46,45 @@ function buildParamEntries(params: Record<string, string | string[]> = {}): stri
   return parts;
 }
 
+function isWriteAction(action: string): boolean {
+  const normalized = String(action || '').toLowerCase();
+  return normalized.startsWith('create_')
+    || normalized.startsWith('edit_')
+    || normalized.startsWith('delete_')
+    || normalized.startsWith('enable_')
+    || normalized.startsWith('disable_')
+    || normalized.startsWith('ban_')
+    || normalized.startsWith('unban_')
+    || normalized.startsWith('convert_')
+    || normalized.startsWith('install_')
+    || normalized.startsWith('start_')
+    || normalized.startsWith('stop_')
+    || normalized.startsWith('reload_')
+    || normalized.startsWith('clear_')
+    || normalized.startsWith('flush_')
+    || normalized.startsWith('add_')
+    || normalized.startsWith('kill_')
+    || normalized === 'mysql_query';
+}
+
 async function xuiRequest(
   config: XuiServerConfig,
   action: string,
   params: Record<string, string | string[]> = {},
 ) {
   const baseUrl = config.url.replace(/\/+$/, '');
-
-  // Build full query string — everything goes in the URL (GET), as per XUI One docs
-  const parts: string[] = [];
-  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
-  parts.push(`action=${encodeURIComponent(action)}`);
-  // Note: api_version is NOT a standard XUI One param — skip it to avoid confusion
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=${encodeURIComponent(action)}`;
   const paramParts = buildParamEntries(params);
-  parts.push(...paramParts);
-  const queryString = parts.join('&');
+  const queryString = [actionQuery, ...paramParts].join('&');
+  const postBody = paramParts.join('&');
 
-  const urlsToTry = [
+  const getUrlsToTry = [
     `${baseUrl}/?${queryString}`,
     `${baseUrl}?${queryString}`,
+  ];
+  const postUrlsToTry = [
+    `${baseUrl}/?${actionQuery}`,
+    `${baseUrl}?${actionQuery}`,
   ];
 
   // Also try root host with api.php for legacy compat
@@ -72,18 +92,59 @@ async function xuiRequest(
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/api.php?${queryString}`);
+      getUrlsToTry.push(`${root}/api.php?${queryString}`);
+      postUrlsToTry.push(`${root}/api.php?${actionQuery}`);
     }
   } catch {}
 
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
+  const writeAction = isWriteAction(action);
+  const attempts: Array<{ method: 'GET' | 'POST'; url: string; init?: RequestInit }> = [];
+
+  if (writeAction) {
+    for (const url of postUrlsToTry) {
+      attempts.push({
+        method: 'POST',
+        url,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: postBody,
+        },
+      });
+    }
+  }
+
+  for (const url of getUrlsToTry) {
+    attempts.push({ method: 'GET', url });
+  }
+
+  // For read actions, keep optional POST fallback as last resort
+  if (!writeAction && postBody) {
+    for (const url of postUrlsToTry) {
+      attempts.push({
+        method: 'POST',
+        url,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: postBody,
+        },
+      });
+    }
+  }
+
+  console.log(`[XUI] Trying ${attempts.length} request patterns for action: ${action}`);
 
   let lastError: Error | null = null;
 
-  for (const url of urlsToTry) {
+  for (const attempt of attempts) {
     try {
-      console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
+      console.log(`[XUI] ${attempt.method}: ${attempt.url.replace(config.api_key, '***')}`);
+      if (attempt.method === 'POST' && attempt.init?.body) {
+        console.log(`[XUI] POST body: ${String(attempt.init.body).substring(0, 1000)}`);
+      }
+
+      const response = await tryFetch(attempt.url, attempt.init || {});
 
       if (response.status === 404) { console.log(`[XUI] 404`); continue; }
       if (response.status === 403) { console.log(`[XUI] 403`); continue; }
@@ -101,8 +162,8 @@ async function xuiRequest(
             console.log(`[XUI] Package[0]: ${JSON.stringify(entries[0][1]).substring(0, 500)}`);
           }
         }
-        if (action === 'create_line') {
-          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
+        if (action === 'create_line' || action === 'edit_line') {
+          console.log(`[XUI] ${action} response: ${JSON.stringify(json).substring(0, 800)}`);
         }
         return json;
       } catch {
