@@ -742,6 +742,28 @@ function buildEditLineUrl(
   return `${baseUrl}/?${parts.join('&')}`;
 }
 
+function buildEditLinePackageUrl(
+  config: XuiServerConfig,
+  lineId: string,
+  packageId: string,
+  username: string = '',
+  password: string = '',
+): string {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const parts: string[] = [
+    `api_key=${encodeURIComponent(config.api_key)}`,
+    `action=edit_line`,
+    `id=${encodeURIComponent(lineId)}`,
+    `package_id=${encodeURIComponent(packageId)}`,
+    `package_id[]=${encodeURIComponent(packageId)}`,
+  ];
+
+  if (username) parts.push(`username=${encodeURIComponent(username)}`);
+  if (password) parts.push(`password=${encodeURIComponent(password)}`);
+
+  return `${baseUrl}/?${parts.join('&')}`;
+}
+
 async function syncLineAssignments(
   config: XuiServerConfig,
   lineId: string,
@@ -756,27 +778,79 @@ async function syncLineAssignments(
 
   if (!lineId) return false;
 
-  // Don't verify outputs — XUI manages them at package level
-  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : { packageIds };
+  // Priority: if package_id exists, sync ONLY package_id (don't override outputs/bouquets)
+  const expectedCheck: ExpectedLineAssignments = packageIds.length > 0
+    ? { packageIds: [packageIds[0]] }
+    : (bouquetIds.length > 0 ? { bouquetIds } : {});
 
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
-
-  const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
-  const outputPayload = buildOutputPayload(normalizedOutputs);
 
   // CRITICAL: Always include username+password to prevent XUI from overwriting them
   const identityParams: Record<string, string> = {};
   if (username) identityParams.username = username;
   if (password) identityParams.password = password;
 
+  const packageId = packageIds[0] || '';
+
+  if (packageId) {
+    const packageAttempts: Array<{ label: string; run: () => Promise<void> }> = [
+      {
+        label: 'GET edit_line package_id',
+        run: async () => {
+          const url = buildEditLinePackageUrl(config, lineId, packageId, username, password);
+          console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
+          const response = await tryFetch(url);
+          const text = await response.text();
+          if (text && !text.includes('<html')) {
+            try {
+              const parsed = JSON.parse(text);
+              console.log(`[XUI] GET edit_line package response: ${JSON.stringify(parsed).substring(0, 800)}`);
+            } catch {
+              // ignore non-json
+            }
+          }
+        },
+      },
+      {
+        label: 'POST edit_line package_id',
+        run: async () => {
+          await xuiRequest(config, 'edit_line', {
+            id: lineId,
+            ...identityParams,
+            package_id: packageId,
+            'package_id[]': [packageId],
+          });
+        },
+      },
+    ];
+
+    for (const attempt of packageAttempts) {
+      try {
+        console.log(`[XUI] Sync attempt: ${attempt.label} line_id=${lineId}`);
+        await attempt.run();
+      } catch (e: any) {
+        console.log(`[XUI] Sync attempt failed (${attempt.label}): ${e.message}`);
+      }
+
+      const ok = await verifyProvisionedUser(config, username, expectedCheck, lineId);
+      if (ok) {
+        console.log(`[XUI] ✅ Sync confirmed via ${attempt.label} for ${username}`);
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+  const outputPayload = buildOutputPayload(normalizedOutputs);
+
   const attempts: Array<{ label: string; run: () => Promise<void> }> = [
     {
       label: 'GET edit_line bouquets_selected[]',
       run: async () => {
-        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, packageIds[0] || '', username, password);
+        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, '', username, password);
         console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
         const response = await tryFetch(url);
         const text = await response.text();
@@ -791,50 +865,11 @@ async function syncLineAssignments(
       },
     },
     {
-      label: 'POST edit_line custom outputs first (package_id=0)',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          package_id: '0',
-          'package_id[]': ['0'],
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line force outputs via restreamer toggle',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          package_id: '0',
-          'package_id[]': ['0'],
-          is_restreamer: '1',
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          package_id: '0',
-          'package_id[]': ['0'],
-          is_restreamer: '0',
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-      },
-    },
-    {
       label: 'POST edit_line bouquets_selected[] + outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
-          ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
           ...outputPayload,
         });
@@ -846,7 +881,6 @@ async function syncLineAssignments(
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquets_selected: jsonBouquets,
           ...outputPayload,
         });
@@ -858,7 +892,6 @@ async function syncLineAssignments(
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquet: jsonBouquets,
           ...outputPayload,
         });
@@ -870,7 +903,6 @@ async function syncLineAssignments(
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           'bouquet[]': bouquetIds,
           ...outputPayload,
         });
