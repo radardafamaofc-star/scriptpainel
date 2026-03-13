@@ -349,20 +349,14 @@ function matchesExpectedAssignments(actual: XuiLineAssignments, expected: Expect
   const expectedPackages = normalizeIds(expected.packageIds || []);
   const expectedOutputs = normalizeIds(expected.outputIds || []);
 
-  const packageMatched = expectedPackages.length > 0
-    && expectedPackages.some((id) => actual.packageIds.includes(id) || actual.bouquetIds.includes(id));
-
-  // Some XUI One endpoints return package_id but omit bouquet/allowed_outputs fields.
-  // In this case, package match is enough to consider assignment applied.
   const bouquetOk = expectedBouquets.length === 0
-    || expectedBouquets.every((id) => actual.bouquetIds.includes(id))
-    || (packageMatched && actual.bouquetIds.length === 0);
+    || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
 
-  const packageOk = expectedPackages.length === 0 || packageMatched;
+  const packageOk = expectedPackages.length === 0
+    || expectedPackages.some((id) => actual.packageIds.includes(id) || actual.bouquetIds.includes(id));
 
   const outputsOk = expectedOutputs.length === 0
-    || expectedOutputs.every((id) => actual.outputIds.includes(id))
-    || (packageMatched && actual.outputIds.length === 0);
+    || expectedOutputs.every((id) => actual.outputIds.includes(id));
 
   return bouquetOk && packageOk && outputsOk;
 }
