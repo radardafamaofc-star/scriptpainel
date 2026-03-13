@@ -672,6 +672,8 @@ function buildEditLineUrl(
   config: XuiServerConfig,
   lineId: string,
   bouquetIds: string[],
+  outputIds: string[] = ['1', '2', '3'],
+  packageId: string = '',
 ): string {
   const baseUrl = config.url.replace(/\/+$/, '');
   const parts: string[] = [
@@ -684,11 +686,122 @@ function buildEditLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  for (const fmt of ['1', '2', '3']) {
-    parts.push(`allowed_outputs_selected[]=${fmt}`);
+  for (const fmt of outputIds) {
+    parts.push(`allowed_outputs_selected[]=${encodeURIComponent(fmt)}`);
+  }
+
+  if (packageId) {
+    parts.push(`package_id=${encodeURIComponent(packageId)}`);
+    parts.push(`package_id[]=${encodeURIComponent(packageId)}`);
   }
 
   return `${baseUrl}/?${parts.join('&')}`;
+}
+
+async function syncLineAssignments(
+  config: XuiServerConfig,
+  lineId: string,
+  username: string,
+  expected: ExpectedLineAssignments,
+  outputIds: string[] = ['1', '2', '3'],
+): Promise<boolean> {
+  const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
+  const packageIds = sanitizeSelectionIds(expected.packageIds || []);
+  const normalizedOutputs = sanitizeSelectionIds(outputIds).length > 0 ? sanitizeSelectionIds(outputIds) : ['1', '2', '3'];
+
+  if (!lineId) return false;
+
+  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
+    ? { bouquetIds }
+    : { packageIds };
+
+  const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
+  if (!hasExpected) return true;
+
+  const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+  const jsonOutputs = JSON.stringify(normalizedOutputs.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+
+  const attempts: Array<{ label: string; run: () => Promise<void> }> = [
+    {
+      label: 'GET edit_line bouquets_selected[]',
+      run: async () => {
+        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, packageIds[0] || '');
+        console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
+        const response = await tryFetch(url);
+        const text = await response.text();
+        if (text && !text.includes('<html')) {
+          try {
+            const parsed = JSON.parse(text);
+            console.log(`[XUI] GET edit_line response: ${JSON.stringify(parsed).substring(0, 800)}`);
+          } catch {
+            // ignore non-json
+          }
+        }
+      },
+    },
+    {
+      label: 'POST edit_line bouquets_selected[]',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
+          ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
+          'bouquets_selected[]': bouquetIds,
+          'allowed_outputs_selected[]': normalizedOutputs,
+        });
+      },
+    },
+    {
+      label: 'POST edit_line bouquets_selected json',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
+          bouquets_selected: jsonBouquets,
+          allowed_outputs: jsonOutputs,
+        });
+      },
+    },
+    {
+      label: 'POST edit_line bouquet json',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
+          bouquet: jsonBouquets,
+          allowed_outputs: jsonOutputs,
+        });
+      },
+    },
+    {
+      label: 'POST edit_line bouquet[]',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
+          'bouquet[]': bouquetIds,
+          'allowed_outputs[]': normalizedOutputs,
+        });
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`[XUI] Sync attempt: ${attempt.label} line_id=${lineId}`);
+      await attempt.run();
+    } catch (e: any) {
+      console.log(`[XUI] Sync attempt failed (${attempt.label}): ${e.message}`);
+    }
+
+    const ok = await verifyProvisionedUser(config, username, expectedCheck, lineId);
+    if (ok) {
+      console.log(`[XUI] ✅ Sync confirmed via ${attempt.label} for ${username}`);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function provisionUserOnXui(
