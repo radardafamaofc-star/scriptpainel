@@ -370,6 +370,13 @@ async function enforceAllowedOutputsPostCreate(
   const allowedQuotedJson = JSON.stringify(allowedNumeric.map((id) => String(id)));
   const allowedCsv = allowedNumeric.join(',');
   const targetAllowed = allowedNumeric.map((id) => String(id));
+  const outputFormatNames = toOutputFormatNames(targetAllowed);
+  const outputFormatsCsv = outputFormatNames.length ? outputFormatNames.join(',') : allowedCsv;
+  const outputFormatsJson = outputFormatNames.length
+    ? JSON.stringify(outputFormatNames)
+    : allowedQuotedJson;
+
+  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
 
   const buildBaseForm = () => {
     const form = new URLSearchParams();
@@ -380,15 +387,31 @@ async function enforceAllowedOutputsPostCreate(
     form.set('max_connections', '1');
     form.set('bouquet', bouquetJson);
     form.set('bouquets_selected', bouquetJson);
+    appendArrayField(form, 'bouquets_selected', params.bouquetIds);
     if (params.expDate) form.set('exp_date', params.expDate);
-
-    const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
     if (normalizedMemberId) form.set('member_id', normalizedMemberId);
-
     return form;
   };
 
-  const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
+  const buildBaseArrayParams = (): Record<string, string | string[]> => {
+    const base: Record<string, string | string[]> = {
+      id: lineId,
+      line_id: lineId,
+      username: params.username,
+      password: params.password,
+      max_connections: '1',
+      bouquet: bouquetJson,
+      bouquets_selected: bouquetJson,
+      'bouquets_selected[]': params.bouquetIds,
+    };
+
+    if (params.expDate) base.exp_date = params.expDate;
+    if (normalizedMemberId) base.member_id = normalizedMemberId;
+
+    return base;
+  };
+
+  const postAttempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
       label: 'json_primary',
       fill: (form) => {
@@ -400,13 +423,21 @@ async function enforceAllowedOutputsPostCreate(
       },
     },
     {
-      label: 'csv_primary',
+      label: 'array_like_bouquets',
       fill: (form) => {
-        form.set('allowed_outputs', allowedCsv);
-        form.set('allowed_outputs_selected', allowedCsv);
-        form.set('output_formats', allowedJson);
-        form.set('output_formats_selected', allowedJson);
-        form.set('allowed_output_formats', allowedJson);
+        form.set('allowed_outputs', allowedJson);
+        form.set('allowed_outputs_selected', allowedQuotedJson);
+        form.set('output_formats', outputFormatsCsv);
+        form.set('output_formats_selected', outputFormatsJson);
+        form.set('allowed_output_formats', outputFormatsJson);
+
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
+        appendArrayField(form, 'allowed_outputs_selected', targetAllowed);
+
+        if (outputFormatNames.length) {
+          appendArrayField(form, 'output_formats', outputFormatNames);
+          appendArrayField(form, 'allowed_output_formats', outputFormatNames);
+        }
       },
     },
     {
@@ -414,20 +445,72 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         form.set('allowed_outputs', allowedQuotedJson);
         form.set('allowed_outputs_selected', allowedQuotedJson);
-        form.set('output_formats', allowedQuotedJson);
-        form.set('output_formats_selected', allowedQuotedJson);
-        form.set('allowed_output_formats', allowedQuotedJson);
+        form.set('output_formats', outputFormatsJson);
+        form.set('output_formats_selected', outputFormatsJson);
+        form.set('allowed_output_formats', outputFormatsJson);
       },
     },
   ];
 
-  for (const attempt of attempts) {
+  for (const attempt of postAttempts) {
     try {
       const form = buildBaseForm();
       attempt.fill(form);
       console.log(`[XUI] edit_line fallback (${attempt.label}) payload: ${form.toString()}`);
 
       const editData = await postXuiForm(config, 'edit_line', form, `edit_line(${attempt.label})`);
+      const editStatus = String(editData?.status || '').toUpperCase();
+      const editError = getXuiError(editData);
+      if (editError && !editStatus.includes('SUCCESS')) {
+        console.log(`[XUI] edit_line fallback (${attempt.label}) rejected: ${editError}`);
+        continue;
+      }
+
+      const refreshed = await getLineRowById(config, lineId);
+      if (refreshed) {
+        console.log(`[XUI] After edit_line(${attempt.label}): allowed_outputs=${refreshed.allowed_outputs || '?'}`);
+        if (hasSameNumericIds(refreshed.allowed_outputs, targetAllowed)) {
+          return refreshed;
+        }
+      }
+    } catch (e: any) {
+      console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
+    }
+  }
+
+  const arrayAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [
+    {
+      label: 'array_ids_transport',
+      params: {
+        ...buildBaseArrayParams(),
+        allowed_outputs: allowedJson,
+        allowed_outputs_selected: allowedQuotedJson,
+        'allowed_outputs[]': targetAllowed,
+        'allowed_outputs_selected[]': targetAllowed,
+        output_formats: allowedCsv,
+        output_formats_selected: allowedQuotedJson,
+        allowed_output_formats: allowedQuotedJson,
+      },
+    },
+    {
+      label: 'array_names_transport',
+      params: {
+        ...buildBaseArrayParams(),
+        allowed_outputs: allowedJson,
+        'allowed_outputs[]': targetAllowed,
+        output_formats: outputFormatsCsv,
+        output_formats_selected: outputFormatsJson,
+        allowed_output_formats: outputFormatsJson,
+        ...(outputFormatNames.length ? { 'output_formats[]': outputFormatNames, 'allowed_output_formats[]': outputFormatNames } : {}),
+      },
+    },
+  ];
+
+  for (const attempt of arrayAttempts) {
+    try {
+      console.log(`[XUI] edit_line fallback (${attempt.label}) params: ${JSON.stringify(attempt.params)}`);
+      const editData = await xuiRequest(config, 'edit_line', attempt.params);
+
       const editStatus = String(editData?.status || '').toUpperCase();
       const editError = getXuiError(editData);
       if (editError && !editStatus.includes('SUCCESS')) {
