@@ -1301,10 +1301,10 @@ async function provisionUserOnXui(
     pkgOutputIds = ['ts', 'm3u8', 'rtmp'];
   }
 
-  // STEP 1: create_line with ALL fields explicitly (XUI 1.5.12 ignores package inheritance)
+  // STEP 1: create_line with explicit fields required by this XUI build
   const createParams: Record<string, string | string[]> = {
-    user: username,
-    pass: password,
+    username,
+    password,
     max_connections: maxConnections,
     ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
     ...(memberId ? { member_id: memberId } : {}),
