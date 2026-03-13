@@ -444,51 +444,44 @@ async function ensureOutputFormatsApplied(
   outputFormats: string[] = OUTPUT_FORMAT_NAMES,
   username: string = '',
   password: string = '',
+  expectedBouquetIds: string[] = [],
 ): Promise<boolean> {
   if (!lineId) return false;
 
-  const expected = normalizeOutputFormats(outputFormats);
-  const attempts: Array<{ label: string; params: Record<string, string | string[]> }> = [
-    {
-      label: 'POST edit_line output_formats[] only',
-      params: { id: lineId, 'output_formats[]': expected },
-    },
-    {
-      label: 'POST edit_line output_formats[] + identity',
-      params: {
-        id: lineId,
-        ...(username ? { username } : {}),
-        ...(password ? { password } : {}),
-        'output_formats[]': expected,
-      },
-    },
-    {
-      label: 'POST edit_line output_formats[] + allowed_outputs[]',
-      params: { id: lineId, 'output_formats[]': expected, 'allowed_outputs[]': expected },
-    },
-  ];
+  const expectedOutputs = normalizeOutputFormats(outputFormats);
+  const normalizedBouquets = sanitizeSelectionIds(expectedBouquetIds);
+  const editPayload: Record<string, string | string[]> = {
+    id: lineId,
+    ...(username ? { username } : {}),
+    ...(password ? { password } : {}),
+    'output_formats[]': expectedOutputs,
+  };
 
-  for (const attempt of attempts) {
-    try {
-      console.log(`[XUI] Output apply attempt: ${attempt.label} line_id=${lineId}`);
-      await editLinePostStrict(config, attempt.params);
+  console.log('edit_line payload', editPayload);
 
-      const lineData = await xuiRequest(config, 'get_line', { id: lineId });
-      const actual = normalizeOutputFormats(extractLineAssignments(lineData).outputIds);
-      const ok = expected.every((fmt) => actual.includes(fmt));
+  try {
+    await editLinePostStrict(config, editPayload);
 
-      if (ok) {
-        console.log(`[XUI] ✅ Outputs applied via ${attempt.label}: ${JSON.stringify(actual)}`);
-        return true;
-      }
+    const lineData = await xuiRequest(config, 'get_line', { id: lineId });
+    const assignments = extractLineAssignments(lineData);
+    const actualOutputs = normalizeOutputFormats(assignments.outputIds);
 
-      console.log(`[XUI] Output still mismatch after ${attempt.label}. expected=${JSON.stringify(expected)} actual=${JSON.stringify(actual)}`);
-    } catch (e: any) {
-      console.log(`[XUI] Output apply failed (${attempt.label}): ${e.message}`);
+    const outputsOk = expectedOutputs.every((fmt) => actualOutputs.includes(fmt));
+    const bouquetsOk = normalizedBouquets.length === 0
+      || normalizedBouquets.every((id) => assignments.bouquetIds.includes(id));
+
+    console.log(`[XUI] Post-edit validation line_id=${lineId} bouquets=${JSON.stringify(assignments.bouquetIds)} outputs=${JSON.stringify(actualOutputs)}`);
+
+    if (!outputsOk || !bouquetsOk) {
+      console.log(`[XUI] Output validation failed line_id=${lineId} outputs_ok=${outputsOk} bouquets_ok=${bouquetsOk}`);
+      return false;
     }
-  }
 
-  return false;
+    return true;
+  } catch (e: any) {
+    console.log(`[XUI] Output apply failed (POST edit_line output_formats[]): ${e.message}`);
+    return false;
+  }
 }
 
 function extractLineAssignments(payload: any): XuiLineAssignments {
