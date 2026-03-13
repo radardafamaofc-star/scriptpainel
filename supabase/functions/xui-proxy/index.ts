@@ -826,16 +826,32 @@ async function provisionUserOnXui(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
   );
 
-  const createData = await createLinePost(config, {
-    username,
-    password,
-    ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
-    memberId: effectiveMemberId,
-    ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
-    maxConnections: Number(maxConnections),
-    bouquetIds: bouquetIds.map(Number),
-    allowedOutputIds: allowedOutputIds.map(Number),
-  });
+  let createData: any = null;
+  try {
+    createData = await createLinePost(config, {
+      username,
+      password,
+      ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+      memberId: effectiveMemberId,
+      ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
+      maxConnections: Number(maxConnections),
+      bouquetIds: bouquetIds.map(Number),
+      allowedOutputIds: allowedOutputIds.map(Number),
+    });
+  } catch (e: any) {
+    const message = String(e?.message || '');
+    if (message.toLowerCase().includes('timeout') || message.toLowerCase().includes('expirou')) {
+      const timeoutLineId = await resolveLineIdByUsername(config, username);
+      if (timeoutLineId) {
+        createData = { status: 'STATUS_SUCCESS', data: { id: timeoutLineId, username } };
+        console.log(`[XUI] create_line timeout, but line was found by username=${username} line_id=${timeoutLineId}`);
+      } else {
+        throw e;
+      }
+    } else {
+      throw e;
+    }
+  }
 
   const createStatus = String(createData?.status || '').toUpperCase();
   const createError = getXuiError(createData);
@@ -853,7 +869,7 @@ async function provisionUserOnXui(
   let finalRow: any = null;
 
   if (createdLineId) {
-    finalRow = await getLineRowById(config, createdLineId);
+    finalRow = await waitForLinePresence(config, createdLineId, username);
     if (finalRow) {
       finalLineId = String(finalRow.id || finalRow.line_id || createdLineId).trim();
       finalUsername = String(finalRow.username || username).trim();
