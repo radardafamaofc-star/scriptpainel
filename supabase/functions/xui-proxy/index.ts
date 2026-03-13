@@ -566,12 +566,8 @@ async function provisionUserOnXui(
       console.log(`[XUI] allowed_outputs mismatch for line_id=${createdLineId}. Trying edit_line fallback...`);
       const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
         lineId: createdLineId,
-        username: finalUsername || username,
-        password,
-        memberId: effectiveMemberId || String(finalRow?.member_id || '').trim(),
-        ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
-        bouquetIds,
         allowedOutputIds,
+        expectedBouquetIds: bouquetIds,
       });
 
       if (fallbackRow) {
