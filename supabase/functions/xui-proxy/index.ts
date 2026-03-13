@@ -575,20 +575,27 @@ function extractLineRows(payload: any): any[] {
 }
 
 async function resolveLineIdByUsername(config: XuiServerConfig, username: string): Promise<string> {
-  const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
-    { action: 'get_lines', params: { search: username } },
-    { action: 'get_lines' },
+  const checks: Array<{ action: string; params?: Record<string, string | string[]>; label: string }> = [
+    { action: 'get_line', params: { username }, label: `get_line(username=${username})` },
+    { action: 'get_lines', params: { search: username }, label: `get_lines(search=${username})` },
+    { action: 'get_lines', label: 'get_lines' },
   ];
 
   for (const check of checks) {
     try {
       const data = await xuiRequest(config, check.action, check.params || {});
       const rows = extractLineRows(data);
-      const match = rows.find((row: any) => String(row?.username || '').trim() === username);
-      const lineId = String(match?.id || '').trim();
-      if (lineId) return lineId;
-    } catch {
-      // ignore and try next source
+
+      const exactMatch = rows.find((row: any) => String(row?.username || '').trim() === username);
+      const candidate = exactMatch || rows[0];
+      const lineId = String(candidate?.id || candidate?.line_id || '').trim();
+
+      if (lineId) {
+        console.log(`[XUI] Resolved line_id=${lineId} via ${check.label}`);
+        return lineId;
+      }
+    } catch (e: any) {
+      console.log(`[XUI] resolveLineIdByUsername failed via ${check.label}: ${e.message}`);
     }
   }
 
