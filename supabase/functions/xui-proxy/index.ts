@@ -330,8 +330,8 @@ function normalizeOutputFormats(raw: string[] = [], fallbackToDefault: boolean =
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
   return {
-    // XUIOne uses output_formats[] as the primary key
-    'output_formats[]': formats,
+    // Use allowed_outputs[] — confirmed working for XUI 1.5.12
+    'allowed_outputs[]': formats,
   };
 }
 
