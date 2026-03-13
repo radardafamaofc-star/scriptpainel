@@ -783,6 +783,9 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
+    let createdPayload: any = null;
+    let lineId = '';
+
     for (const assignment of createAssignmentVariants) {
       const params = { ...baseParams, exp_date: expValue, ...assignment };
       console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
@@ -798,27 +801,32 @@ async function provisionUserOnXui(
         continue;
       }
 
-      let lineId = String(data?.data?.id || '').trim();
+      createdPayload = data;
+      lineId = String(data?.data?.id || '').trim();
       if (!lineId) {
         lineId = await resolveLineIdByUsername(config, username);
       }
-
-      const verifiedAfterCreate = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-      if (verifiedAfterCreate) {
-        console.log(`[XUI] ✅ Provision success for ${username} line_id=${lineId || 'n/a'}`);
-        return { action: 'create_line', data };
-      }
-
-      if (lineId) {
-        const edited = await tryEditFallback(lineId, expValue);
-        if (edited) {
-          return { action: 'edit_line', data: edited };
-        }
-      }
-
-      lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
-      console.log(`[XUI] Provision uncertain: ${lastError}`);
+      break;
     }
+
+    if (!createdPayload) continue;
+
+    const verifiedAfterCreate = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+    if (verifiedAfterCreate) {
+      console.log(`[XUI] ✅ Provision success for ${username} line_id=${lineId || 'n/a'}`);
+      return { action: 'create_line', data: createdPayload };
+    }
+
+    if (lineId) {
+      const edited = await tryEditFallback(lineId, expValue);
+      if (edited) {
+        return { action: 'edit_line', data: edited };
+      }
+    }
+
+    lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
+    console.log(`[XUI] Provision uncertain: ${lastError}`);
+    break;
   }
 
   throw new Error(lastError);
