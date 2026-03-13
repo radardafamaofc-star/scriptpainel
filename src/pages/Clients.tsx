@@ -161,7 +161,7 @@ export default function Clients() {
         // Provision on XUI
         if (f.server_id) {
           const expTimestamp = Math.floor(new Date(expiryISO!).getTime() / 1000);
-          const bouquetId = String(selectedPlan?.bouquets ?? "");
+          const packageId = String((selectedPlan as any)?.package_id ?? "").trim();
           const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
             body: {
               action: "xui_command",
@@ -172,7 +172,7 @@ export default function Clients() {
                 password: f.password,
                 max_connections: "1",
                 exp_date: String(expTimestamp),
-                bouquet: bouquetId,
+                package_id: packageId,
               },
             },
           });
