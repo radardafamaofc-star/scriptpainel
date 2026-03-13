@@ -314,7 +314,6 @@ const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
 
 // Map between numeric IDs and format names
 const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
-const OUTPUT_NAME_TO_ID: Record<string, string> = { 'm3u8': '1', 'ts': '2', 'rtmp': '3', 'hls': '1', 'mpegts': '2' };
 
 function normalizeOutputFormats(raw: string[]): string[] {
   if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
@@ -330,10 +329,11 @@ function normalizeOutputFormats(raw: string[]): string[] {
 
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
-  const payload: Record<string, string | string[]> = {
+  return {
+    // Keep array syntax only (no JSON/csv/object), as required by XUI
     'allowed_outputs[]': formats,
+    'output_formats[]': formats,
   };
-  return payload;
 }
 
 function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
