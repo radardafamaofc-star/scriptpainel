@@ -408,7 +408,7 @@ export default function Plans() {
                 <Button
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={() => saveMutation.mutate(form)}
-                  disabled={saveMutation.isPending || !form.name}
+                  disabled={saveMutation.isPending || !form.name || !form.server_id || !form.package_id}
                 >
                   {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   {editId ? "Salvar Alterações" : "Adicionar Plano"}
