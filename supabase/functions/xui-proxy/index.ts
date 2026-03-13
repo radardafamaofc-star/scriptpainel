@@ -724,12 +724,25 @@ async function provisionUserOnXui(
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-  const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
+  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
   const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
 
+  let effectivePackageId = await resolvePackageIdFromBouquets(config, {
+    requestedPackageId,
+    planName: String(rawParams.plan_name || ''),
+    bouquetIds,
+  });
+
+  if (!effectivePackageId && bouquetIds.length) {
+    effectivePackageId = String(bouquetIds[0]).replace(/\D/g, '').trim();
+    if (effectivePackageId) {
+      console.log(`[XUI] Fallback package_id from first bouquet: ${effectivePackageId}`);
+    }
+  }
+
   console.log(
-    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
+    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
   );
 
   const createData = await createLinePost(config, {
@@ -737,7 +750,7 @@ async function provisionUserOnXui(
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
     memberId: effectiveMemberId,
-    ...(packageId ? { packageId } : {}),
+    ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
     maxConnections: Number(maxConnections),
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
@@ -771,7 +784,7 @@ async function provisionUserOnXui(
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
     const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
-    const needsPackageSync = !!packageId && currentPackageId !== packageId;
+    const needsPackageSync = !!effectivePackageId && currentPackageId !== effectivePackageId;
 
     if (needsBouquetSync || needsOutputSync || needsUsernameSync || needsPackageSync) {
       console.log(
@@ -785,7 +798,7 @@ async function provisionUserOnXui(
         expectedUsername: username,
         expectedPassword: password,
         expectedMemberId: effectiveMemberId,
-        expectedPackageId: packageId,
+        expectedPackageId: effectivePackageId,
         expDate: expDateFormatted,
         maxConnections,
       });
