@@ -682,11 +682,15 @@ async function provisionUserOnXui(
 
   const selectedPackageId = selectedPackageIds[0] || '';
   const bouquetSelectionIds = directBouquetIds.length ? directBouquetIds : selectedPackageIds;
+  const indexedBouquetSelection: Record<string, string> = bouquetSelectionIds.reduce((acc, id, index) => {
+    acc[`bouquets_selected[${index}]`] = id;
+    return acc;
+  }, {} as Record<string, string>);
 
   const expectedAssignments: ExpectedLineAssignments = {
     bouquetIds: directBouquetIds,
     packageIds: selectedPackageIds,
-    outputIds: resolvedOutputIds,
+    outputIds: [],
   };
 
   const baseParams: Record<string, string> = {
@@ -696,49 +700,42 @@ async function provisionUserOnXui(
   };
   if (memberId) baseParams.member_id = memberId;
 
+  const outputJsonArray = resolvedOutputIds.length ? `[${resolvedOutputIds.join(',')}]` : '';
+
   const createAssignmentVariants: Array<Record<string, string | string[]>> = [
+    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
+    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
+    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
     {
       ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
       ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
-      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
-    {
-      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
-      ...(bouquetSelectionIds.length ? { bouquets_selected: bouquetSelectionIds } : {}),
-      ...(resolvedOutputIds.length ? { 'allowed_outputs_selected[]': resolvedOutputIds } : {}),
-      ...(resolvedOutputIds.length ? { 'output_formats[]': resolvedOutputIds } : {}),
-    },
-    {
-      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
-      ...(directBouquetIds.length ? { bouquet: JSON.stringify(directBouquetIds) } : {}),
-      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
-    },
-    {
-      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
-      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
-    },
-  ];
+    ...(selectedPackageId ? [{ package_id: selectedPackageId }] : []),
+    ...(outputJsonArray && bouquetSelectionIds.length
+      ? [{ 'bouquets_selected[]': bouquetSelectionIds, allowed_outputs: outputJsonArray }]
+      : []),
+  ].filter((variant) => Object.keys(variant).length > 0);
 
   const editAssignmentVariants: Array<Record<string, string | string[]>> = [
+    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
+    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
+    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
+    ...(directBouquetIds.length ? [{ package_id: '0', 'bouquets_selected[]': directBouquetIds }] : []),
     {
       ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
       ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
-      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
-    {
-      ...(bouquetSelectionIds.length ? { bouquets_selected: bouquetSelectionIds } : {}),
-      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
-    },
-    {
-      ...(directBouquetIds.length ? { bouquet: JSON.stringify(directBouquetIds) } : {}),
-      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
-    },
-    {
-      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
-      ...(resolvedOutputIds.length ? { 'allowed_outputs_selected[]': resolvedOutputIds } : {}),
-      ...(resolvedOutputIds.length ? { 'output_formats[]': resolvedOutputIds } : {}),
-    },
-  ];
+    ...(outputJsonArray && bouquetSelectionIds.length
+      ? [{ 'bouquets_selected[]': bouquetSelectionIds, allowed_outputs: outputJsonArray }]
+      : []),
+    ...(resolvedOutputIds.length
+      ? [{ 'allowed_outputs_selected[]': resolvedOutputIds, 'output_formats[]': resolvedOutputIds }]
+      : []),
+  ].filter((variant) => Object.keys(variant).length > 0);
 
   const rawExpDate = String(expDate || '').trim();
   const expVariants: string[] = [];
