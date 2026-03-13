@@ -770,9 +770,11 @@ async function syncLineAssignments(
   if (!lineId) return false;
 
   // Don't verify outputs — XUI manages them at package level
-  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : { packageIds };
+  // but always validate bouquets/package when available.
+  const expectedCheck: ExpectedLineAssignments = {
+    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
+    ...(packageIds.length > 0 ? { packageIds } : {}),
+  };
 
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
