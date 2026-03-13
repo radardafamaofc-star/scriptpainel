@@ -779,12 +779,12 @@ async function syncLineAssignments(
   lineId: string,
   username: string,
   expected: ExpectedLineAssignments,
-  outputIds: string[] = ['1', '2', '3'],
+  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
   password: string = '',
 ): Promise<boolean> {
   const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
   const packageIds = sanitizeSelectionIds(expected.packageIds || []);
-  const normalizedOutputs = sanitizeSelectionIds(outputIds).length > 0 ? sanitizeSelectionIds(outputIds) : ['1', '2', '3'];
+  const normalizedOutputs = normalizeOutputFormats(outputFormats);
 
   if (!lineId) return false;
 
