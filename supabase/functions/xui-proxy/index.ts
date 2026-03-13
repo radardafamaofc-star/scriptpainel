@@ -574,6 +574,31 @@ function extractLineRows(payload: any): any[] {
   return payload && typeof payload === 'object' ? [payload] : [];
 }
 
+function isLineActive(row: any): boolean {
+  const enabled = String(row?.enabled ?? '').trim().toLowerCase();
+  const adminEnabled = String(row?.admin_enabled ?? '').trim().toLowerCase();
+  const status = String(row?.status ?? row?.line_status ?? '').trim().toLowerCase();
+  const isBanned = String(row?.is_banned ?? row?.banned ?? '').trim().toLowerCase();
+
+  const falseLike = new Set(['0', 'false', 'disabled', 'inactive', 'off', 'no']);
+
+  if (enabled && falseLike.has(enabled)) return false;
+  if (adminEnabled && falseLike.has(adminEnabled)) return false;
+  if (isBanned && !falseLike.has(isBanned)) return false;
+
+  if (status) {
+    if (status.includes('disabled') || status.includes('inactive') || status.includes('banned') || status.includes('suspended')) {
+      return false;
+    }
+
+    if (status.includes('success') || status.includes('active') || status.includes('enabled')) {
+      return true;
+    }
+  }
+
+  return true;
+}
+
 async function resolveLineIdByUsername(config: XuiServerConfig, username: string): Promise<string> {
   const checks: Array<{ action: string; params?: Record<string, string | string[]>; label: string }> = [
     { action: 'get_line', params: { username }, label: `get_line(username=${username})` },
@@ -1280,28 +1305,50 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou status inválido');
     }
 
-    // Line ID from create response
-    const lineId = String(createData?.data?.id || '').trim();
-
-    // Optional confirmation after package apply.
-    try {
-      const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
-      const finalRows = extractLineRows(finalLine);
-      const finalUsername = String(finalRows[0]?.username || '').trim();
-      const finalPackageId = String(finalRows[0]?.package_id || '').trim();
-      const assignments = extractLineAssignments(finalRows[0] || finalLine);
-
-      console.log(`[XUI] Final state: line_id=${lineId} username=${finalUsername} package_id=${finalPackageId} bouquets=${JSON.stringify(assignments.bouquetIds)} outputs=${JSON.stringify(assignments.outputIds)}`);
-
-      if (finalUsername && finalUsername !== username) {
-        throw new Error(`XUI alterou o username (esperado: ${username}, recebido: ${finalUsername})`);
-      }
-    } catch (validationErr: any) {
-      if (validationErr.message?.includes('alterou o username')) throw validationErr;
-      console.log(`[XUI] Validation get_line warning: ${validationErr.message}`);
+    // Step 2/3: validate by line id and read authoritative username directly from XUI
+    const createdLineId = String(createData?.data?.id || '').trim();
+    if (!createdLineId) {
+      throw new Error('create_line retornou sem line_id');
     }
 
-    return { action: 'create_line' as const, data: createData };
+    const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
+    const finalRows = extractLineRows(finalLine);
+    const finalRow = finalRows.find((row: any) => String(row?.id || row?.line_id || '').trim() === createdLineId) || finalRows[0] || {};
+
+    const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
+    const finalUsername = String(finalRow?.username || createData?.data?.username || '').trim();
+    const finalPackageId = String(finalRow?.package_id || '').trim();
+    const assignments = extractLineAssignments(finalRow || finalLine);
+    const active = isLineActive(finalRow);
+
+    console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} package_id=${finalPackageId} active=${active} bouquets=${JSON.stringify(assignments.bouquetIds)} outputs=${JSON.stringify(assignments.outputIds)}`);
+
+    if (!finalLineId) {
+      throw new Error('Não foi possível confirmar line_id após create_line');
+    }
+
+    if (!finalUsername) {
+      throw new Error('Não foi possível confirmar username da linha criada no XUI');
+    }
+
+    if (!active) {
+      throw new Error(`Linha criada no XUI, mas não está ativa (line_id=${finalLineId})`);
+    }
+
+    return {
+      action: 'create_line' as const,
+      data: {
+        ...createData,
+        data: {
+          ...(typeof createData?.data === 'object' && createData?.data ? createData.data : {}),
+          id: finalLineId,
+          username: finalUsername,
+        },
+      },
+      line_id: finalLineId,
+      username: finalUsername,
+      account_active: active,
+    };
   } catch (e: any) {
     console.log(`[XUI] Provisioning flow error: ${e.message}`);
     throw new Error(e.message);
@@ -1462,10 +1509,22 @@ Deno.serve(async (req) => {
 
           const provisionResult = await provisionUserOnXui(config, xui_params || {}, xuiMemberId);
 
+          const finalUsername = String(
+            provisionResult.username
+            || provisionResult?.data?.data?.username
+            || reqUsername
+            || '',
+          ).trim();
+          const finalLineId = String(
+            provisionResult.line_id
+            || provisionResult?.data?.data?.id
+            || '',
+          ).trim();
+
           await appendSystemLog(serviceClient, {
             type: provisionResult.warning ? 'warning' : 'success',
             action: 'XUI provisioning concluído',
-            detail: `server_id=${server_id} username=${reqUsername || 'n/a'} action=${provisionResult.action}${provisionResult.warning ? ` warning=${provisionResult.warning}` : ''}`,
+            detail: `server_id=${server_id} username=${finalUsername || 'n/a'} line_id=${finalLineId || 'n/a'} action=${provisionResult.action}${provisionResult.warning ? ` warning=${provisionResult.warning}` : ''}`,
             user_id: user.id,
           });
 
@@ -1473,6 +1532,9 @@ Deno.serve(async (req) => {
             success: true,
             data: provisionResult.data,
             action_used: provisionResult.action,
+            generated_username: finalUsername || null,
+            line_id: finalLineId || null,
+            account_active: provisionResult.account_active ?? null,
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });

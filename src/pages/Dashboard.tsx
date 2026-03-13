@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 
 import { useToast } from "@/hooks/use-toast";
 import { renderTemplate, DEFAULT_TEMPLATE } from "@/lib/template";
+import { extractGeneratedUsername } from "@/lib/xui";
 
 const chartStyle = { fontSize: 10, fill: "hsl(215, 15%, 55%)" };
 const tooltipStyle = {
@@ -198,6 +199,8 @@ export default function Dashboard() {
       }).select("id").single();
       if (error) throw error;
 
+      let finalUsername = username;
+
       // Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
@@ -222,6 +225,17 @@ export default function Dashboard() {
           await supabase.from("test_lines").delete().eq("id", createdTest.id);
           throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
         }
+
+        const generatedUsername = extractGeneratedUsername(xuiRes);
+        if (generatedUsername && generatedUsername !== username) {
+          const { error: updateUsernameError } = await supabase
+            .from("test_lines")
+            .update({ username: generatedUsername })
+            .eq("id", createdTest.id);
+
+          if (updateUsernameError) throw updateUsernameError;
+          finalUsername = generatedUsername;
+        }
       }
 
       const srv: any = servers4test.find((s: any) => s.id === serverId);
@@ -241,11 +255,11 @@ export default function Dashboard() {
       }
       const tpl = srv?.template || DEFAULT_TEMPLATE;
       const rendered = renderTemplate(tpl, {
-        username, password, dns, dns_host: dnsHost,
+        username: finalUsername, password, dns, dns_host: dnsHost,
         expires_at: format(expiresAt, "dd/MM/yyyy HH:mm"),
         package: "Teste", plan_price: "Grátis", pay_url: "", connections: "1",
       });
-      return { username, password, template: rendered };
+      return { username: finalUsername, password, template: rendered };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["test-lines"] });
