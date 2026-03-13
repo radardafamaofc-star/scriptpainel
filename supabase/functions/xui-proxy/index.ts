@@ -1509,10 +1509,22 @@ Deno.serve(async (req) => {
 
           const provisionResult = await provisionUserOnXui(config, xui_params || {}, xuiMemberId);
 
+          const finalUsername = String(
+            provisionResult.username
+            || provisionResult?.data?.data?.username
+            || reqUsername
+            || '',
+          ).trim();
+          const finalLineId = String(
+            provisionResult.line_id
+            || provisionResult?.data?.data?.id
+            || '',
+          ).trim();
+
           await appendSystemLog(serviceClient, {
             type: provisionResult.warning ? 'warning' : 'success',
             action: 'XUI provisioning concluído',
-            detail: `server_id=${server_id} username=${reqUsername || 'n/a'} action=${provisionResult.action}${provisionResult.warning ? ` warning=${provisionResult.warning}` : ''}`,
+            detail: `server_id=${server_id} username=${finalUsername || 'n/a'} line_id=${finalLineId || 'n/a'} action=${provisionResult.action}${provisionResult.warning ? ` warning=${provisionResult.warning}` : ''}`,
             user_id: user.id,
           });
 
@@ -1520,6 +1532,9 @@ Deno.serve(async (req) => {
             success: true,
             data: provisionResult.data,
             action_used: provisionResult.action,
+            generated_username: finalUsername || null,
+            line_id: finalLineId || null,
+            account_active: provisionResult.account_active ?? null,
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
