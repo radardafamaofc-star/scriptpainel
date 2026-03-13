@@ -296,6 +296,118 @@ async function createLinePost(
   return postXuiForm(config, 'create_line', form, 'create_line');
 }
 
+async function getLineRowById(config: XuiServerConfig, lineId: string): Promise<any | null> {
+  try {
+    const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
+    const rows = extractLineRows(finalLine);
+    return rows.find((r: any) => String(r?.id || '').trim() === lineId) || rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function enforceAllowedOutputsPostCreate(
+  config: XuiServerConfig,
+  params: {
+    lineId: string;
+    username: string;
+    password: string;
+    memberId?: string;
+    expDate?: string;
+    bouquetIds: string[];
+    allowedOutputIds: string[];
+  },
+): Promise<any | null> {
+  const lineId = String(params.lineId || '').trim();
+  if (!lineId) return null;
+
+  const bouquetNumeric = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
+  const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
+  const bouquetJson = JSON.stringify(bouquetNumeric);
+  const allowedJson = JSON.stringify(allowedNumeric);
+  const allowedQuotedJson = JSON.stringify(allowedNumeric.map((id) => String(id)));
+  const allowedCsv = allowedNumeric.join(',');
+  const targetAllowed = allowedNumeric.map((id) => String(id));
+
+  const buildBaseForm = () => {
+    const form = new URLSearchParams();
+    form.set('id', lineId);
+    form.set('line_id', lineId);
+    form.set('username', params.username);
+    form.set('password', params.password);
+    form.set('max_connections', '1');
+    form.set('bouquet', bouquetJson);
+    form.set('bouquets_selected', bouquetJson);
+    if (params.expDate) form.set('exp_date', params.expDate);
+
+    const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
+    if (normalizedMemberId) form.set('member_id', normalizedMemberId);
+
+    return form;
+  };
+
+  const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
+    {
+      label: 'json_primary',
+      fill: (form) => {
+        form.set('allowed_outputs', allowedJson);
+        form.set('allowed_outputs_selected', allowedQuotedJson);
+        form.set('output_formats', allowedCsv);
+        form.set('output_formats_selected', allowedQuotedJson);
+        form.set('allowed_output_formats', allowedQuotedJson);
+      },
+    },
+    {
+      label: 'csv_primary',
+      fill: (form) => {
+        form.set('allowed_outputs', allowedCsv);
+        form.set('allowed_outputs_selected', allowedCsv);
+        form.set('output_formats', allowedJson);
+        form.set('output_formats_selected', allowedJson);
+        form.set('allowed_output_formats', allowedJson);
+      },
+    },
+    {
+      label: 'quoted_json_primary',
+      fill: (form) => {
+        form.set('allowed_outputs', allowedQuotedJson);
+        form.set('allowed_outputs_selected', allowedQuotedJson);
+        form.set('output_formats', allowedQuotedJson);
+        form.set('output_formats_selected', allowedQuotedJson);
+        form.set('allowed_output_formats', allowedQuotedJson);
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const form = buildBaseForm();
+      attempt.fill(form);
+      console.log(`[XUI] edit_line fallback (${attempt.label}) payload: ${form.toString()}`);
+
+      const editData = await postXuiForm(config, 'edit_line', form, `edit_line(${attempt.label})`);
+      const editStatus = String(editData?.status || '').toUpperCase();
+      const editError = getXuiError(editData);
+      if (editError && !editStatus.includes('SUCCESS')) {
+        console.log(`[XUI] edit_line fallback (${attempt.label}) rejected: ${editError}`);
+        continue;
+      }
+
+      const refreshed = await getLineRowById(config, lineId);
+      if (refreshed) {
+        console.log(`[XUI] After edit_line(${attempt.label}): allowed_outputs=${refreshed.allowed_outputs || '?'}`);
+        if (hasSameNumericIds(refreshed.allowed_outputs, targetAllowed)) {
+          return refreshed;
+        }
+      }
+    } catch (e: any) {
+      console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
+    }
+  }
+
+  return getLineRowById(config, lineId);
+}
+
 async function getOrCreateXuiMemberId(
   config: XuiServerConfig,
   userId: string,
