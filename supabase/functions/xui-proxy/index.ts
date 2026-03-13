@@ -525,7 +525,7 @@ function matchesExpectedAssignments(actual: XuiLineAssignments, expected: Expect
   const expectedBouquets = normalizeIds(expected.bouquetIds || []);
   const expectedPackages = normalizeIds(expected.packageIds || []);
   const expectedOutputNames = normalizeOutputFormats(expected.outputIds || []);
-  const actualOutputNames = normalizeOutputFormats(actual.outputIds || []);
+  const actualOutputNames = normalizeOutputFormats(actual.outputIds || [], false);
 
   const bouquetOk = expectedBouquets.length === 0
     || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
