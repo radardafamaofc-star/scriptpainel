@@ -166,6 +166,50 @@ function isXuiSuccess(payload: any): boolean {
   return !getXuiError(payload) && Object.keys(payload).length > 0;
 }
 
+function payloadContainsUsername(payload: any, username: string): boolean {
+  if (payload === null || payload === undefined) return false;
+
+  if (typeof payload === 'string') {
+    return payload.trim() === username;
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.some((item) => payloadContainsUsername(item, username));
+  }
+
+  if (typeof payload === 'object') {
+    if (typeof payload.username === 'string' && payload.username.trim() === username) return true;
+    return Object.values(payload).some((value) => payloadContainsUsername(value, username));
+  }
+
+  return false;
+}
+
+async function verifyProvisionedUser(config: XuiServerConfig, username: string): Promise<boolean> {
+  const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
+    { action: 'get_line', params: { username } },
+    { action: 'get_user', params: { username } },
+    { action: 'get_lines', params: { search: username } },
+    { action: 'get_users', params: { search: username } },
+    { action: 'get_lines' },
+    { action: 'get_users' },
+  ];
+
+  for (const check of checks) {
+    try {
+      const data = await xuiRequest(config, check.action, check.params || {});
+      if (payloadContainsUsername(data, username)) {
+        console.log(`[XUI] Verification success via ${check.action} for ${username}`);
+        return true;
+      }
+    } catch {
+      // ignore verification endpoint mismatch
+    }
+  }
+
+  return false;
+}
+
 async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<string, string> = {}) {
   const username = rawParams.username?.trim();
   const password = rawParams.password?.trim();
@@ -176,6 +220,14 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
   const maxConnections = rawParams.max_connections || '1';
   const expDate = rawParams.exp_date || '';
   const isTrial = rawParams.is_trial || '0';
+
+  const expUnix = Number(expDate);
+  const nowUnix = Math.floor(Date.now() / 1000);
+  const remainingHours = Number.isFinite(expUnix) && expUnix > nowUnix
+    ? Math.max(1, Math.ceil((expUnix - nowUnix) / 3600))
+    : 24;
+  const remainingDays = Math.max(1, Math.ceil(remainingHours / 24));
+  const expVariants = Array.from(new Set([expDate, `${remainingHours}hours`, `${remainingDays}days`].filter(Boolean)));
 
   const bouquetRaw = rawParams.bouquet || rawParams.bouquets || '';
   const bouquetIds = bouquetRaw
@@ -202,63 +254,78 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
   const primaryBouquet = resolvedBouquetIds[0] || bouquetRaw;
   const bouquetsSelected = resolvedBouquetIds.length ? JSON.stringify(resolvedBouquetIds) : '[]';
 
-  const actionAttempts = [
-    {
-      action: 'user_create',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        is_trial: isTrial,
-        bouquet: primaryBouquet,
+  const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [];
+
+  for (const expValue of expVariants) {
+    actionAttempts.push(
+      {
+        action: 'user_create',
+        params: {
+          username,
+          password,
+          max_connections: maxConnections,
+          exp_date: expValue,
+          is_trial: isTrial,
+          bouquet: primaryBouquet,
+        },
       },
-    },
-    {
-      action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        is_trial: isTrial,
-        bouquets_selected: bouquetsSelected,
+      {
+        action: 'create_line',
+        params: {
+          username,
+          password,
+          max_connections: maxConnections,
+          exp_date: expValue,
+          is_trial: isTrial,
+          bouquets_selected: bouquetsSelected,
+        },
       },
-    },
-    {
-      action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        is_trial: isTrial,
-        'bouquets_selected[]': resolvedBouquetIds,
+      {
+        action: 'create_line',
+        params: {
+          username,
+          password,
+          max_connections: maxConnections,
+          exp_date: expValue,
+          is_trial: isTrial,
+          'bouquets_selected[]': resolvedBouquetIds,
+        },
       },
-    },
-    {
-      action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        is_trial: isTrial,
-        package: primaryBouquet,
+      {
+        action: 'create_line',
+        params: {
+          username,
+          password,
+          max_connections: maxConnections,
+          exp_date: expValue,
+          is_trial: isTrial,
+          package: primaryBouquet,
+        },
       },
-    },
-    {
-      action: 'create_user',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        is_trial: isTrial,
-        bouquet: primaryBouquet,
+      {
+        action: 'create_line',
+        params: {
+          username,
+          password,
+          max_connections: maxConnections,
+          exp_date: expValue,
+          is_trial: isTrial,
+          package_id: primaryBouquet,
+        },
       },
-    },
-  ];
+      {
+        action: 'create_user',
+        params: {
+          username,
+          password,
+          max_connections: maxConnections,
+          exp_date: expValue,
+          is_trial: isTrial,
+          bouquet: primaryBouquet,
+        },
+      }
+    );
+  }
 
   let lastError = 'A API do XUI rejeitou a criação do usuário';
 
@@ -267,8 +334,15 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
     const error = getXuiError(data);
 
     if (!error && isXuiSuccess(data)) {
-      console.log(`[XUI] Provision success with action: ${attempt.action}`);
-      return { action: attempt.action, data };
+      const verified = await verifyProvisionedUser(config, username);
+      if (verified) {
+        console.log(`[XUI] Provision success with action: ${attempt.action}`);
+        return { action: attempt.action, data };
+      }
+
+      lastError = 'XUI retornou sucesso, mas o usuário não foi encontrado após criação';
+      console.log(`[XUI] Provision uncertain (${attempt.action}): ${lastError}`);
+      continue;
     }
 
     lastError = error || `Ação ${attempt.action} retornou status inválido`;
