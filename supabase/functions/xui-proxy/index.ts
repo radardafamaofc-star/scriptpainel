@@ -988,67 +988,128 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const lineParams: Record<string, string> = {
+    const baseLineParams: Record<string, string> = {
       username,
       password,
       max_connections: maxConnections,
       exp_date: expValue,
     };
-    if (memberId) lineParams.member_id = memberId;
-    if (packageId) lineParams.package_id = packageId;
+    if (memberId) baseLineParams.member_id = memberId;
+
+    const packageLineParams: Record<string, string> = {
+      ...baseLineParams,
+      ...(packageId ? { package_id: packageId } : {}),
+    };
 
     // Strategy 1: GET with bouquets_selected[] in query string (QPanel style)
     if (bouquetIds.length > 0) {
-      try {
-        const url = buildCreateLineUrl(config, lineParams, bouquetIds, outputIds);
-        console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
-        const response = await tryFetch(url);
-        const text = await response.text();
-        if (text && !text.includes('<html')) {
-          const json = JSON.parse(text);
-          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
-          const status = String(json?.status || '').toUpperCase();
-          if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
-            const lineId = String(json?.data?.id || '').trim();
-            const actionUsed = await ensureExpectedAssignments(lineId);
-            return { action: actionUsed, data: json };
+      const getAttempts: Array<{ label: string; params: Record<string, string> }> = [];
+
+      if (packageId) {
+        getAttempts.push({
+          label: 'GET create_line custom (package OFF)',
+          params: {
+            ...baseLineParams,
+            package_id: '0',
+            'package_id[]': '0',
+          },
+        });
+      }
+
+      getAttempts.push({
+        label: 'GET create_line (QPanel style)',
+        params: packageLineParams,
+      });
+
+      for (const attempt of getAttempts) {
+        try {
+          const url = buildCreateLineUrl(config, attempt.params, bouquetIds, outputIds);
+          console.log(`[XUI] ${attempt.label}: ${url.replace(config.api_key, '***')}`);
+          const response = await tryFetch(url);
+          const text = await response.text();
+          if (text && !text.includes('<html')) {
+            const json = JSON.parse(text);
+            console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
+            const status = String(json?.status || '').toUpperCase();
+            if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
+              const lineId = String(json?.data?.id || '').trim();
+              const actionUsed = await ensureExpectedAssignments(lineId);
+              return { action: actionUsed, data: json };
+            }
+            const err = getXuiError(json);
+            if (err) {
+              lastError = err;
+              console.log(`[XUI] ${attempt.label} failed: ${err}`);
+            }
           }
-          const err = getXuiError(json);
-          if (err) {
-            lastError = err;
-            console.log(`[XUI] create_line (GET) failed: ${err}`);
-          }
+        } catch (e: any) {
+          console.log(`[XUI] ${attempt.label} error: ${e.message}`);
+          lastError = e.message;
         }
-      } catch (e: any) {
-        console.log(`[XUI] GET create_line error: ${e.message}`);
-        lastError = e.message;
       }
     }
 
-    // Strategy 2: Standard xuiRequest (POST fallback)
-    try {
-      console.log(`[XUI] Fallback: POST create_line params: ${JSON.stringify(lineParams)}`);
-      const data = await xuiRequest(config, 'create_line', lineParams);
-      const createError = getXuiError(data);
-      const status = String(data?.status || '').toUpperCase();
+    // Strategy 2: POST fallbacks
+    const outputPayload = buildOutputPayload(outputIds);
+    const postAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [];
 
-      if (createError && !status.includes('EXISTS_USERNAME')) {
-        lastError = createError;
-        continue;
+    if (bouquetIds.length > 0) {
+      const bouquetPayload: Record<string, string | string[]> = {
+        'bouquets_selected[]': bouquetIds,
+        ...outputPayload,
+      };
+
+      if (packageId) {
+        postAttempts.push({
+          label: 'POST create_line custom (package OFF)',
+          params: {
+            ...baseLineParams,
+            package_id: '0',
+            'package_id[]': ['0'],
+            ...bouquetPayload,
+          },
+        });
       }
-      if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
-        lastError = createError || 'create_line retornou status inválido';
-        continue;
+
+      postAttempts.push({
+        label: 'POST create_line bouquets + outputs',
+        params: {
+          ...packageLineParams,
+          ...bouquetPayload,
+        },
+      });
+    }
+
+    postAttempts.push({
+      label: 'POST create_line padrão',
+      params: packageLineParams,
+    });
+
+    for (const attempt of postAttempts) {
+      try {
+        console.log(`[XUI] Fallback: ${attempt.label} params: ${JSON.stringify(attempt.params)}`);
+        const data = await xuiRequest(config, 'create_line', attempt.params);
+        const createError = getXuiError(data);
+        const status = String(data?.status || '').toUpperCase();
+
+        if (createError && !status.includes('EXISTS_USERNAME')) {
+          lastError = createError;
+          continue;
+        }
+        if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
+          lastError = createError || 'create_line retornou status inválido';
+          continue;
+        }
+
+        const lineId = String(data?.data?.id || '').trim();
+        const actionUsed = await ensureExpectedAssignments(lineId);
+
+        console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'} action=${actionUsed}`);
+        return { action: actionUsed, data };
+      } catch (e: any) {
+        lastError = e.message;
+        console.log(`[XUI] ${attempt.label} error: ${lastError}`);
       }
-
-      const lineId = String(data?.data?.id || '').trim();
-      const actionUsed = await ensureExpectedAssignments(lineId);
-
-      console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'} action=${actionUsed}`);
-      return { action: actionUsed, data };
-    } catch (e: any) {
-      lastError = e.message;
-      console.log(`[XUI] create_line POST error: ${lastError}`);
     }
   }
 
