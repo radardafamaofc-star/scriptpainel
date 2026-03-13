@@ -309,6 +309,37 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
+function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string | string[]> {
+  const normalized = sanitizeSelectionIds(outputIds);
+  const selected = normalized.length > 0 ? normalized : ['1', '2', '3'];
+  const asNumbers = selected
+    .map((id) => Number(id))
+    .filter((n) => Number.isFinite(n));
+  const json = JSON.stringify(asNumbers);
+
+  return {
+    allowed_outputs: json,
+    output_formats: json,
+    allowed_outputs_selected: json,
+    'allowed_outputs[]': selected,
+    'output_formats[]': selected,
+    'allowed_outputs_selected[]': selected,
+  };
+}
+
+function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) {
+      for (const value of v) {
+        parts.push(`${encodeParamKey(k)}=${encodeURIComponent(value)}`);
+      }
+      continue;
+    }
+
+    parts.push(`${encodeParamKey(k)}=${encodeURIComponent(v)}`);
+  }
+}
+
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
   const packages: string[] = [];
