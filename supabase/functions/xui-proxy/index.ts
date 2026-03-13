@@ -315,8 +315,8 @@ const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
 // Map between numeric IDs and format names
 const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
 
-function normalizeOutputFormats(raw: string[]): string[] {
-  if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
+function normalizeOutputFormats(raw: string[] = [], fallbackToDefault: boolean = true): string[] {
+  if (!raw || raw.length === 0) return fallbackToDefault ? OUTPUT_FORMAT_NAMES : [];
   const result: string[] = [];
   for (const v of raw) {
     const trimmed = String(v).trim().toLowerCase();
@@ -324,7 +324,7 @@ function normalizeOutputFormats(raw: string[]): string[] {
     const mapped = OUTPUT_ID_TO_NAME[trimmed];
     if (mapped) result.push(mapped);
   }
-  return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_FORMAT_NAMES;
+  return result.length > 0 ? Array.from(new Set(result)) : (fallbackToDefault ? OUTPUT_FORMAT_NAMES : []);
 }
 
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
