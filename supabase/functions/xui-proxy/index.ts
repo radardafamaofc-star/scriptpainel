@@ -162,15 +162,17 @@ Deno.serve(async (req) => {
       .from('user_roles')
       .select('role')
       .eq('user_id', user.id)
-      .eq('role', 'admin')
       .single();
 
-    if (!roleData) {
+    const allowedRoles = ['admin', 'reseller', 'reseller_master', 'reseller_ultra'];
+    if (!roleData || !allowedRoles.includes(roleData.role)) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const isAdmin = roleData.role === 'admin';
 
     const body = await req.json();
     const { action, server_id, server_config, xui_action, xui_params } = body;

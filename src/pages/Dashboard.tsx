@@ -197,6 +197,26 @@ export default function Dashboard() {
       });
       if (error) throw error;
 
+      // Provision on XUI server
+      if (serverId) {
+        const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
+        await supabase.functions.invoke("xui-proxy", {
+          body: {
+            action: "xui_command",
+            server_id: serverId,
+            xui_action: "user_create",
+            xui_params: {
+              username,
+              password,
+              max_connections: "1",
+              exp_date: String(expTimestamp),
+              is_trial: "1",
+              bouquet: "",
+            },
+          },
+        });
+      }
+
       const srv: any = servers4test.find((s: any) => s.id === serverId);
       const serverDns = srv?.dns || "";
       const serverHost = srv?.host || "";

@@ -54,6 +54,7 @@ export default function Tests() {
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + hours);
 
+      // 1. Save locally
       const { error } = await supabase.from("test_lines").insert({
         username: creds.username,
         password: creds.password,
@@ -63,6 +64,29 @@ export default function Tests() {
         expires_at: expiresAt.toISOString(),
       });
       if (error) throw error;
+
+      // 2. Provision on XUI server
+      if (serverId) {
+        const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
+        const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
+          body: {
+            action: "xui_command",
+            server_id: serverId,
+            xui_action: "user_create",
+            xui_params: {
+              username: creds.username,
+              password: creds.password,
+              max_connections: "1",
+              exp_date: String(expTimestamp),
+              is_trial: "1",
+              bouquet: "",
+            },
+          },
+        });
+        if (xuiErr) console.error("XUI provision error:", xuiErr);
+        else if (xuiRes && !xuiRes.success) console.warn("XUI provision warning:", xuiRes.error);
+      }
+
       return creds;
     },
     onSuccess: (creds) => {
