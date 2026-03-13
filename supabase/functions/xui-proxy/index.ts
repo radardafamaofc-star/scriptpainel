@@ -939,7 +939,7 @@ async function provisionUserOnXui(
     // Strategy 1: GET with bouquets_selected[] in query string (QPanel style)
     if (bouquetIds.length > 0) {
       try {
-        const url = buildCreateLineUrl(config, lineParams, bouquetIds);
+        const url = buildCreateLineUrl(config, lineParams, bouquetIds, outputIds);
         console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
         const response = await tryFetch(url);
         const text = await response.text();
