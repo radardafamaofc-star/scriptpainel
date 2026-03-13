@@ -374,7 +374,7 @@ async function provisionUserOnXui(
 
   // STEP 2 — edit_line with numeric bouquets[] and allowed_outputs[]
   try {
-    await editLineViaPlayerApi(config, {
+    await editLinePost(config, {
       lineId: createdLineId,
       bouquetIds,
       allowedOutputIds,
