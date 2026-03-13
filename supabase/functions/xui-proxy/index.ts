@@ -146,20 +146,6 @@ function appendArrayField(form: URLSearchParams, key: string, values: string[]) 
   }
 }
 
-function toOutputFormatNames(outputIds: string[]): string[] {
-  const map: Record<string, string> = {
-    '1': 'mpegts',
-    '2': 'hls',
-    '3': 'rtmp',
-  };
-
-  return Array.from(new Set(
-    outputIds
-      .map((id) => map[String(id).replace(/\D/g, '').trim()] || '')
-      .filter(Boolean),
-  ));
-}
-
 function normalizeForMatch(value: unknown): string {
   return String(value || '')
     .normalize('NFD')
