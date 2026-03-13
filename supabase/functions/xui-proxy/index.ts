@@ -466,7 +466,7 @@ async function ensureOutputFormatsApplied(
 
     const lineData = await xuiRequest(config, 'get_line', { id: lineId });
     const assignments = extractLineAssignments(lineData);
-    const actualOutputs = normalizeOutputFormats(assignments.outputIds);
+    const actualOutputs = normalizeOutputFormats(assignments.outputIds, false);
 
     const outputsOk = expectedOutputs.every((fmt) => actualOutputs.includes(fmt));
     const bouquetsOk = normalizedBouquets.length === 0
