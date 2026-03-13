@@ -266,9 +266,13 @@ type XuiLineAssignments = {
 
 type ExpectedLineAssignments = {
   bouquetIds?: string[];
-  packageId?: string;
+  packageIds?: string[];
   outputIds?: string[];
 };
+
+function normalizeIds(ids: string[] = []): string[] {
+  return Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)));
+}
 
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
@@ -299,35 +303,42 @@ function extractLineAssignments(payload: any): XuiLineAssignments {
   visit(payload);
 
   return {
-    bouquetIds: Array.from(new Set(bouquets)),
-    packageIds: Array.from(new Set(packages)),
-    outputIds: Array.from(new Set(outputs)),
+    bouquetIds: normalizeIds(bouquets),
+    packageIds: normalizeIds(packages),
+    outputIds: normalizeIds(outputs),
   };
 }
 
 function matchesExpectedAssignments(actual: XuiLineAssignments, expected: ExpectedLineAssignments): boolean {
-  const expectedBouquets = Array.from(new Set((expected.bouquetIds || []).map((id) => String(id).trim()).filter(Boolean)));
-  const expectedPackage = String(expected.packageId || '').trim();
-  const expectedOutputs = Array.from(new Set((expected.outputIds || []).map((id) => String(id).trim()).filter(Boolean)));
+  const expectedBouquets = normalizeIds(expected.bouquetIds || []);
+  const expectedPackages = normalizeIds(expected.packageIds || []);
+  const expectedOutputs = normalizeIds(expected.outputIds || []);
 
   const bouquetOk = expectedBouquets.length === 0 || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
-  const packageOk = !expectedPackage || actual.packageIds.includes(expectedPackage);
+  const packageOk = expectedPackages.length === 0
+    || expectedPackages.some((id) => actual.packageIds.includes(id) || actual.bouquetIds.includes(id));
   const outputsOk = expectedOutputs.length === 0 || expectedOutputs.every((id) => actual.outputIds.includes(id));
 
   return bouquetOk && packageOk && outputsOk;
 }
 
-async function verifyProvisionedUser(
-  config: XuiServerConfig,
-  username: string,
-  expected: ExpectedLineAssignments = {},
-): Promise<boolean> {
-  const expectedBouquets = Array.from(new Set((expected.bouquetIds || []).map((id) => String(id).trim()).filter(Boolean)));
-  const expectedPackage = String(expected.packageId || '').trim();
-  const expectedOutputs = Array.from(new Set((expected.outputIds || []).map((id) => String(id).trim()).filter(Boolean)));
+function extractLineRows(payload: any): any[] {
+  const data = payload?.data ?? payload;
 
+  if (Array.isArray(data)) {
+    return data.filter((row) => row && typeof row === 'object');
+  }
+
+  if (data && typeof data === 'object') {
+    const values = Object.values(data).filter((row) => row && typeof row === 'object');
+    if (values.length) return values;
+  }
+
+  return payload && typeof payload === 'object' ? [payload] : [];
+}
+
+async function resolveLineIdByUsername(config: XuiServerConfig, username: string): Promise<string> {
   const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
-    { action: 'get_line', params: { username } },
     { action: 'get_lines', params: { search: username } },
     { action: 'get_lines' },
   ];
@@ -335,15 +346,60 @@ async function verifyProvisionedUser(
   for (const check of checks) {
     try {
       const data = await xuiRequest(config, check.action, check.params || {});
-      if (!payloadContainsUsername(data, username)) continue;
+      const rows = extractLineRows(data);
+      const match = rows.find((row: any) => String(row?.username || '').trim() === username);
+      const lineId = String(match?.id || '').trim();
+      if (lineId) return lineId;
+    } catch {
+      // ignore and try next source
+    }
+  }
 
-      const actual = extractLineAssignments(data);
+  return '';
+}
+
+async function verifyProvisionedUser(
+  config: XuiServerConfig,
+  username: string,
+  expected: ExpectedLineAssignments = {},
+  lineId: string = '',
+): Promise<boolean> {
+  const expectedBouquets = normalizeIds(expected.bouquetIds || []);
+  const expectedPackages = normalizeIds(expected.packageIds || []);
+  const expectedOutputs = normalizeIds(expected.outputIds || []);
+
+  const resolvedLineId = lineId || await resolveLineIdByUsername(config, username);
+  const checks: Array<{ action: string; params?: Record<string, string | string[]>; label: string }> = [];
+
+  if (resolvedLineId) {
+    checks.push({ action: 'get_line', params: { id: resolvedLineId }, label: `get_line(id=${resolvedLineId})` });
+  }
+
+  checks.push(
+    { action: 'get_lines', params: { search: username }, label: `get_lines(search=${username})` },
+    { action: 'get_lines', label: 'get_lines' },
+  );
+
+  for (const check of checks) {
+    try {
+      const data = await xuiRequest(config, check.action, check.params || {});
+      const rows = extractLineRows(data);
+      const target = rows.find((row: any) => {
+        const rowId = String(row?.id || '').trim();
+        const rowUsername = String(row?.username || '').trim();
+        if (resolvedLineId && rowId) return rowId === resolvedLineId;
+        return rowUsername === username;
+      });
+
+      if (!target) continue;
+
+      const actual = extractLineAssignments(target);
       if (matchesExpectedAssignments(actual, expected)) {
-        console.log(`[XUI] Verification success via ${check.action} for ${username} bouquets=${JSON.stringify(actual.bouquetIds)} outputs=${JSON.stringify(actual.outputIds)} package=${JSON.stringify(actual.packageIds)}`);
+        console.log(`[XUI] Verification success via ${check.label} for ${username} bouquets=${JSON.stringify(actual.bouquetIds)} outputs=${JSON.stringify(actual.outputIds)} package=${JSON.stringify(actual.packageIds)}`);
         return true;
       }
 
-      console.log(`[XUI] Verification mismatch via ${check.action} for ${username}. expectedBouquets=${JSON.stringify(expectedBouquets)} gotBouquets=${JSON.stringify(actual.bouquetIds)} expectedOutputs=${JSON.stringify(expectedOutputs)} gotOutputs=${JSON.stringify(actual.outputIds)} expectedPackage=${JSON.stringify(expectedPackage)} gotPackage=${JSON.stringify(actual.packageIds)}`);
+      console.log(`[XUI] Verification mismatch via ${check.label} for ${username}. expectedBouquets=${JSON.stringify(expectedBouquets)} gotBouquets=${JSON.stringify(actual.bouquetIds)} expectedOutputs=${JSON.stringify(expectedOutputs)} gotOutputs=${JSON.stringify(actual.outputIds)} expectedPackages=${JSON.stringify(expectedPackages)} gotPackage=${JSON.stringify(actual.packageIds)}`);
     } catch {
       // ignore verification endpoint mismatch
     }
@@ -509,61 +565,70 @@ async function provisionUserOnXui(
     : 24;
   const remainingDays = Math.max(1, Math.ceil(remainingHours / 24));
 
-  const bouquetRaw = rawParams.bouquet || rawParams.bouquets || '';
-  const bouquetIds = bouquetRaw
-    .split(',')
-    .map((id) => id.trim())
-    .filter(Boolean);
+  const inputIds = normalizeIds(parseIdList(rawParams.bouquet || rawParams.bouquets || rawParams.package_id || ''));
+  const explicitOutputIds = normalizeIds(parseIdList(rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || ''));
 
-  let resolvedPackageId = bouquetIds.length === 1 ? bouquetIds[0] : '';
-  let resolvedBouquetIds = [...bouquetIds];
+  type PackageMeta = { id: string; bouquets: string[]; outputs: string[] };
+  const packageMetaById = new Map<string, PackageMeta>();
+  const packageList: PackageMeta[] = [];
 
-  const outputRaw = rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || '';
-  let resolvedOutputIds = parseIdList(outputRaw);
+  try {
+    const packagesPayload = await xuiRequest(config, 'get_packages');
+    const packages = (Array.isArray(packagesPayload) ? packagesPayload : Object.values(packagesPayload || {}))
+      .filter((pkg: any) => pkg && typeof pkg === 'object');
 
-  if (!resolvedBouquetIds.length) {
-    try {
-      const packages = await xuiRequest(config, 'get_packages');
-      const packageList = (Array.isArray(packages) ? packages : Object.values(packages || {}))
-        .filter((pkg: any) => pkg && typeof pkg === 'object');
+    for (const pkg of packages) {
+      const id = String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
+      if (!id) continue;
 
-      const getPackageId = (pkg: any): string => String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
+      const meta: PackageMeta = {
+        id,
+        bouquets: normalizeIds(parseIdList(pkg.bouquets)),
+        outputs: normalizeIds(parseIdList(pkg.output_formats || pkg.allowed_outputs)),
+      };
 
-      const allWithId = packageList.filter((pkg: any) => !!getPackageId(pkg));
-      const sorted = [...allWithId].sort((a: any, b: any) => {
-        const bqA = parseIdList(a.bouquets);
-        const bqB = parseIdList(b.bouquets);
-        return bqB.length - bqA.length;
-      });
+      packageMetaById.set(id, meta);
+      packageList.push(meta);
+    }
+  } catch (e: any) {
+    console.log(`[XUI] Could not load packages for provisioning: ${e.message}`);
+  }
 
-      const picked = sorted[0];
-      const pickedId = picked ? getPackageId(picked) : '';
+  let selectedPackageIds = normalizeIds(inputIds.filter((id) => packageMetaById.has(id)));
+  let directBouquetIds = normalizeIds(inputIds.filter((id) => !packageMetaById.has(id)));
 
-      if (pickedId && picked) {
-        resolvedPackageId = pickedId;
-
-        const packageBouquets = parseIdList(picked.bouquets);
-        if (packageBouquets.length > 0) {
-          resolvedBouquetIds = packageBouquets;
-          console.log(`[XUI] Auto-selected package: ${pickedId} with bouquets: ${JSON.stringify(packageBouquets)}`);
-        } else {
-          resolvedBouquetIds = [pickedId];
-          console.log(`[XUI] Auto-selected package: ${pickedId} (no bouquets field, using package id)`);
-        }
-
-        const packageOutputs = parseIdList(picked.output_formats);
-        if (packageOutputs.length > 0) {
-          resolvedOutputIds = packageOutputs;
-          console.log(`[XUI] Auto-selected output formats from package: ${JSON.stringify(packageOutputs)}`);
-        }
-      }
-    } catch (e: any) {
-      console.log(`[XUI] Could not auto-select package: ${e.message}`);
+  if (!selectedPackageIds.length && packageList.length > 0) {
+    const picked = [...packageList].sort((a, b) => b.bouquets.length - a.bouquets.length)[0];
+    if (picked?.id) {
+      selectedPackageIds = [picked.id];
+      console.log(`[XUI] Auto-selected package: ${picked.id} with bouquets: ${JSON.stringify(picked.bouquets)}`);
     }
   }
 
-  resolvedBouquetIds = Array.from(new Set(resolvedBouquetIds.map((id) => String(id).trim()).filter(Boolean)));
-  resolvedOutputIds = Array.from(new Set(resolvedOutputIds.map((id) => String(id).trim()).filter(Boolean)));
+  if (!directBouquetIds.length && selectedPackageIds.length) {
+    directBouquetIds = normalizeIds(
+      selectedPackageIds.flatMap((id) => packageMetaById.get(id)?.bouquets || []),
+    );
+  }
+
+  let resolvedOutputIds = explicitOutputIds;
+  if (!resolvedOutputIds.length && selectedPackageIds.length) {
+    resolvedOutputIds = normalizeIds(
+      selectedPackageIds.flatMap((id) => packageMetaById.get(id)?.outputs || []),
+    );
+    if (resolvedOutputIds.length) {
+      console.log(`[XUI] Auto-selected output formats from package: ${JSON.stringify(resolvedOutputIds)}`);
+    }
+  }
+
+  const selectedPackageId = selectedPackageIds[0] || '';
+  const bouquetSelectionIds = selectedPackageIds.length ? selectedPackageIds : directBouquetIds;
+
+  const expectedAssignments: ExpectedLineAssignments = {
+    bouquetIds: directBouquetIds,
+    packageIds: selectedPackageIds,
+    outputIds: resolvedOutputIds,
+  };
 
   const baseParams: Record<string, string> = {
     username,
@@ -572,32 +637,47 @@ async function provisionUserOnXui(
   };
   if (memberId) baseParams.member_id = memberId;
 
-  const expectedAssignments: ExpectedLineAssignments = {
-    bouquetIds: resolvedBouquetIds,
-    packageId: resolvedPackageId || undefined,
-    outputIds: resolvedOutputIds,
-  };
-
-  const assignmentVariants: Array<Record<string, string | string[]>> = [
+  const createAssignmentVariants: Array<Record<string, string | string[]>> = [
     {
-      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
-      ...(resolvedBouquetIds.length ? { 'bouquets_selected[]': resolvedBouquetIds } : {}),
+      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
+      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
       ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
     {
-      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
-      ...(resolvedBouquetIds.length ? { bouquets_selected: resolvedBouquetIds } : {}),
+      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
+      ...(bouquetSelectionIds.length ? { bouquets_selected: bouquetSelectionIds } : {}),
       ...(resolvedOutputIds.length ? { 'allowed_outputs_selected[]': resolvedOutputIds } : {}),
       ...(resolvedOutputIds.length ? { 'output_formats[]': resolvedOutputIds } : {}),
     },
     {
-      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
-      ...(resolvedBouquetIds.length ? { bouquet: JSON.stringify(resolvedBouquetIds) } : {}),
-      ...(resolvedOutputIds.length ? { output_formats: JSON.stringify(resolvedOutputIds) } : {}),
+      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
+      ...(directBouquetIds.length ? { bouquet: JSON.stringify(directBouquetIds) } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
     {
-      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
+      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
       ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
+    },
+  ];
+
+  const editAssignmentVariants: Array<Record<string, string | string[]>> = [
+    {
+      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
+      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
+    },
+    {
+      ...(bouquetSelectionIds.length ? { bouquets_selected: bouquetSelectionIds } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
+    },
+    {
+      ...(directBouquetIds.length ? { bouquet: JSON.stringify(directBouquetIds) } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
+    },
+    {
+      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
+      ...(resolvedOutputIds.length ? { 'allowed_outputs_selected[]': resolvedOutputIds } : {}),
+      ...(resolvedOutputIds.length ? { 'output_formats[]': resolvedOutputIds } : {}),
     },
   ];
 
@@ -606,46 +686,62 @@ async function provisionUserOnXui(
     expVariants.push(expDate);
   }
 
+  const tryEditFallback = async (lineId: string, expValue: string) => {
+    for (const assignment of editAssignmentVariants) {
+      try {
+        const editParams = { id: lineId, ...baseParams, exp_date: expValue, ...assignment };
+        console.log(`[XUI] edit_line fallback params: ${JSON.stringify(editParams)}`);
+
+        const edited = await xuiRequest(config, 'edit_line', editParams);
+        const editError = getXuiError(edited);
+        if (editError || !isXuiSuccess(edited)) continue;
+
+        const verifiedAfterEdit = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+        if (verifiedAfterEdit) {
+          console.log(`[XUI] ✅ Provision success via edit_line fallback for ${username}`);
+          return edited;
+        }
+      } catch (e: any) {
+        console.log(`[XUI] edit_line fallback failed: ${e.message}`);
+      }
+    }
+
+    return null;
+  };
+
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of expVariants) {
-    for (const assignment of assignmentVariants) {
+    for (const assignment of createAssignmentVariants) {
       const params = { ...baseParams, exp_date: expValue, ...assignment };
       console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
 
       const data = await xuiRequest(config, 'create_line', params);
-      const error = getXuiError(data);
-      if (error || !isXuiSuccess(data)) {
-        lastError = error || 'create_line retornou status inválido';
+      const createError = getXuiError(data);
+      const status = String(data?.status || '').toUpperCase();
+      const usernameExists = status.includes('EXISTS_USERNAME');
+
+      if ((createError && !usernameExists) || !isXuiSuccess(data)) {
+        lastError = createError || 'create_line retornou status inválido';
         console.log(`[XUI] Provision failed: ${lastError}`);
         continue;
       }
 
-      const responseAssignments = extractLineAssignments(data?.data || data);
-      const responseMatches = matchesExpectedAssignments(responseAssignments, expectedAssignments);
-      const verified = await verifyProvisionedUser(config, username, expectedAssignments);
-      if (responseMatches || verified) {
-        console.log(`[XUI] ✅ Provision success for ${username} bouquets=${JSON.stringify(responseAssignments.bouquetIds)} outputs=${JSON.stringify(responseAssignments.outputIds)} package=${JSON.stringify(responseAssignments.packageIds)}`);
+      let lineId = String(data?.data?.id || '').trim();
+      if (!lineId) {
+        lineId = await resolveLineIdByUsername(config, username);
+      }
+
+      const verifiedAfterCreate = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+      if (verifiedAfterCreate) {
+        console.log(`[XUI] ✅ Provision success for ${username} line_id=${lineId || 'n/a'}`);
         return { action: 'create_line', data };
       }
 
-      // create_line may succeed but ignore bouquet/output params depending on panel mode. Force with edit_line.
-      const lineId = String(data?.data?.id || '').trim();
       if (lineId) {
-        try {
-          const editParams = { id: lineId, ...baseParams, exp_date: expValue, ...assignment };
-          console.log(`[XUI] edit_line fallback params: ${JSON.stringify(editParams)}`);
-          const edited = await xuiRequest(config, 'edit_line', editParams);
-          const editError = getXuiError(edited);
-          if (!editError && isXuiSuccess(edited)) {
-            const verifiedAfterEdit = await verifyProvisionedUser(config, username, expectedAssignments);
-            if (verifiedAfterEdit) {
-              console.log(`[XUI] ✅ Provision success via edit_line fallback for ${username}`);
-              return { action: 'edit_line', data: edited };
-            }
-          }
-        } catch (e: any) {
-          console.log(`[XUI] edit_line fallback failed: ${e.message}`);
+        const edited = await tryEditFallback(lineId, expValue);
+        if (edited) {
+          return { action: 'edit_line', data: edited };
         }
       }
 
