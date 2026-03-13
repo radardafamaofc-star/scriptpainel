@@ -603,6 +603,74 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
+async function getPackageBouquets(config: XuiServerConfig, packageId: string): Promise<string[]> {
+  try {
+    const payload = await xuiRequest(config, 'get_packages');
+    const rows = Array.isArray(payload) ? payload : Object.values(payload || {});
+    const pkg = rows.find((p: any) => String(p?.id || '') === packageId);
+    if (!pkg) {
+      console.log(`[XUI] Package ${packageId} not found in get_packages`);
+      return [];
+    }
+    const bouquets = parseIdList((pkg as any).bouquets);
+    console.log(`[XUI] Package ${packageId} bouquets: ${JSON.stringify(bouquets)}`);
+    return bouquets;
+  } catch (e: any) {
+    console.log(`[XUI] Failed to fetch package bouquets: ${e.message}`);
+    return [];
+  }
+}
+
+async function applyBouquetsToLine(
+  config: XuiServerConfig,
+  lineId: string,
+  username: string,
+  bouquetIds: string[],
+): Promise<boolean> {
+  if (!lineId || !bouquetIds.length) return false;
+
+  // QPanel style: edit_line with bouquet as JSON array string + individual bouquet[] params
+  const variants: Array<Record<string, string | string[]>> = [
+    // Variant 1: bouquet as JSON array string (most common XUI format)
+    { id: lineId, bouquet: JSON.stringify(bouquetIds.map(Number)) },
+    // Variant 2: bouquet[] array params
+    { id: lineId, 'bouquet[]': bouquetIds },
+    // Variant 3: bouquets_selected[] 
+    { id: lineId, 'bouquets_selected[]': bouquetIds },
+    // Variant 4: allowed_bouquets as JSON
+    { id: lineId, bouquet: `[${bouquetIds.join(',')}]` },
+  ];
+
+  for (const params of variants) {
+    try {
+      console.log(`[XUI] edit_line bouquet sync params: ${JSON.stringify(params)}`);
+      const result = await xuiRequest(config, 'edit_line', params);
+      if (getXuiError(result) || !isXuiSuccess(result)) {
+        console.log(`[XUI] edit_line bouquet variant failed: ${JSON.stringify(result).substring(0, 300)}`);
+        continue;
+      }
+
+      // Verify bouquets were applied
+      try {
+        const lineData = await xuiRequest(config, 'get_line', { id: lineId });
+        const row = lineData?.data || lineData;
+        const actualBouquets = parseIdList(row?.bouquet || row?.bouquets);
+        console.log(`[XUI] After edit_line, line ${lineId} bouquets: ${JSON.stringify(actualBouquets)}`);
+        if (actualBouquets.length > 0) {
+          console.log(`[XUI] ✅ Bouquets applied successfully to ${username}: ${actualBouquets.length} bouquets`);
+          return true;
+        }
+      } catch (verifyErr: any) {
+        console.log(`[XUI] Verify after edit failed: ${verifyErr.message}`);
+      }
+    } catch (e: any) {
+      console.log(`[XUI] edit_line bouquet error: ${e.message}`);
+    }
+  }
+
+  return false;
+}
+
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -689,6 +757,12 @@ async function provisionUserOnXui(
     packageId = await resolvePackageFromServer();
   }
 
+  // Step 1: Fetch bouquets from the package BEFORE creating
+  let packageBouquets: string[] = [];
+  if (packageId) {
+    packageBouquets = await getPackageBouquets(config, packageId);
+  }
+
   const expUnix = Number(expDate);
   const nowUnix = Math.floor(Date.now() / 1000);
   const remainingHours = Number.isFinite(expUnix) && expUnix > nowUnix
@@ -714,49 +788,20 @@ async function provisionUserOnXui(
 
   const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
 
-  const baseParams: Record<string, string> = {
+  // Step 2: Create line with package_id AND bouquet in the create call
+  const baseParams: Record<string, string | string[]> = {
     username,
     password,
     max_connections: maxConnections,
   };
   if (memberId) baseParams.member_id = memberId;
   if (packageId) baseParams.package_id = packageId;
+  // Include bouquets directly in create_line (QPanel style)
+  if (packageBouquets.length > 0) {
+    baseParams.bouquet = JSON.stringify(packageBouquets.map(Number));
+  }
 
-  const expectedAssignments: ExpectedLineAssignments = {
-    packageIds: packageId ? [packageId] : [],
-  };
-
-  const tryApplyPackageFallback = async (lineId: string) => {
-    if (!packageId || !lineId) return null;
-
-    const variants: Array<Record<string, string | string[]>> = [
-      { package_id: packageId },
-      { package_id: [packageId] },
-      { 'package_id[]': [packageId] },
-      { bouquet: packageId },
-      { bouquets: packageId },
-      { 'bouquets_selected[]': [packageId] },
-    ];
-
-    for (const variant of variants) {
-      try {
-        const editParams = { id: lineId, ...variant };
-        console.log(`[XUI] edit_line package fallback params: ${JSON.stringify(editParams)}`);
-        const edited = await xuiRequest(config, 'edit_line', editParams);
-        const err = getXuiError(edited);
-        if (err || !isXuiSuccess(edited)) continue;
-
-        const verified = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-        if (verified) return edited;
-      } catch (e: any) {
-        console.log(`[XUI] edit_line package fallback failed: ${e.message}`);
-      }
-    }
-
-    return null;
-  };
-
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${packageBouquets.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
@@ -781,32 +826,29 @@ async function provisionUserOnXui(
       }
 
       const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
+      console.log(`[XUI] Line created, id=${lineId}`);
 
-      if (!packageId) {
-        console.log(`[XUI] ✅ Line created for ${username} (without package_id)`);
-        return { action: 'create_line', data };
+      // Step 3: Check if bouquets were applied; if not, apply via edit_line (QPanel pattern)
+      if (packageBouquets.length > 0 && lineId) {
+        const lineData = data?.data || {};
+        const currentBouquets = parseIdList(lineData.bouquet);
+        
+        if (currentBouquets.length === 0) {
+          console.log(`[XUI] Bouquets empty after create_line, applying via edit_line (QPanel style)...`);
+          const applied = await applyBouquetsToLine(config, lineId, username, packageBouquets);
+          if (applied) {
+            console.log(`[XUI] ✅ Line ${username} fully provisioned with bouquets via edit_line`);
+            return { action: 'create_and_edit', data };
+          } else {
+            console.log(`[XUI] ⚠️ Could not apply bouquets via edit_line for ${username}`);
+          }
+        } else {
+          console.log(`[XUI] ✅ Bouquets applied directly on create_line: ${JSON.stringify(currentBouquets)}`);
+        }
       }
 
-      const directAssignments = extractLineAssignments(data);
-      const packageAppliedDirectly =
-        directAssignments.packageIds.includes(packageId)
-        || directAssignments.bouquetIds.includes(packageId)
-        || await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-
-      if (packageAppliedDirectly) {
-        console.log(`[XUI] ✅ Line created for ${username} with package_id=${packageId}`);
-        return { action: 'create_line', data };
-      }
-
-      const edited = await tryApplyPackageFallback(lineId);
-      if (edited) {
-        console.log(`[XUI] ✅ Package applied via edit_line for ${username}`);
-        return { action: 'edit_line', data: edited };
-      }
-
-      const warning = 'Linha criada, mas package_id não foi confirmado via API';
-      console.log(`[XUI] ⚠️ ${warning} username=${username} line_id=${lineId || 'n/a'} package_id=${packageId}`);
-      return { action: 'create_line_unverified', data, warning, line_id: lineId };
+      console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'}`);
+      return { action: 'create_line', data };
     } catch (e: any) {
       lastError = e.message;
       console.log(`[XUI] create_line error: ${lastError}`);
