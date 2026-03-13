@@ -923,7 +923,24 @@ Deno.serve(async (req) => {
             console.log('[XUI] Admin provisioning without member_id (owner line)');
           }
 
+          const reqUsername = String(xui_params?.username || '').trim();
+          const reqPackageId = String(xui_params?.package_id || '').trim();
+          await appendSystemLog(serviceClient, {
+            type: 'info',
+            action: 'XUI provisioning iniciado',
+            detail: `server_id=${server_id} username=${reqUsername || 'n/a'} package_id=${reqPackageId || 'auto'}`,
+            user_id: user.id,
+          });
+
           const provisionResult = await provisionUserOnXui(config, xui_params || {}, xuiMemberId);
+
+          await appendSystemLog(serviceClient, {
+            type: provisionResult.warning ? 'warning' : 'success',
+            action: 'XUI provisioning concluído',
+            detail: `server_id=${server_id} username=${reqUsername || 'n/a'} action=${provisionResult.action}${provisionResult.warning ? ` warning=${provisionResult.warning}` : ''}`,
+            user_id: user.id,
+          });
+
           return new Response(JSON.stringify({
             success: true,
             data: provisionResult.data,
