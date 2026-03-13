@@ -660,13 +660,13 @@ function buildCreateLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH formats to maximize compatibility
-  // 1) allowed_outputs as JSON string (per XUI API spec)
+  // Send outputs in BOTH param names for compatibility
   const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
   parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
-  // 2) allowed_outputs[] as individual params (alternative format)
+  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
   for (const fmt of outputIds) {
     parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
+    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
   }
 
   return `${baseUrl}/?${parts.join('&')}`;
