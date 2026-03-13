@@ -893,8 +893,32 @@ async function forceOutputs(
   );
 
   const strategies = [
+    // Strategy 1: Array format allowed_outputs[]=1&allowed_outputs[]=2 (like bouquets_selected[])
     {
-      label: 'POST edit_line allowed_outputs only',
+      label: 'POST edit_line allowed_outputs[] array',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          username,
+          password,
+          'allowed_outputs[]': outputIds,
+        });
+      },
+    },
+    // Strategy 2: GET with allowed_outputs[] as literal bracket params (raw URL)
+    {
+      label: 'GET edit_line allowed_outputs[] raw',
+      run: async () => {
+        const baseUrl = config.url.replace(/\/+$/, '');
+        const outputParams = outputIds.map((id) => `allowed_outputs[]=${id}`).join('&');
+        const url = `${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=edit_line&id=${encodeURIComponent(lineId)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&${outputParams}`;
+        console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
+        await tryFetch(url);
+      },
+    },
+    // Strategy 3: JSON string (per OpenAPI spec)
+    {
+      label: 'POST edit_line allowed_outputs json',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
@@ -904,23 +928,28 @@ async function forceOutputs(
         });
       },
     },
+    // Strategy 4: output_formats[] array
     {
-      label: 'GET edit_line allowed_outputs only',
-      run: async () => {
-        const baseUrl = config.url.replace(/\/+$/, '');
-        const url = `${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=edit_line&id=${encodeURIComponent(lineId)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&allowed_outputs=${encodeURIComponent(outputJson)}`;
-        console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
-        await tryFetch(url);
-      },
-    },
-    {
-      label: 'POST edit_line output_formats only',
+      label: 'POST edit_line output_formats[] array',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           username,
           password,
-          output_formats: outputJson,
+          'output_formats[]': outputIds,
+        });
+      },
+    },
+    // Strategy 5: Both keys together as arrays
+    {
+      label: 'POST edit_line both output keys as arrays',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          username,
+          password,
+          'allowed_outputs[]': outputIds,
+          'output_formats[]': outputIds,
         });
       },
     },
