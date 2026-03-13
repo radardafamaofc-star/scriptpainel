@@ -1135,6 +1135,15 @@ async function provisionUserOnXui(
     if (bouquetIds.length > 0) {
       const getAttempts: Array<{ label: string; params: Record<string, string> }> = [];
 
+      // Try with actual package FIRST — this inherits both bouquets AND outputs
+      if (packageId) {
+        getAttempts.push({
+          label: 'GET create_line with package (inherits outputs)',
+          params: packageLineParams,
+        });
+      }
+
+      // Fallback: custom mode (package OFF) — bouquets via manual sync, outputs best-effort
       if (packageId) {
         getAttempts.push({
           label: 'GET create_line custom (package OFF)',
@@ -1148,7 +1157,7 @@ async function provisionUserOnXui(
 
       getAttempts.push({
         label: 'GET create_line (QPanel style)',
-        params: packageLineParams,
+        params: baseLineParams,
       });
 
       for (const attempt of getAttempts) {
