@@ -780,7 +780,23 @@ async function provisionUserOnXui(
   throw new Error(lastError);
 }
 
-Deno.serve(async (req) => {
+async function appendSystemLog(
+  serviceClient: any,
+  payload: { type: 'info' | 'success' | 'warning' | 'error'; action: string; detail?: string; user_id?: string },
+) {
+  try {
+    const detail = String(payload.detail || '').slice(0, 2000);
+    await serviceClient.from('system_logs').insert({
+      type: payload.type,
+      action: payload.action,
+      detail,
+      user_id: payload.user_id || null,
+    });
+  } catch (e: any) {
+    console.log(`[XUI] Failed to write system_logs: ${e.message}`);
+  }
+}
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
