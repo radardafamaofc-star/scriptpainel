@@ -719,9 +719,10 @@ async function syncLineAssignments(
 
   if (!lineId) return false;
 
-  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : { packageIds };
+  const expectedCheck: ExpectedLineAssignments = {
+    ...(bouquetIds.length > 0 ? { bouquetIds } : { packageIds }),
+    outputIds: normalizedOutputs,
+  };
 
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
