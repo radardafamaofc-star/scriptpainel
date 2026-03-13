@@ -603,19 +603,37 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
-// Fetch bouquet IDs belonging to a package
-async function getPackageBouquetIds(config: XuiServerConfig, packageId: string): Promise<string[]> {
+type PackageAssignments = {
+  bouquetIds: string[];
+  outputIds: string[];
+};
+
+// Fetch bouquet/output IDs belonging to a package
+async function getPackageAssignments(config: XuiServerConfig, packageId: string): Promise<PackageAssignments> {
   try {
     const payload = await xuiRequest(config, 'get_packages');
-    const rows = Array.isArray(payload) ? payload : Object.values(payload || {});
-    const pkg = rows.find((p: any) => String(p?.id || '') === packageId);
-    if (!pkg) return [];
-    const bouquets = parseIdList((pkg as any).bouquets);
-    console.log(`[XUI] Package ${packageId} has bouquets: ${JSON.stringify(bouquets)}`);
-    return bouquets;
+    const rows = (Array.isArray(payload) ? payload : Object.values(payload || {}))
+      .filter((item: any) => item && typeof item === 'object');
+
+    const pkg = rows.find((p: any) => String((p as any)?.id || (p as any)?.package_id || '') === packageId);
+    if (!pkg) {
+      return { bouquetIds: [], outputIds: ['1', '2', '3'] };
+    }
+
+    const bouquetIds = sanitizeSelectionIds(parseIdList((pkg as any).bouquets));
+    const outputIds = sanitizeSelectionIds(
+      parseIdList((pkg as any).output_formats || (pkg as any).allowed_outputs || ''),
+    );
+
+    console.log(`[XUI] Package ${packageId} has bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputIds)}`);
+
+    return {
+      bouquetIds,
+      outputIds: outputIds.length > 0 ? outputIds : ['1', '2', '3'],
+    };
   } catch (e: any) {
-    console.log(`[XUI] Failed to get package bouquets: ${e.message}`);
-    return [];
+    console.log(`[XUI] Failed to get package assignments: ${e.message}`);
+    return { bouquetIds: [], outputIds: ['1', '2', '3'] };
   }
 }
 
