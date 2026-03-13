@@ -146,6 +146,100 @@ function appendArrayField(form: URLSearchParams, key: string, values: string[]) 
   }
 }
 
+function normalizeForMatch(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function isAdultName(name: string): boolean {
+  const n = normalizeForMatch(name);
+  return ['adult', 'adulto', 'xxx', '18', 'porn'].some((token) => n.includes(token));
+}
+
+function extractBouquetRows(payload: any): any[] {
+  const data = payload?.data ?? payload;
+  if (Array.isArray(data)) return data.filter((row) => row && typeof row === 'object');
+  if (data && typeof data === 'object') {
+    const values = Object.values(data).filter((row) => row && typeof row === 'object');
+    if (values.length) return values;
+  }
+  return [];
+}
+
+async function resolvePackageIdFromBouquets(
+  config: XuiServerConfig,
+  params: {
+    requestedPackageId?: string;
+    planName?: string;
+    bouquetIds: string[];
+  },
+): Promise<string> {
+  const requested = String(params.requestedPackageId || '').replace(/\D/g, '').trim();
+  if (requested && requested !== '0') return requested;
+
+  let rows: any[] = [];
+  try {
+    const bouquetsPayload = await xuiRequest(config, 'get_bouquets');
+    rows = extractBouquetRows(bouquetsPayload);
+  } catch (e: any) {
+    console.log(`[XUI] get_bouquets failed for package auto-resolve: ${e.message}`);
+    return '';
+  }
+
+  if (!rows.length) return '';
+
+  const desiredName = normalizeForMatch(params.planName || '');
+  const desiredTokens = desiredName.split(' ').filter((token) => token.length >= 3);
+  const desiredAdult = isAdultName(params.planName || '');
+  const targetBouquetIds = new Set(
+    params.bouquetIds
+      .map((id) => String(id).replace(/\D/g, '').trim())
+      .filter(Boolean),
+  );
+
+  let bestId = '';
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const row of rows) {
+    const rowId = String(row?.id ?? row?.bouquet_id ?? row?.package_id ?? '').replace(/\D/g, '').trim();
+    if (!rowId) continue;
+
+    const rowName = String(row?.bouquet_name ?? row?.name ?? '').trim();
+    const normalizedRowName = normalizeForMatch(rowName);
+
+    let score = 0;
+    if (targetBouquetIds.has(rowId)) score += 180;
+
+    if (desiredName) {
+      if (normalizedRowName === desiredName) score += 300;
+      if (normalizedRowName.includes(desiredName) || desiredName.includes(normalizedRowName)) score += 120;
+      for (const token of desiredTokens) {
+        if (normalizedRowName.includes(token)) score += 18;
+      }
+
+      const rowAdult = isAdultName(rowName);
+      if (rowAdult === desiredAdult) score += 24;
+      else score -= 18;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = rowId;
+    }
+  }
+
+  if (bestId) {
+    console.log(`[XUI] Auto-resolved package_id=${bestId} (plan_name=${params.planName || 'n/a'})`);
+    return bestId;
+  }
+
+  return '';
+}
+
 function formatLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -630,12 +724,25 @@ async function provisionUserOnXui(
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-  const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
+  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
   const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
 
+  let effectivePackageId = await resolvePackageIdFromBouquets(config, {
+    requestedPackageId,
+    planName: String(rawParams.plan_name || ''),
+    bouquetIds,
+  });
+
+  if (!effectivePackageId && bouquetIds.length) {
+    effectivePackageId = String(bouquetIds[0]).replace(/\D/g, '').trim();
+    if (effectivePackageId) {
+      console.log(`[XUI] Fallback package_id from first bouquet: ${effectivePackageId}`);
+    }
+  }
+
   console.log(
-    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
+    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
   );
 
   const createData = await createLinePost(config, {
@@ -643,7 +750,7 @@ async function provisionUserOnXui(
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
     memberId: effectiveMemberId,
-    ...(packageId ? { packageId } : {}),
+    ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
     maxConnections: Number(maxConnections),
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
@@ -677,7 +784,7 @@ async function provisionUserOnXui(
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
     const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
-    const needsPackageSync = !!packageId && currentPackageId !== packageId;
+    const needsPackageSync = !!effectivePackageId && currentPackageId !== effectivePackageId;
 
     if (needsBouquetSync || needsOutputSync || needsUsernameSync || needsPackageSync) {
       console.log(
@@ -691,7 +798,7 @@ async function provisionUserOnXui(
         expectedUsername: username,
         expectedPassword: password,
         expectedMemberId: effectiveMemberId,
-        expectedPackageId: packageId,
+        expectedPackageId: effectivePackageId,
         expDate: expDateFormatted,
         maxConnections,
       });
