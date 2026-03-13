@@ -361,6 +361,26 @@ async function provisionUserOnXui(
   // Resolve line_id
   const createdLineId = String(createData?.data?.id || createData?.id || '').trim() || await resolveLineIdByUsername(config, username);
 
+  // STEP 2: Force package application via edit_line
+  // XUI 1.5.x does not fully apply package on create_line, so we re-apply it
+  if (createdLineId) {
+    try {
+      const editPayload = `api_key=${encodeURIComponent(config.api_key)}&action=edit_line&id=${encodeURIComponent(createdLineId)}&package=${encodeURIComponent(packageId)}`;
+      console.log("edit_line payload:", editPayload.replace(config.api_key, '***'));
+
+      const baseUrl = config.url.replace(/\/+$/, '');
+      const editResponse = await tryFetch(`${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=edit_line`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `id=${encodeURIComponent(createdLineId)}&package=${encodeURIComponent(packageId)}`,
+      });
+      const editText = await editResponse.text();
+      console.log("edit_line response:", editText.substring(0, 1000));
+    } catch (e: any) {
+      console.log(`[XUI] edit_line (package reapply) failed: ${e.message}`);
+    }
+  }
+
   // Get final state
   let finalUsername = username;
   let finalLineId = createdLineId;
@@ -375,6 +395,7 @@ async function provisionUserOnXui(
         finalLineId = String(row.id || row.line_id || createdLineId).trim();
         finalUsername = String(row.username || username).trim();
         active = isLineActive(row);
+        console.log(`[XUI] After edit_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
       }
     } catch {}
   }
