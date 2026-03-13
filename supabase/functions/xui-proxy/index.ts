@@ -1113,10 +1113,11 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
-  // When package_id exists, prioritize package verification to preserve inherited outputs.
-  const expectedAssignments: ExpectedLineAssignments = packageId
-    ? { packageIds: [packageId] }
-    : (bouquetIds.length > 0 ? { bouquetIds } : {});
+  // Validate both package and bouquet assignment when available.
+  const expectedAssignments: ExpectedLineAssignments = {
+    ...(packageId ? { packageIds: [packageId] } : {}),
+    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
+  };
   const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
     || (expectedAssignments.packageIds?.length || 0) > 0;
 
