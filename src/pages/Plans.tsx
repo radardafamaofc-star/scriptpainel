@@ -280,7 +280,7 @@ export default function Plans() {
                               checked={selectedPackageId === pkg.id}
                               onChange={() => {
                                 setSelectedPackageId(pkg.id);
-                                handleChange("bouquets", parseInt(pkg.id) || 0);
+                                handleChange("package_id", pkg.id);
                               }}
                             />
                             <span className="text-sm text-foreground">{pkg.name}</span>
