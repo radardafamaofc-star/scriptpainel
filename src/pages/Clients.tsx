@@ -192,9 +192,7 @@ export default function Clients() {
             const { error: updateUsernameError } = await supabase
               .from("test_lines")
               .update({ username: generatedUsername })
-              .eq("id", data.id)
-              .select("*, servers(name, host, dns, template)")
-              .single();
+              .eq("id", data.id);
 
             if (updateUsernameError) throw updateUsernameError;
             createdTestLine = { ...createdTestLine, username: generatedUsername };
