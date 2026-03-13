@@ -703,35 +703,27 @@ async function provisionUserOnXui(
   const outputJsonArray = resolvedOutputIds.length ? `[${resolvedOutputIds.join(',')}]` : '';
 
   const createAssignmentVariants: Array<Record<string, string | string[]>> = [
-    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
-    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
-    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
     {
       ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
       ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
+      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
     },
-    ...(selectedPackageId ? [{ package_id: selectedPackageId }] : []),
-    ...(outputJsonArray && bouquetSelectionIds.length
-      ? [{ 'bouquets_selected[]': bouquetSelectionIds, allowed_outputs: outputJsonArray }]
-      : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
+    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
   ].filter((variant) => Object.keys(variant).length > 0);
 
   const editAssignmentVariants: Array<Record<string, string | string[]>> = [
-    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
-    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
-    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
-    ...(directBouquetIds.length ? [{ package_id: '0', 'bouquets_selected[]': directBouquetIds }] : []),
     {
       ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
       ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
+      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
     },
-    ...(outputJsonArray && bouquetSelectionIds.length
-      ? [{ 'bouquets_selected[]': bouquetSelectionIds, allowed_outputs: outputJsonArray }]
-      : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
+    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
     ...(resolvedOutputIds.length
       ? [{ 'allowed_outputs_selected[]': resolvedOutputIds, 'output_formats[]': resolvedOutputIds }]
       : []),
