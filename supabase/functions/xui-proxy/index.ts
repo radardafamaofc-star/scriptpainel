@@ -272,7 +272,7 @@ async function postXuiForm(
   throw new Error(lastError);
 }
 
-// Single-step create_line with bouquet and allowed_outputs as JSON strings
+// Single-step create_line focused on the fields XUI reliably accepts
 async function createLinePost(
   config: XuiServerConfig,
   params: {
@@ -289,52 +289,25 @@ async function createLinePost(
   form.set('password', params.password);
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', '1');
-  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
-  form.set('member_id', normalizedMemberId || '0');
 
-  // XUIOne compatibility:
-  // - keep JSON-string payloads
-  // - also send [] array notation exactly like bouquets flow
+  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  if (normalizedMemberId) form.set('member_id', normalizedMemberId);
+
   const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
   const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
-  const outputFormatNames = toOutputFormatNames(allowedOutputStringIds);
 
-  const bouquetJson = JSON.stringify(bouquetIds);
-  const allowedOutputsJson = JSON.stringify(allowedOutputIds);
-  const allowedOutputsQuotedJson = JSON.stringify(allowedOutputStringIds);
-  const allowedOutputsCsv = allowedOutputIds.join(',');
-  const outputFormatsCsv = outputFormatNames.length ? outputFormatNames.join(',') : allowedOutputsCsv;
-  const outputFormatsJson = outputFormatNames.length
-    ? JSON.stringify(outputFormatNames)
-    : allowedOutputsQuotedJson;
-
-  form.set('bouquet', bouquetJson);
-  form.set('bouquets_selected', bouquetJson);
+  // Keep bouquet behavior that was working
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
+  form.set('bouquet', JSON.stringify(bouquetIds));
 
-  // Keep primary contract
-  form.set('allowed_outputs', allowedOutputsJson);
-  form.set('allowed_outputs_selected', allowedOutputsQuotedJson);
-  form.set('output_formats', outputFormatsCsv);
-  form.set('output_formats_selected', outputFormatsJson);
-  form.set('allowed_output_formats', outputFormatsJson);
-
-  // Same strategy used for bouquets: also send [] variants
+  // Apply same transport idea used for bouquets, but only with allowed_outputs keys
+  form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
   appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
-  appendArrayField(form, 'allowed_outputs_selected', allowedOutputStringIds);
 
-  if (outputFormatNames.length) {
-    appendArrayField(form, 'output_formats', outputFormatNames);
-    appendArrayField(form, 'allowed_output_formats', outputFormatNames);
-  } else {
-    appendArrayField(form, 'output_formats', allowedOutputStringIds);
-    appendArrayField(form, 'allowed_output_formats', allowedOutputStringIds);
-  }
-
-  console.log("create_line payload:", form.toString());
+  console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
 }
 
@@ -348,168 +321,76 @@ async function getLineRowById(config: XuiServerConfig, lineId: string): Promise<
   }
 }
 
+async function restoreLineBouquets(
+  config: XuiServerConfig,
+  lineId: string,
+  expectedBouquetIds: string[],
+): Promise<void> {
+  if (!expectedBouquetIds.length) return;
+
+  try {
+    await xuiRequest(config, 'edit_line', {
+      id: lineId,
+      bouquet: JSON.stringify(expectedBouquetIds.map(Number).filter((id) => Number.isFinite(id))),
+      'bouquets_selected[]': expectedBouquetIds,
+    });
+
+    const restored = await getLineRowById(config, lineId);
+    console.log(`[XUI] Bouquet restore result: bouquet=${restored?.bouquet || '?'}`);
+  } catch (e: any) {
+    console.log(`[XUI] Bouquet restore failed: ${e.message}`);
+  }
+}
+
 async function enforceAllowedOutputsPostCreate(
   config: XuiServerConfig,
   params: {
     lineId: string;
-    username: string;
-    password: string;
-    memberId?: string;
-    expDate?: string;
-    bouquetIds: string[];
     allowedOutputIds: string[];
+    expectedBouquetIds?: string[];
   },
 ): Promise<any | null> {
   const lineId = String(params.lineId || '').trim();
   if (!lineId) return null;
 
-  const bouquetNumeric = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
-  const bouquetJson = JSON.stringify(bouquetNumeric);
-  const allowedJson = JSON.stringify(allowedNumeric);
-  const allowedQuotedJson = JSON.stringify(allowedNumeric.map((id) => String(id)));
-  const allowedCsv = allowedNumeric.join(',');
   const targetAllowed = allowedNumeric.map((id) => String(id));
-  const outputFormatNames = toOutputFormatNames(targetAllowed);
-  const outputFormatsCsv = outputFormatNames.length ? outputFormatNames.join(',') : allowedCsv;
-  const outputFormatsJson = outputFormatNames.length
-    ? JSON.stringify(outputFormatNames)
-    : allowedQuotedJson;
+  const expectedBouquetIds = (params.expectedBouquetIds || [])
+    .map((id) => String(id).replace(/\D/g, '').trim())
+    .filter(Boolean);
 
-  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  const allowedJson = JSON.stringify(allowedNumeric);
+  const allowedQuotedJson = JSON.stringify(targetAllowed);
+  const allowedCsv = allowedNumeric.join(',');
 
-  const buildBaseForm = () => {
-    const form = new URLSearchParams();
-    form.set('id', lineId);
-    form.set('line_id', lineId);
-    form.set('username', params.username);
-    form.set('password', params.password);
-    form.set('max_connections', '1');
-    form.set('bouquet', bouquetJson);
-    form.set('bouquets_selected', bouquetJson);
-    appendArrayField(form, 'bouquets_selected', params.bouquetIds);
-    if (params.expDate) form.set('exp_date', params.expDate);
-    if (normalizedMemberId) form.set('member_id', normalizedMemberId);
-    return form;
-  };
-
-  const buildBaseArrayParams = (): Record<string, string | string[]> => {
-    const base: Record<string, string | string[]> = {
-      id: lineId,
-      line_id: lineId,
-      username: params.username,
-      password: params.password,
-      max_connections: '1',
-      bouquet: bouquetJson,
-      bouquets_selected: bouquetJson,
-      'bouquets_selected[]': params.bouquetIds,
-    };
-
-    if (params.expDate) base.exp_date = params.expDate;
-    if (normalizedMemberId) base.member_id = normalizedMemberId;
-
-    return base;
-  };
-
-  const postAttempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
+  const attempts: Array<{ label: string; payload: Record<string, string | string[]> }> = [
     {
       label: 'json_primary',
-      fill: (form) => {
-        form.set('allowed_outputs', allowedJson);
-        form.set('allowed_outputs_selected', allowedQuotedJson);
-        form.set('output_formats', allowedCsv);
-        form.set('output_formats_selected', allowedQuotedJson);
-        form.set('allowed_output_formats', allowedQuotedJson);
-      },
+      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedJson },
     },
     {
-      label: 'array_like_bouquets',
-      fill: (form) => {
-        form.set('allowed_outputs', allowedJson);
-        form.set('allowed_outputs_selected', allowedQuotedJson);
-        form.set('output_formats', outputFormatsCsv);
-        form.set('output_formats_selected', outputFormatsJson);
-        form.set('allowed_output_formats', outputFormatsJson);
-
-        appendArrayField(form, 'allowed_outputs', targetAllowed);
-        appendArrayField(form, 'allowed_outputs_selected', targetAllowed);
-
-        if (outputFormatNames.length) {
-          appendArrayField(form, 'output_formats', outputFormatNames);
-          appendArrayField(form, 'allowed_output_formats', outputFormatNames);
-        }
+      label: 'json_with_array_transport',
+      payload: {
+        id: lineId,
+        line_id: lineId,
+        allowed_outputs: allowedJson,
+        'allowed_outputs[]': targetAllowed,
       },
     },
     {
       label: 'quoted_json_primary',
-      fill: (form) => {
-        form.set('allowed_outputs', allowedQuotedJson);
-        form.set('allowed_outputs_selected', allowedQuotedJson);
-        form.set('output_formats', outputFormatsJson);
-        form.set('output_formats_selected', outputFormatsJson);
-        form.set('allowed_output_formats', outputFormatsJson);
-      },
+      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedQuotedJson },
+    },
+    {
+      label: 'csv_primary',
+      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedCsv },
     },
   ];
 
-  for (const attempt of postAttempts) {
+  for (const attempt of attempts) {
     try {
-      const form = buildBaseForm();
-      attempt.fill(form);
-      console.log(`[XUI] edit_line fallback (${attempt.label}) payload: ${form.toString()}`);
-
-      const editData = await postXuiForm(config, 'edit_line', form, `edit_line(${attempt.label})`);
-      const editStatus = String(editData?.status || '').toUpperCase();
-      const editError = getXuiError(editData);
-      if (editError && !editStatus.includes('SUCCESS')) {
-        console.log(`[XUI] edit_line fallback (${attempt.label}) rejected: ${editError}`);
-        continue;
-      }
-
-      const refreshed = await getLineRowById(config, lineId);
-      if (refreshed) {
-        console.log(`[XUI] After edit_line(${attempt.label}): allowed_outputs=${refreshed.allowed_outputs || '?'}`);
-        if (hasSameNumericIds(refreshed.allowed_outputs, targetAllowed)) {
-          return refreshed;
-        }
-      }
-    } catch (e: any) {
-      console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
-    }
-  }
-
-  const arrayAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [
-    {
-      label: 'array_ids_transport',
-      params: {
-        ...buildBaseArrayParams(),
-        allowed_outputs: allowedJson,
-        allowed_outputs_selected: allowedQuotedJson,
-        'allowed_outputs[]': targetAllowed,
-        'allowed_outputs_selected[]': targetAllowed,
-        output_formats: allowedCsv,
-        output_formats_selected: allowedQuotedJson,
-        allowed_output_formats: allowedQuotedJson,
-      },
-    },
-    {
-      label: 'array_names_transport',
-      params: {
-        ...buildBaseArrayParams(),
-        allowed_outputs: allowedJson,
-        'allowed_outputs[]': targetAllowed,
-        output_formats: outputFormatsCsv,
-        output_formats_selected: outputFormatsJson,
-        allowed_output_formats: outputFormatsJson,
-        ...(outputFormatNames.length ? { 'output_formats[]': outputFormatNames, 'allowed_output_formats[]': outputFormatNames } : {}),
-      },
-    },
-  ];
-
-  for (const attempt of arrayAttempts) {
-    try {
-      console.log(`[XUI] edit_line fallback (${attempt.label}) params: ${JSON.stringify(attempt.params)}`);
-      const editData = await xuiRequest(config, 'edit_line', attempt.params);
+      console.log(`[XUI] edit_line fallback (${attempt.label}) params: ${JSON.stringify(attempt.payload)}`);
+      const editData = await xuiRequest(config, 'edit_line', attempt.payload);
 
       const editStatus = String(editData?.status || '').toUpperCase();
       const editError = getXuiError(editData);
@@ -518,12 +399,24 @@ async function enforceAllowedOutputsPostCreate(
         continue;
       }
 
-      const refreshed = await getLineRowById(config, lineId);
-      if (refreshed) {
-        console.log(`[XUI] After edit_line(${attempt.label}): allowed_outputs=${refreshed.allowed_outputs || '?'}`);
-        if (hasSameNumericIds(refreshed.allowed_outputs, targetAllowed)) {
-          return refreshed;
-        }
+      let refreshed = await getLineRowById(config, lineId);
+      if (!refreshed) continue;
+
+      const bouquetChanged =
+        expectedBouquetIds.length > 0 && !hasSameNumericIds(refreshed.bouquet, expectedBouquetIds);
+
+      if (bouquetChanged) {
+        console.log(`[XUI] WARNING: edit_line(${attempt.label}) changed bouquet. Restoring...`);
+        await restoreLineBouquets(config, lineId, expectedBouquetIds);
+        refreshed = await getLineRowById(config, lineId);
+      }
+
+      console.log(
+        `[XUI] After edit_line(${attempt.label}): bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
+      );
+
+      if (hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed)) {
+        return refreshed;
       }
     } catch (e: any) {
       console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
@@ -673,12 +566,8 @@ async function provisionUserOnXui(
       console.log(`[XUI] allowed_outputs mismatch for line_id=${createdLineId}. Trying edit_line fallback...`);
       const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
         lineId: createdLineId,
-        username: finalUsername || username,
-        password,
-        memberId: effectiveMemberId || String(finalRow?.member_id || '').trim(),
-        ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
-        bouquetIds,
         allowedOutputIds,
+        expectedBouquetIds: bouquetIds,
       });
 
       if (fallbackRow) {
