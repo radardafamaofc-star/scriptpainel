@@ -218,7 +218,6 @@ export default function Clients() {
                 password: f.password,
                 max_connections: String(f.max_connections),
                 exp_date: String(expTimestamp),
-                is_trial: "0",
                 bouquet: bouquetId,
               },
             },
