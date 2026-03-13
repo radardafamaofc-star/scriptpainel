@@ -518,6 +518,9 @@ async function provisionUserOnXui(
   let resolvedPackageId = bouquetIds.length === 1 ? bouquetIds[0] : '';
   let resolvedBouquetIds = [...bouquetIds];
 
+  const outputRaw = rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || '';
+  let resolvedOutputIds = parseIdList(outputRaw);
+
   if (!resolvedBouquetIds.length) {
     try {
       const packages = await xuiRequest(config, 'get_packages');
@@ -547,11 +550,20 @@ async function provisionUserOnXui(
           resolvedBouquetIds = [pickedId];
           console.log(`[XUI] Auto-selected package: ${pickedId} (no bouquets field, using package id)`);
         }
+
+        const packageOutputs = parseIdList(picked.output_formats);
+        if (packageOutputs.length > 0) {
+          resolvedOutputIds = packageOutputs;
+          console.log(`[XUI] Auto-selected output formats from package: ${JSON.stringify(packageOutputs)}`);
+        }
       }
     } catch (e: any) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
     }
   }
+
+  resolvedBouquetIds = Array.from(new Set(resolvedBouquetIds.map((id) => String(id).trim()).filter(Boolean)));
+  resolvedOutputIds = Array.from(new Set(resolvedOutputIds.map((id) => String(id).trim()).filter(Boolean)));
 
   const baseParams: Record<string, string> = {
     username,
@@ -560,26 +572,32 @@ async function provisionUserOnXui(
   };
   if (memberId) baseParams.member_id = memberId;
 
-  const expectedAssignments = Array.from(new Set([
-    ...resolvedBouquetIds,
-    resolvedPackageId,
-  ].map((id) => String(id || '').trim()).filter(Boolean)));
+  const expectedAssignments: ExpectedLineAssignments = {
+    bouquetIds: resolvedBouquetIds,
+    packageId: resolvedPackageId || undefined,
+    outputIds: resolvedOutputIds,
+  };
 
   const assignmentVariants: Array<Record<string, string | string[]>> = [
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
       ...(resolvedBouquetIds.length ? { 'bouquets_selected[]': resolvedBouquetIds } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
       ...(resolvedBouquetIds.length ? { bouquets_selected: resolvedBouquetIds } : {}),
+      ...(resolvedOutputIds.length ? { 'allowed_outputs_selected[]': resolvedOutputIds } : {}),
+      ...(resolvedOutputIds.length ? { 'output_formats[]': resolvedOutputIds } : {}),
     },
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
       ...(resolvedBouquetIds.length ? { bouquet: JSON.stringify(resolvedBouquetIds) } : {}),
+      ...(resolvedOutputIds.length ? { output_formats: JSON.stringify(resolvedOutputIds) } : {}),
     },
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
   ];
 
@@ -603,15 +621,15 @@ async function provisionUserOnXui(
         continue;
       }
 
-      const responseAssigned = extractAssignedIds(data?.data || data);
-      const responseMatches = expectedAssignments.length === 0 || expectedAssignments.some((id) => responseAssigned.includes(id));
+      const responseAssignments = extractLineAssignments(data?.data || data);
+      const responseMatches = matchesExpectedAssignments(responseAssignments, expectedAssignments);
       const verified = await verifyProvisionedUser(config, username, expectedAssignments);
       if (responseMatches || verified) {
-        console.log(`[XUI] ✅ Provision success for ${username} assignments=${JSON.stringify(responseAssigned)}`);
+        console.log(`[XUI] ✅ Provision success for ${username} bouquets=${JSON.stringify(responseAssignments.bouquetIds)} outputs=${JSON.stringify(responseAssignments.outputIds)} package=${JSON.stringify(responseAssignments.packageIds)}`);
         return { action: 'create_line', data };
       }
 
-      // create_line may succeed but ignore bouquet params depending on panel mode. Force with edit_line.
+      // create_line may succeed but ignore bouquet/output params depending on panel mode. Force with edit_line.
       const lineId = String(data?.data?.id || '').trim();
       if (lineId) {
         try {
@@ -631,7 +649,7 @@ async function provisionUserOnXui(
         }
       }
 
-      lastError = 'Linha criada, mas sem bouquets/pacote aplicados';
+      lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
       console.log(`[XUI] Provision uncertain: ${lastError}`);
     }
   }
