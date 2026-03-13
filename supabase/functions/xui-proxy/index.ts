@@ -1098,14 +1098,16 @@ async function provisionUserOnXui(
     }
   }
 
-  // Get bouquet IDs from the package
+  // ===== SIGMA QPANEL APPROACH =====
+  // 1. Fetch package config via get_package
+  // 2. Extract bouquets + allowed_outputs
+  // 3. Pass BOTH explicitly on create_line
   let bouquetIds: string[] = [];
-  // ALWAYS force all 3 output formats: HLS(1), MPEGTS(2), RTMP(3)
-  const outputIds: string[] = ['1', '2', '3'];
+  let outputFormats: string[] = OUTPUT_FORMAT_NAMES; // default: all 3 (ts, m3u8, rtmp)
   if (packageId) {
     const assignments = await getPackageAssignments(config, packageId);
     bouquetIds = assignments.bouquetIds;
-    // Do NOT use assignments.outputIds — always force all outputs active
+    outputFormats = assignments.outputIds; // already normalized to string names
   }
 
   // Calculate expiration variants
@@ -1130,32 +1132,7 @@ async function provisionUserOnXui(
   }
   const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
-
-  // Validate both package and bouquet assignment when available.
-  const expectedAssignments: ExpectedLineAssignments = {
-    ...(packageId ? { packageIds: [packageId] } : {}),
-    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
-  };
-  const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
-    || (expectedAssignments.packageIds?.length || 0) > 0;
-
-  const ensureExpectedAssignments = async (lineIdCandidate: string): Promise<'create_line' | 'create_and_edit'> => {
-    if (!hasExpectedAssignments) return 'create_line';
-
-    const resolvedLineId = lineIdCandidate || await resolveLineIdByUsername(config, username);
-    const alreadyAssigned = await verifyProvisionedUser(config, username, expectedAssignments, resolvedLineId);
-    if (alreadyAssigned) return 'create_line';
-
-    if (!resolvedLineId) {
-      throw new Error('Linha criada, mas não foi possível localizar o ID no XUI para sincronizar bouquets.');
-    }
-
-    const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds, password);
-    if (synced) return 'create_and_edit';
-
-    throw new Error('Linha criada no XUI, mas o pacote não aplicou bouquets. No XUI, deixe Trial/Standard Package em OFF e valide os bouquets do pacote.');
-  };
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
@@ -1168,146 +1145,49 @@ async function provisionUserOnXui(
     };
     if (memberId) baseLineParams.member_id = memberId;
 
-    const packageLineParams: Record<string, string> = {
-      ...baseLineParams,
-      ...(packageId ? { package_id: packageId } : {}),
-    };
+    // ===== ALWAYS include bouquets_selected[] and allowed_outputs[] =====
+    // This is exactly how Sigma QPanel does it — never rely on XUI inheritance
 
-    // Strategy 1: GET create_line variants
-    if (bouquetIds.length > 0 || !!packageId) {
-      const getAttempts: Array<{ label: string; params: Record<string, string>; includeAssignments: boolean }> = [];
-
-      // Package-only first: lets XUI inherit package rules without noisy overrides.
-      if (packageId) {
-        getAttempts.push({
-          label: 'GET create_line with package only',
-          params: packageLineParams,
-          includeAssignments: false,
-        });
-      }
-
-      if (bouquetIds.length > 0) {
-        // Fallback: custom mode (package OFF) — manual bouquet/output assignment.
-        if (packageId) {
-          getAttempts.push({
-            label: 'GET create_line custom (package OFF)',
-            params: {
-              ...baseLineParams,
-              package_id: '0',
-              'package_id[]': '0',
-            },
-            includeAssignments: true,
-          });
+    // Strategy 1: GET create_line with explicit bouquets + outputs (QPanel style)
+    try {
+      const url = buildCreateLineUrl(config, baseLineParams, bouquetIds, outputFormats);
+      console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
+      const response = await tryFetch(url);
+      const text = await response.text();
+      if (text && !text.includes('<html')) {
+        const json = JSON.parse(text);
+        console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
+        const status = String(json?.status || '').toUpperCase();
+        if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
+          const lineId = String(json?.data?.id || '').trim();
+          return { action: 'create_line' as const, data: json };
         }
-
-        getAttempts.push({
-          label: 'GET create_line (QPanel style)',
-          params: baseLineParams,
-          includeAssignments: true,
-        });
+        const err = getXuiError(json);
+        if (err) { lastError = err; console.log(`[XUI] GET create_line failed: ${err}`); }
       }
-
-      for (const attempt of getAttempts) {
-        try {
-          const url = attempt.includeAssignments
-            ? buildCreateLineUrl(config, attempt.params, bouquetIds, outputIds)
-            : buildActionGetUrl(config, 'create_line', attempt.params);
-          console.log(`[XUI] ${attempt.label}: ${url.replace(config.api_key, '***')}`);
-          const response = await tryFetch(url);
-          const text = await response.text();
-          if (text && !text.includes('<html')) {
-            const json = JSON.parse(text);
-            console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
-            const status = String(json?.status || '').toUpperCase();
-            if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
-              const lineId = String(json?.data?.id || '').trim();
-              const actionUsed = await ensureExpectedAssignments(lineId);
-              return { action: actionUsed, data: json };
-            }
-            const err = getXuiError(json);
-            if (err) {
-              lastError = err;
-              console.log(`[XUI] ${attempt.label} failed: ${err}`);
-            }
-          }
-        } catch (e: any) {
-          console.log(`[XUI] ${attempt.label} error: ${e.message}`);
-          lastError = e.message;
-        }
-      }
+    } catch (e: any) {
+      console.log(`[XUI] GET create_line error: ${e.message}`);
+      lastError = e.message;
     }
 
-    // Strategy 2: POST fallbacks
-    const outputPayload = buildOutputPayload(outputIds);
-    const postAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [];
-
-    if (packageId) {
-      postAttempts.push({
-        label: 'POST create_line package only',
-        params: packageLineParams,
-      });
-    }
-
-    if (bouquetIds.length > 0) {
-      const bouquetPayload: Record<string, string | string[]> = {
+    // Strategy 2: POST create_line with explicit bouquets + outputs
+    try {
+      const postParams: Record<string, string | string[]> = {
+        ...baseLineParams,
         'bouquets_selected[]': bouquetIds,
-        ...outputPayload,
+        ...buildOutputPayload(outputFormats),
       };
-
-      postAttempts.push({
-        label: 'POST create_line bouquets + outputs',
-        params: {
-          ...baseLineParams,
-          ...(packageId ? { package_id: packageId } : {}),
-          ...bouquetPayload,
-        },
-      });
-
-      if (packageId) {
-        postAttempts.push({
-          label: 'POST create_line custom (package OFF)',
-          params: {
-            ...baseLineParams,
-            package_id: '0',
-            'package_id[]': ['0'],
-            ...bouquetPayload,
-          },
-        });
+      console.log(`[XUI] POST create_line (QPanel style) params: ${JSON.stringify(postParams)}`);
+      const data = await xuiRequest(config, 'create_line', postParams);
+      const status = String(data?.status || '').toUpperCase();
+      if (isXuiSuccess(data) || status.includes('EXISTS_USERNAME')) {
+        return { action: 'create_line' as const, data };
       }
-    }
-
-    if (!packageId) {
-      postAttempts.push({
-        label: 'POST create_line padrão',
-        params: packageLineParams,
-      });
-    }
-
-    for (const attempt of postAttempts) {
-      try {
-        console.log(`[XUI] Fallback: ${attempt.label} params: ${JSON.stringify(attempt.params)}`);
-        const data = await xuiRequest(config, 'create_line', attempt.params);
-        const createError = getXuiError(data);
-        const status = String(data?.status || '').toUpperCase();
-
-        if (createError && !status.includes('EXISTS_USERNAME')) {
-          lastError = createError;
-          continue;
-        }
-        if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
-          lastError = createError || 'create_line retornou status inválido';
-          continue;
-        }
-
-        const lineId = String(data?.data?.id || '').trim();
-        const actionUsed = await ensureExpectedAssignments(lineId);
-
-        console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'} action=${actionUsed}`);
-        return { action: actionUsed, data };
-      } catch (e: any) {
-        lastError = e.message;
-        console.log(`[XUI] ${attempt.label} error: ${lastError}`);
-      }
+      const err = getXuiError(data);
+      if (err) { lastError = err; console.log(`[XUI] POST create_line failed: ${err}`); }
+    } catch (e: any) {
+      console.log(`[XUI] POST create_line error: ${e.message}`);
+      lastError = e.message;
     }
   }
 
