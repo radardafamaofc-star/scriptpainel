@@ -272,7 +272,7 @@ async function postXuiForm(
   throw new Error(lastError);
 }
 
-// Single-step create_line focused on the fields XUI reliably accepts
+// Single-step create_line focused on explicit credentials + package fields
 async function createLinePost(
   config: XuiServerConfig,
   params: {
@@ -280,6 +280,7 @@ async function createLinePost(
     password: string;
     expDate?: string;
     memberId?: string;
+    maxConnections?: number;
     bouquetIds: number[];
     allowedOutputIds: number[];
   },
@@ -288,10 +289,10 @@ async function createLinePost(
   form.set('username', params.username);
   form.set('password', params.password);
   if (params.expDate) form.set('exp_date', params.expDate);
-  form.set('max_connections', '1');
+  form.set('max_connections', String(Math.max(1, Number(params.maxConnections ?? 1) || 1)));
 
-  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
-  if (normalizedMemberId) form.set('member_id', normalizedMemberId);
+  // XUI 1.5.12: force member_id=0 to prevent auto-generated username/profile overrides
+  form.set('member_id', '0');
 
   const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
@@ -299,11 +300,9 @@ async function createLinePost(
   const bouquetStringIds = bouquetIds.map((id) => String(id));
   const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
 
-  // Keep bouquet behavior that was working
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
-  // Apply same transport idea used for bouquets, but only with allowed_outputs keys
   form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
   appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
 
@@ -348,78 +347,115 @@ async function enforceAllowedOutputsPostCreate(
     lineId: string;
     allowedOutputIds: string[];
     expectedBouquetIds?: string[];
+    expectedUsername?: string;
+    expectedPassword?: string;
+    expDate?: string;
+    maxConnections?: string;
   },
 ): Promise<any | null> {
   const lineId = String(params.lineId || '').trim();
   if (!lineId) return null;
 
+  const targetUsername = String(params.expectedUsername || '').trim();
+  const targetPassword = String(params.expectedPassword || '').trim();
+  const targetExpDate = String(params.expDate || '').trim();
+  const targetMaxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim() || '1';
+
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
+
   const expectedBouquetIds = (params.expectedBouquetIds || [])
     .map((id) => String(id).replace(/\D/g, '').trim())
     .filter(Boolean);
+  const expectedBouquetNumeric = expectedBouquetIds.map(Number).filter((id) => Number.isFinite(id));
 
   const allowedJson = JSON.stringify(allowedNumeric);
   const allowedQuotedJson = JSON.stringify(targetAllowed);
   const allowedCsv = allowedNumeric.join(',');
 
-  const attempts: Array<{ label: string; payload: Record<string, string | string[]> }> = [
+  const bouquetJson = JSON.stringify(expectedBouquetNumeric);
+  const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
+  const bouquetCsv = expectedBouquetIds.join(',');
+
+  const buildBaseForm = () => {
+    const form = new URLSearchParams();
+    form.set('id', lineId);
+    form.set('line_id', lineId);
+    form.set('member_id', '0');
+    form.set('max_connections', targetMaxConnections);
+    if (targetUsername) form.set('username', targetUsername);
+    if (targetPassword) form.set('password', targetPassword);
+    if (targetExpDate) form.set('exp_date', targetExpDate);
+    return form;
+  };
+
+  const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
       label: 'json_primary',
-      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedJson },
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          form.set('bouquet', bouquetJson);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
+        form.set('allowed_outputs', allowedJson);
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
+      },
     },
     {
-      label: 'json_with_array_transport',
-      payload: {
-        id: lineId,
-        line_id: lineId,
-        allowed_outputs: allowedJson,
-        'allowed_outputs[]': targetAllowed,
+      label: 'csv_primary',
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          form.set('bouquet', bouquetCsv);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
+        form.set('allowed_outputs', allowedCsv);
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
       },
     },
     {
       label: 'quoted_json_primary',
-      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedQuotedJson },
-    },
-    {
-      label: 'csv_primary',
-      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedCsv },
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          form.set('bouquet', bouquetQuotedJson);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
+        form.set('allowed_outputs', allowedQuotedJson);
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
+      },
     },
   ];
 
   for (const attempt of attempts) {
     try {
-      console.log(`[XUI] edit_line fallback (${attempt.label}) params: ${JSON.stringify(attempt.payload)}`);
-      const editData = await xuiRequest(config, 'edit_line', attempt.payload);
+      const form = buildBaseForm();
+      attempt.fill(form);
+
+      console.log(`[XUI] edit_line sync (${attempt.label}) payload: ${form.toString()}`);
+      const editData = await postXuiForm(config, 'edit_line', form, `edit_line(${attempt.label})`);
 
       const editStatus = String(editData?.status || '').toUpperCase();
       const editError = getXuiError(editData);
       if (editError && !editStatus.includes('SUCCESS')) {
-        console.log(`[XUI] edit_line fallback (${attempt.label}) rejected: ${editError}`);
+        console.log(`[XUI] edit_line sync (${attempt.label}) rejected: ${editError}`);
         continue;
       }
 
-      let refreshed = await getLineRowById(config, lineId);
+      const refreshed = await getLineRowById(config, lineId);
       if (!refreshed) continue;
 
-      const bouquetChanged =
-        expectedBouquetIds.length > 0 && !hasSameNumericIds(refreshed.bouquet, expectedBouquetIds);
-
-      if (bouquetChanged) {
-        console.log(`[XUI] WARNING: edit_line(${attempt.label}) changed bouquet. Restoring...`);
-        await restoreLineBouquets(config, lineId, expectedBouquetIds);
-        refreshed = await getLineRowById(config, lineId);
-      }
+      const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
+      const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed);
+      const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
 
       console.log(
-        `[XUI] After edit_line(${attempt.label}): bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
+        `[XUI] After edit_line(${attempt.label}): username=${refreshed?.username || '?'} bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
       );
 
-      if (hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed)) {
+      if (bouquetOk && outputsOk && usernameOk) {
         return refreshed;
       }
     } catch (e: any) {
-      console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
+      console.log(`[XUI] edit_line sync (${attempt.label}) failed: ${e.message}`);
     }
   }
 
@@ -523,16 +559,19 @@ async function provisionUserOnXui(
 
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
-  const effectiveMemberId = String(rawParams.member_id || memberId || '').replace(/\D/g, '').trim();
+  const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
 
-  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId || '0'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+  // XUI 1.5.12 stability: always create with member_id=0 to keep explicit credentials
+  const effectiveMemberId = '0';
 
-  // Single-step create_line with bouquet + allowed_outputs as JSON strings
+  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+
   const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
-    memberId: effectiveMemberId || '0',
+    memberId: effectiveMemberId,
+    maxConnections: Number(maxConnections),
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
   });
@@ -558,16 +597,26 @@ async function provisionUserOnXui(
       finalLineId = String(finalRow.id || finalRow.line_id || createdLineId).trim();
       finalUsername = String(finalRow.username || username).trim();
       active = isLineActive(finalRow);
-      console.log(`[XUI] After create_line: bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
+      console.log(`[XUI] After create_line: username=${finalRow.username || '?'} bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
     }
 
-    const needsOutputFallback = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
-    if (needsOutputFallback) {
-      console.log(`[XUI] allowed_outputs mismatch for line_id=${createdLineId}. Trying edit_line fallback...`);
+    const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
+    const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
+    const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
+
+    if (needsBouquetSync || needsOutputSync || needsUsernameSync) {
+      console.log(
+        `[XUI] Sync required for line_id=${createdLineId} bouquet=${needsBouquetSync} outputs=${needsOutputSync} username=${needsUsernameSync}`,
+      );
+
       const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
         lineId: createdLineId,
         allowedOutputIds,
         expectedBouquetIds: bouquetIds,
+        expectedUsername: username,
+        expectedPassword: password,
+        expDate: expDateFormatted,
+        maxConnections,
       });
 
       if (fallbackRow) {
@@ -575,7 +624,7 @@ async function provisionUserOnXui(
         finalLineId = String(fallbackRow.id || fallbackRow.line_id || finalLineId).trim();
         finalUsername = String(fallbackRow.username || finalUsername || username).trim();
         active = isLineActive(fallbackRow);
-        console.log(`[XUI] After fallback: bouquet=${fallbackRow.bouquet || '?'} allowed_outputs=${fallbackRow.allowed_outputs || '?'}`);
+        console.log(`[XUI] After sync: username=${fallbackRow.username || '?'} bouquet=${fallbackRow.bouquet || '?'} allowed_outputs=${fallbackRow.allowed_outputs || '?'}`);
       }
     }
   }
