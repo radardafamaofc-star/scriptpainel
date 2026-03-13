@@ -294,6 +294,14 @@ function normalizeIds(ids: string[] = []): string[] {
   return Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)));
 }
 
+function sanitizeSelectionIds(ids: string[] = []): string[] {
+  return normalizeIds(ids).filter((id) => {
+    const numeric = Number(id);
+    if (!Number.isNaN(numeric)) return numeric > 0;
+    return id !== '0';
+  });
+}
+
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
   const packages: string[] = [];
@@ -585,8 +593,8 @@ async function provisionUserOnXui(
     : 24;
   const remainingDays = Math.max(1, Math.ceil(remainingHours / 24));
 
-  const inputIds = normalizeIds(parseIdList(rawParams.bouquet || rawParams.bouquets || rawParams.package_id || ''));
-  const explicitOutputIds = normalizeIds(parseIdList(rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || ''));
+  const inputIds = sanitizeSelectionIds(parseIdList(rawParams.bouquet || rawParams.bouquets || rawParams.package_id || ''));
+  const explicitOutputIds = sanitizeSelectionIds(parseIdList(rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || ''));
 
   type PackageMeta = { id: string; bouquets: string[]; outputs: string[] };
   const packageMetaById = new Map<string, PackageMeta>();
