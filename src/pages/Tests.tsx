@@ -66,6 +66,8 @@ export default function Tests() {
       }).select("id").single();
       if (error) throw error;
 
+      let finalUsername = creds.username;
+
       // 2. Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
@@ -89,9 +91,20 @@ export default function Tests() {
           await supabase.from("test_lines").delete().eq("id", createdTest.id);
           throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
         }
+
+        const generatedUsername = extractGeneratedUsername(xuiRes);
+        if (generatedUsername && generatedUsername !== creds.username) {
+          const { error: updateUsernameError } = await supabase
+            .from("test_lines")
+            .update({ username: generatedUsername })
+            .eq("id", createdTest.id);
+
+          if (updateUsernameError) throw updateUsernameError;
+          finalUsername = generatedUsername;
+        }
       }
 
-      return creds;
+      return { ...creds, username: finalUsername };
     },
     onSuccess: (creds) => {
       queryClient.invalidateQueries({ queryKey: ["test-lines"] });
