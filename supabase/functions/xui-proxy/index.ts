@@ -1248,111 +1248,82 @@ async function provisionUserOnXui(
     outputFormats = assignments.outputIds; // already normalized to string names
   }
 
-  // Calculate expiration variants
-  const expUnix = Number(expDate);
-  const nowUnix = Math.floor(Date.now() / 1000);
-  const remainingHours = Number.isFinite(expUnix) && expUnix > nowUnix
-    ? Math.max(1, Math.ceil((expUnix - nowUnix) / 3600))
-    : 24;
-  const remainingDays = Math.max(1, Math.ceil(remainingHours / 24));
+  const expDateValue = String(expDate || '').trim();
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_date=${expDateValue || 'n/a'}`);
 
-  const rawExpDate = String(expDate || '').trim();
-  const expVariants: string[] = [];
-  if (rawExpDate) {
-    const compactRaw = rawExpDate.toLowerCase().replace(/\s+/g, '');
-    if (/^\d+(hours?|days?)$/.test(compactRaw)) expVariants.push(compactRaw);
-    if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(rawExpDate)) expVariants.push(rawExpDate);
-  }
-  expVariants.push(`${remainingHours}hours`, `${remainingDays}days`);
-  if (Number.isFinite(expUnix) && expUnix > 0) {
-    const expAsDate = new Date(expUnix * 1000);
-    if (!Number.isNaN(expAsDate.getTime())) expVariants.push(formatLocalDateString(expAsDate));
-  }
-  const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
-
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
-
-  const expectedAssignments: ExpectedLineAssignments = {
-    ...(packageId ? { packageIds: [packageId] } : {}),
-    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
-  };
   const expectedOutputs = normalizeOutputFormats(outputFormats);
 
-  let lastError = 'A API do XUI rejeitou a criação da linha';
+  const createParams: Record<string, string | string[]> = {
+    username,
+    password,
+    max_connections: maxConnections,
+    ...(expDateValue ? { exp_date: expDateValue } : {}),
+    ...(packageId ? { package_id: packageId } : {}),
+    ...(memberId ? { member_id: memberId } : {}),
+    ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
+  };
 
-  for (const expValue of uniqueExpVariants) {
-    // STEP 1: create_line with bouquets_selected[]
-    const createParams: Record<string, string | string[]> = {
+  console.log('create_line payload', createParams);
+
+  try {
+    const data = await createLinePostStrict(config, createParams);
+    const status = String(data?.status || '').toUpperCase();
+    const createError = getXuiError(data);
+
+    if (status.includes('EXISTS_USERNAME')) {
+      throw new Error(`Username já existe no XUI: ${username}`);
+    }
+    if (createError) {
+      throw new Error(createError);
+    }
+    if (!isXuiSuccess(data)) {
+      throw new Error('create_line retornou status inválido');
+    }
+
+    const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
+    if (!lineId) {
+      throw new Error('Linha criada, mas não foi possível resolver o ID');
+    }
+
+    // STEP 2: edit_line only for output_formats[] (preserving original username/password)
+    const outputsApplied = await ensureOutputFormatsApplied(
+      config,
+      lineId,
+      expectedOutputs,
       username,
       password,
-      max_connections: maxConnections,
-      exp_date: expValue,
-      ...(memberId ? { member_id: memberId } : {}),
-      ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
-    };
+      bouquetIds,
+    );
 
-    console.log('create_line payload', createParams);
+    // STEP 3: final validation with get_line
+    const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
+    const finalAssignments = extractLineAssignments(finalLine);
+    const finalRows = extractLineRows(finalLine);
+    const finalUsername = String(finalRows[0]?.username || '').trim();
+    const finalOutputs = normalizeOutputFormats(finalAssignments.outputIds, false);
 
-    try {
-      const data = await createLinePostStrict(config, createParams);
-      const status = String(data?.status || '').toUpperCase();
-      const createError = getXuiError(data);
+    const bouquetsOk = bouquetIds.length === 0 || bouquetIds.every((id) => finalAssignments.bouquetIds.includes(id));
+    const outputsOk = expectedOutputs.every((fmt) => finalOutputs.includes(fmt));
+    const usernameOk = !finalUsername || finalUsername === username;
 
-      if (createError && !status.includes('EXISTS_USERNAME')) {
-        lastError = createError;
-        continue;
-      }
-      if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
-        lastError = createError || 'create_line retornou status inválido';
-        continue;
-      }
+    console.log(`[XUI] Final state: username=${finalUsername || 'n/a'} bouquets=${JSON.stringify(finalAssignments.bouquetIds)} outputs=${JSON.stringify(finalOutputs)} package=${JSON.stringify(finalAssignments.packageIds)}`);
 
-      const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
-      if (!lineId) {
-        throw new Error('Linha criada, mas não foi possível resolver o ID');
-      }
-
-      // STEP 2: edit_line only for output_formats[] (preserving original username/password)
-      const outputsApplied = await ensureOutputFormatsApplied(
-        config,
-        lineId,
-        expectedOutputs,
-        username,
-        password,
-        bouquetIds,
-      );
-
-      // STEP 3: final validation with get_line
-      const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
-      const finalAssignments = extractLineAssignments(finalLine);
-      const finalRows = extractLineRows(finalLine);
-      const finalUsername = String(finalRows[0]?.username || '').trim();
-      const finalOutputs = normalizeOutputFormats(finalAssignments.outputIds);
-
-      const bouquetsOk = bouquetIds.length === 0 || bouquetIds.every((id) => finalAssignments.bouquetIds.includes(id));
-      const outputsOk = expectedOutputs.every((fmt) => finalOutputs.includes(fmt));
-      const usernameOk = !finalUsername || finalUsername === username;
-
-      console.log(`[XUI] Final state: username=${finalUsername || 'n/a'} bouquets=${JSON.stringify(finalAssignments.bouquetIds)} outputs=${JSON.stringify(finalOutputs)} package=${JSON.stringify(finalAssignments.packageIds)}`);
-
-      if (!usernameOk) {
-        throw new Error(`XUI alterou o username após provisionamento (esperado: ${username}, recebido: ${finalUsername || 'vazio'})`);
-      }
-      if (!bouquetsOk) {
-        throw new Error(`Bouquets não aplicados no create_line (esperado: ${JSON.stringify(bouquetIds)}, recebido: ${JSON.stringify(finalAssignments.bouquetIds)})`);
-      }
-      if (!outputsApplied || !outputsOk) {
-        throw new Error(`Access Output não aplicado no edit_line (esperado: ${JSON.stringify(expectedOutputs)}, recebido: ${JSON.stringify(finalOutputs)})`);
-      }
-
-      return { action: 'create_line' as const, data };
-    } catch (e: any) {
-      lastError = e.message;
-      console.log(`[XUI] POST create_line strict error: ${lastError}`);
+    if (!usernameOk) {
+      throw new Error(`XUI alterou o username após provisionamento (esperado: ${username}, recebido: ${finalUsername || 'vazio'})`);
     }
-  }
+    if (!bouquetsOk) {
+      throw new Error(`Bouquets não aplicados no create_line (esperado: ${JSON.stringify(bouquetIds)}, recebido: ${JSON.stringify(finalAssignments.bouquetIds)})`);
+    }
+    if (!outputsApplied || !outputsOk) {
+      throw new Error(`Access Output não aplicado no edit_line (esperado: ${JSON.stringify(expectedOutputs)}, recebido: ${JSON.stringify(finalOutputs)})`);
+    }
 
-  throw new Error(lastError);
+    return { action: 'create_line' as const, data };
+  } catch (e: any) {
+    const lastError = e.message;
+    console.log(`[XUI] POST create_line strict error: ${lastError}`);
+    throw new Error(lastError);
+  }
 }
 
 async function appendSystemLog(
