@@ -121,6 +121,24 @@ function toNumericIdList(value: unknown, fallback: string[]): string[] {
   return Array.from(new Set(ids));
 }
 
+function normalizeNumericIds(value: unknown): string[] {
+  const ids = parseIdList(value)
+    .map((v) => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(ids)).sort((a, b) => Number(a) - Number(b));
+}
+
+function hasSameNumericIds(current: unknown, expected: string[]): boolean {
+  const currentNorm = normalizeNumericIds(current);
+  const expectedNorm = Array.from(
+    new Set(expected.map((v) => String(v).replace(/\D/g, '').trim()).filter(Boolean))
+  ).sort((a, b) => Number(a) - Number(b));
+
+  if (currentNorm.length !== expectedNorm.length) return false;
+  return currentNorm.every((id, idx) => id === expectedNorm[idx]);
+}
+
 function formatLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -278,6 +296,118 @@ async function createLinePost(
   return postXuiForm(config, 'create_line', form, 'create_line');
 }
 
+async function getLineRowById(config: XuiServerConfig, lineId: string): Promise<any | null> {
+  try {
+    const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
+    const rows = extractLineRows(finalLine);
+    return rows.find((r: any) => String(r?.id || '').trim() === lineId) || rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function enforceAllowedOutputsPostCreate(
+  config: XuiServerConfig,
+  params: {
+    lineId: string;
+    username: string;
+    password: string;
+    memberId?: string;
+    expDate?: string;
+    bouquetIds: string[];
+    allowedOutputIds: string[];
+  },
+): Promise<any | null> {
+  const lineId = String(params.lineId || '').trim();
+  if (!lineId) return null;
+
+  const bouquetNumeric = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
+  const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
+  const bouquetJson = JSON.stringify(bouquetNumeric);
+  const allowedJson = JSON.stringify(allowedNumeric);
+  const allowedQuotedJson = JSON.stringify(allowedNumeric.map((id) => String(id)));
+  const allowedCsv = allowedNumeric.join(',');
+  const targetAllowed = allowedNumeric.map((id) => String(id));
+
+  const buildBaseForm = () => {
+    const form = new URLSearchParams();
+    form.set('id', lineId);
+    form.set('line_id', lineId);
+    form.set('username', params.username);
+    form.set('password', params.password);
+    form.set('max_connections', '1');
+    form.set('bouquet', bouquetJson);
+    form.set('bouquets_selected', bouquetJson);
+    if (params.expDate) form.set('exp_date', params.expDate);
+
+    const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
+    if (normalizedMemberId) form.set('member_id', normalizedMemberId);
+
+    return form;
+  };
+
+  const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
+    {
+      label: 'json_primary',
+      fill: (form) => {
+        form.set('allowed_outputs', allowedJson);
+        form.set('allowed_outputs_selected', allowedQuotedJson);
+        form.set('output_formats', allowedCsv);
+        form.set('output_formats_selected', allowedQuotedJson);
+        form.set('allowed_output_formats', allowedQuotedJson);
+      },
+    },
+    {
+      label: 'csv_primary',
+      fill: (form) => {
+        form.set('allowed_outputs', allowedCsv);
+        form.set('allowed_outputs_selected', allowedCsv);
+        form.set('output_formats', allowedJson);
+        form.set('output_formats_selected', allowedJson);
+        form.set('allowed_output_formats', allowedJson);
+      },
+    },
+    {
+      label: 'quoted_json_primary',
+      fill: (form) => {
+        form.set('allowed_outputs', allowedQuotedJson);
+        form.set('allowed_outputs_selected', allowedQuotedJson);
+        form.set('output_formats', allowedQuotedJson);
+        form.set('output_formats_selected', allowedQuotedJson);
+        form.set('allowed_output_formats', allowedQuotedJson);
+      },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      const form = buildBaseForm();
+      attempt.fill(form);
+      console.log(`[XUI] edit_line fallback (${attempt.label}) payload: ${form.toString()}`);
+
+      const editData = await postXuiForm(config, 'edit_line', form, `edit_line(${attempt.label})`);
+      const editStatus = String(editData?.status || '').toUpperCase();
+      const editError = getXuiError(editData);
+      if (editError && !editStatus.includes('SUCCESS')) {
+        console.log(`[XUI] edit_line fallback (${attempt.label}) rejected: ${editError}`);
+        continue;
+      }
+
+      const refreshed = await getLineRowById(config, lineId);
+      if (refreshed) {
+        console.log(`[XUI] After edit_line(${attempt.label}): allowed_outputs=${refreshed.allowed_outputs || '?'}`);
+        if (hasSameNumericIds(refreshed.allowed_outputs, targetAllowed)) {
+          return refreshed;
+        }
+      }
+    } catch (e: any) {
+      console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
+    }
+  }
+
+  return getLineRowById(config, lineId);
+}
+
 async function getOrCreateXuiMemberId(
   config: XuiServerConfig,
   userId: string,
@@ -402,19 +532,38 @@ async function provisionUserOnXui(
   let finalUsername = username;
   let finalLineId = createdLineId;
   let active = true;
+  let finalRow: any = null;
 
   if (createdLineId) {
-    try {
-      const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
-      const rows = extractLineRows(finalLine);
-      const row = rows.find((r: any) => String(r?.id || '').trim() === createdLineId) || rows[0];
-      if (row) {
-        finalLineId = String(row.id || row.line_id || createdLineId).trim();
-        finalUsername = String(row.username || username).trim();
-        active = isLineActive(row);
-        console.log(`[XUI] After create_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
+    finalRow = await getLineRowById(config, createdLineId);
+    if (finalRow) {
+      finalLineId = String(finalRow.id || finalRow.line_id || createdLineId).trim();
+      finalUsername = String(finalRow.username || username).trim();
+      active = isLineActive(finalRow);
+      console.log(`[XUI] After create_line: bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
+    }
+
+    const needsOutputFallback = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
+    if (needsOutputFallback) {
+      console.log(`[XUI] allowed_outputs mismatch for line_id=${createdLineId}. Trying edit_line fallback...`);
+      const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
+        lineId: createdLineId,
+        username: finalUsername || username,
+        password,
+        memberId: effectiveMemberId || String(finalRow?.member_id || '').trim(),
+        ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+        bouquetIds,
+        allowedOutputIds,
+      });
+
+      if (fallbackRow) {
+        finalRow = fallbackRow;
+        finalLineId = String(fallbackRow.id || fallbackRow.line_id || finalLineId).trim();
+        finalUsername = String(fallbackRow.username || finalUsername || username).trim();
+        active = isLineActive(fallbackRow);
+        console.log(`[XUI] After fallback: bouquet=${fallbackRow.bouquet || '?'} allowed_outputs=${fallbackRow.allowed_outputs || '?'}`);
       }
-    } catch {}
+    }
   }
 
   if (finalUsername && finalUsername !== username) {
