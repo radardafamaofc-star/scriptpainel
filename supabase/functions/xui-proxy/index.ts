@@ -29,8 +29,8 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
 }
 
 function encodeParamKey(key: string): string {
-  // XUI expects bracket notation keys literally (e.g. bouquets_selected[])
-  return key.includes('[]') ? key : encodeURIComponent(key);
+  // XUI expects bracket notation keys literally (e.g. bouquets_selected[], bouquets_selected[0])
+  return (key.includes('[') && key.includes(']')) ? key : encodeURIComponent(key);
 }
 
 function buildParamEntries(params: Record<string, string | string[]> = {}): string[] {
@@ -703,35 +703,27 @@ async function provisionUserOnXui(
   const outputJsonArray = resolvedOutputIds.length ? `[${resolvedOutputIds.join(',')}]` : '';
 
   const createAssignmentVariants: Array<Record<string, string | string[]>> = [
-    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
-    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
-    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
     {
       ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
       ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
+      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
     },
-    ...(selectedPackageId ? [{ package_id: selectedPackageId }] : []),
-    ...(outputJsonArray && bouquetSelectionIds.length
-      ? [{ 'bouquets_selected[]': bouquetSelectionIds, allowed_outputs: outputJsonArray }]
-      : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
+    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
   ].filter((variant) => Object.keys(variant).length > 0);
 
   const editAssignmentVariants: Array<Record<string, string | string[]>> = [
-    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
-    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
-    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
-    ...(directBouquetIds.length ? [{ package_id: '0', 'bouquets_selected[]': directBouquetIds }] : []),
     {
       ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
       ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
+      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
     },
-    ...(outputJsonArray && bouquetSelectionIds.length
-      ? [{ 'bouquets_selected[]': bouquetSelectionIds, allowed_outputs: outputJsonArray }]
-      : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
+    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
     ...(resolvedOutputIds.length
       ? [{ 'allowed_outputs_selected[]': resolvedOutputIds, 'output_formats[]': resolvedOutputIds }]
       : []),
@@ -791,6 +783,9 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
+    let createdPayload: any = null;
+    let lineId = '';
+
     for (const assignment of createAssignmentVariants) {
       const params = { ...baseParams, exp_date: expValue, ...assignment };
       console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
@@ -806,27 +801,32 @@ async function provisionUserOnXui(
         continue;
       }
 
-      let lineId = String(data?.data?.id || '').trim();
+      createdPayload = data;
+      lineId = String(data?.data?.id || '').trim();
       if (!lineId) {
         lineId = await resolveLineIdByUsername(config, username);
       }
-
-      const verifiedAfterCreate = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-      if (verifiedAfterCreate) {
-        console.log(`[XUI] ✅ Provision success for ${username} line_id=${lineId || 'n/a'}`);
-        return { action: 'create_line', data };
-      }
-
-      if (lineId) {
-        const edited = await tryEditFallback(lineId, expValue);
-        if (edited) {
-          return { action: 'edit_line', data: edited };
-        }
-      }
-
-      lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
-      console.log(`[XUI] Provision uncertain: ${lastError}`);
+      break;
     }
+
+    if (!createdPayload) continue;
+
+    const verifiedAfterCreate = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+    if (verifiedAfterCreate) {
+      console.log(`[XUI] ✅ Provision success for ${username} line_id=${lineId || 'n/a'}`);
+      return { action: 'create_line', data: createdPayload };
+    }
+
+    if (lineId) {
+      const edited = await tryEditFallback(lineId, expValue);
+      if (edited) {
+        return { action: 'edit_line', data: edited };
+      }
+    }
+
+    lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
+    console.log(`[XUI] Provision uncertain: ${lastError}`);
+    break;
   }
 
   throw new Error(lastError);
