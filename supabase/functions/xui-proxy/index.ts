@@ -330,8 +330,8 @@ function normalizeOutputFormats(raw: string[] = [], fallbackToDefault: boolean =
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
   return {
-    // XUIOne uses output_formats[] as the primary key
-    'output_formats[]': formats,
+    // Use allowed_outputs[] — confirmed working for XUI 1.5.12
+    'allowed_outputs[]': formats,
   };
 }
 
@@ -1301,8 +1301,9 @@ async function provisionUserOnXui(
     pkgOutputIds = ['ts', 'm3u8', 'rtmp'];
   }
 
-  // STEP 1: create_line with explicit fields required by this XUI build
-  const createParams: Record<string, string | string[]> = {
+  // STEP 1: create_line via GET with all params in query string
+  // XUI 1.5.12 ignores bouquets_selected[] when sent in POST body — must be in URL
+  const createBaseParams: Record<string, string> = {
     username,
     password,
     max_connections: maxConnections,
@@ -1310,17 +1311,16 @@ async function provisionUserOnXui(
     ...(memberId ? { member_id: memberId } : {}),
   };
 
-  // Add bouquets_selected[] — the working parameter name for XUI
-  if (pkgBouquetIds.length > 0) {
-    createParams['bouquets_selected[]'] = pkgBouquetIds;
-  }
-
-  // Add allowed_outputs[] explicitly (ts, m3u8, rtmp)
-  createParams['allowed_outputs[]'] = pkgOutputIds;
+  const createUrl = buildCreateLineUrl(config, createBaseParams, pkgBouquetIds, pkgOutputIds);
+  console.log("create_line GET URL:", createUrl.replace(config.api_key, '***'));
 
   try {
-    console.log("create_line payload:", buildParamEntries(createParams).join('&'));
-    const createData = await createLinePostStrict(config, createParams);
+    const createResponse = await tryFetch(createUrl);
+    const createText = await createResponse.text();
+    if (!createText || createText.includes('<html')) {
+      throw new Error('create_line retornou HTML ou vazio');
+    }
+    const createData = JSON.parse(createText);
     console.log("create_line response:", JSON.stringify(createData).substring(0, 1200));
 
     const createStatus = String(createData?.status || '').toUpperCase();
@@ -1342,21 +1342,19 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou sem line_id');
     }
 
-    // STEP 2: apply package_id via edit_line (for metadata tracking, bouquets already sent above)
+    // STEP 2: edit_line via GET to apply package_id + bouquets + outputs
+    // CRITICAL: include username+password so XUI doesn't overwrite them
     if (packageId) {
-      const editParams: Record<string, string | string[]> = {
-        id: createdLineId,
-        package_id: packageId,
-      };
-      // Re-send bouquets_selected[] and allowed_outputs[] in edit to ensure they stick
-      if (pkgBouquetIds.length > 0) {
-        editParams['bouquets_selected[]'] = pkgBouquetIds;
-      }
-      editParams['allowed_outputs[]'] = pkgOutputIds;
+      const editUrl = buildEditLineUrl(config, createdLineId, pkgBouquetIds, pkgOutputIds, packageId, username, password);
+      console.log("edit_line GET URL:", editUrl.replace(config.api_key, '***'));
 
       try {
-        const editData = await editLinePostStrict(config, editParams);
-        console.log("edit_line response:", JSON.stringify(editData).substring(0, 1200));
+        const editResponse = await tryFetch(editUrl);
+        const editText = await editResponse.text();
+        if (editText && !editText.includes('<html')) {
+          const editData = JSON.parse(editText);
+          console.log("edit_line response:", JSON.stringify(editData).substring(0, 1200));
+        }
       } catch (editErr: any) {
         console.log(`[XUI] edit_line package apply warning: ${editErr.message}`);
       }
