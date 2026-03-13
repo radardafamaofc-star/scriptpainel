@@ -162,13 +162,6 @@ function appendArrayField(form: URLSearchParams, key: string, values: string[]) 
   }
 }
 
-function appendRepeatedField(form: URLSearchParams, key: string, values: string[]) {
-  for (const value of values) {
-    const normalized = String(value || '').trim();
-    if (normalized) form.append(key, normalized);
-  }
-}
-
 function formatLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
