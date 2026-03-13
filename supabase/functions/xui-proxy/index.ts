@@ -204,23 +204,80 @@ function payloadContainsUsername(payload: any, username: string): boolean {
   return false;
 }
 
-async function verifyProvisionedUser(config: XuiServerConfig, username: string): Promise<boolean> {
+function parseIdList(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+
+  const raw = String(value).trim();
+  if (!raw || raw === 'null' || raw === '[]') return [];
+
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v).trim()).filter(Boolean);
+    } catch {
+      // fallback to comma split below
+    }
+  }
+
+  return raw
+    .split(',')
+    .map((v) => v.replace(/[\[\]\s]/g, '').trim())
+    .filter(Boolean);
+}
+
+function extractAssignedIds(payload: any): string[] {
+  const collected: string[] = [];
+
+  const visit = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    const candidates = [node.bouquet, node.bouquets, node.bouquets_selected, node.package_id];
+    for (const candidate of candidates) collected.push(...parseIdList(candidate));
+
+    Object.values(node).forEach(visit);
+  };
+
+  visit(payload);
+  return Array.from(new Set(collected));
+}
+
+async function verifyProvisionedUser(
+  config: XuiServerConfig,
+  username: string,
+  expectedAssignments: string[] = [],
+): Promise<boolean> {
+  const expected = Array.from(new Set(expectedAssignments.map((id) => String(id).trim()).filter(Boolean)));
+
   const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
     { action: 'get_line', params: { username } },
-    { action: 'get_user', params: { username } },
     { action: 'get_lines', params: { search: username } },
-    { action: 'get_users', params: { search: username } },
     { action: 'get_lines' },
-    { action: 'get_users' },
   ];
 
   for (const check of checks) {
     try {
       const data = await xuiRequest(config, check.action, check.params || {});
-      if (payloadContainsUsername(data, username)) {
+      if (!payloadContainsUsername(data, username)) continue;
+
+      const assignedIds = extractAssignedIds(data);
+      if (!expected.length) {
         console.log(`[XUI] Verification success via ${check.action} for ${username}`);
         return true;
       }
+
+      const overlap = expected.some((id) => assignedIds.includes(id));
+      if (assignedIds.length > 0 && overlap) {
+        console.log(`[XUI] Verification success via ${check.action} for ${username} with assignments=${JSON.stringify(assignedIds)}`);
+        return true;
+      }
+
+      console.log(`[XUI] Verification found user but assignments mismatch via ${check.action}. expected=${JSON.stringify(expected)} got=${JSON.stringify(assignedIds)}`);
     } catch {
       // ignore verification endpoint mismatch
     }
