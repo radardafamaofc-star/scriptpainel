@@ -642,7 +642,7 @@ async function provisionUserOnXui(
   }
 
   const selectedPackageId = selectedPackageIds[0] || '';
-  const bouquetSelectionIds = selectedPackageIds.length ? selectedPackageIds : directBouquetIds;
+  const bouquetSelectionIds = directBouquetIds.length ? directBouquetIds : selectedPackageIds;
 
   const expectedAssignments: ExpectedLineAssignments = {
     bouquetIds: directBouquetIds,
