@@ -1248,8 +1248,25 @@ async function provisionUserOnXui(
     outputFormats = assignments.outputIds; // already normalized to string names
   }
 
-  const expDateValue = String(expDate || '').trim();
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_date=${expDateValue || 'n/a'}`);
+  // Convert exp_date: XUI expects YYYY-MM-DD, not unix timestamps
+  let expDateFormatted = '';
+  const rawExp = String(expDate || '').trim();
+  if (rawExp) {
+    const asNum = Number(rawExp);
+    if (Number.isFinite(asNum) && asNum > 1000000000) {
+      // Unix timestamp → convert to YYYY-MM-DD
+      const d = new Date(asNum * 1000);
+      if (!Number.isNaN(d.getTime())) {
+        expDateFormatted = formatLocalDateString(d);
+      }
+    } else if (/^\d{4}-\d{2}-\d{2}/.test(rawExp)) {
+      expDateFormatted = rawExp.substring(0, 10);
+    } else {
+      expDateFormatted = rawExp;
+    }
+  }
+
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_date=${expDateFormatted || 'n/a'} (raw: ${rawExp})`);
 
   const expectedOutputs = normalizeOutputFormats(outputFormats);
 
@@ -1257,7 +1274,7 @@ async function provisionUserOnXui(
     username,
     password,
     max_connections: maxConnections,
-    ...(expDateValue ? { exp_date: expDateValue } : {}),
+    ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
     ...(packageId ? { package_id: packageId } : {}),
     ...(memberId ? { member_id: memberId } : {}),
     ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
