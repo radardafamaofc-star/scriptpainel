@@ -364,61 +364,34 @@ async function provisionUserOnXui(
 
   // Based on real XUI One docs: action=create_line with bouquets_selected and exp_date
   // DO NOT send is_trial — it makes the line show as "Trial" in XUI
+  // Pass member_id to assign correct owner
+  const baseParams: Record<string, string> = {
+    username,
+    password,
+    max_connections: maxConnections,
+  };
+  if (memberId) baseParams.member_id = memberId;
+
   const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [
-    // Primary: create_line with duration string (e.g. "6hours") — this is what works
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingHours}hours`,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, bouquets_selected: bouquetsSelected },
     },
-    // Fallback: create_line with bouquets_selected[] array syntax
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingHours}hours`,
-        'bouquets_selected[]': resolvedBouquetIds,
-      },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
     },
-    // Fallback: create_line with days
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingDays}days`,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: `${remainingDays}days`, bouquets_selected: bouquetsSelected },
     },
-    // Fallback: create_line with unix timestamp
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: expDate, bouquets_selected: bouquetsSelected },
     },
-    // Last resort: create_user
     {
       action: 'create_user',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingHours}hours`,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, bouquets_selected: bouquetsSelected },
     },
   ];
 
