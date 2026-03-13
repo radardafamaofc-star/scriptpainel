@@ -35,19 +35,19 @@ async function xuiRequest(
 ) {
   let baseUrl = config.url.replace(/\/+$/, '');
 
-  // Build query params
-  const qs = new URLSearchParams();
-  qs.set('api_key', config.api_key);
-  qs.set('action', action);
-  if (config.api_version) qs.set('api_version', config.api_version);
+  // Build query params — manually to avoid URLSearchParams encoding [] as %5B%5D
+  const parts: string[] = [];
+  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
+  parts.push(`action=${encodeURIComponent(action)}`);
+  if (config.api_version) parts.push(`api_version=${encodeURIComponent(config.api_version)}`);
   for (const [k, v] of Object.entries(params)) {
     if (Array.isArray(v)) {
-      for (const value of v) qs.append(k, value);
+      for (const value of v) parts.push(`${k}=${encodeURIComponent(value)}`);
     } else {
-      qs.set(k, v);
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
     }
   }
-  const queryString = qs.toString();
+  const queryString = parts.join('&');
 
   // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
   // The URL the user provides IS the base (including access code path).
@@ -390,8 +390,13 @@ async function provisionUserOnXui(
       };
 
       const allWithId = packageList.filter((pkg: any) => !!getPackageId(pkg));
-      const nonTrial = allWithId.find((pkg: any) => !isTrialPackage(pkg));
-      const picked = nonTrial || allWithId[0];
+      // Pick package with most bouquets for maximum content coverage
+      const sorted = [...allWithId].sort((a: any, b: any) => {
+        const bqA = Array.isArray(a.bouquets) ? a.bouquets : (typeof a.bouquets === 'string' ? JSON.parse(a.bouquets || '[]') : []);
+        const bqB = Array.isArray(b.bouquets) ? b.bouquets : (typeof b.bouquets === 'string' ? JSON.parse(b.bouquets || '[]') : []);
+        return bqB.length - bqA.length;
+      });
+      const picked = sorted[0];
       const pickedId = picked ? getPackageId(picked) : '';
 
       if (pickedId && picked) {
