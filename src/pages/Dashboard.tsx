@@ -47,7 +47,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string; bouquetId: string } | null>(null);
+  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string; packageId: string } | null>(null);
   const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
@@ -59,7 +59,7 @@ export default function Dashboard() {
         supabase.from("servers").select("id, name, status, created_at"),
         supabase.from("active_connections").select("id, client_id", { count: "exact" }),
         supabase.from("credit_transactions").select("amount, type, created_at"),
-        supabase.from("plans").select("id, name, server_id, duration_days, duration_hours, is_test, price, bouquets, servers(name)"),
+        supabase.from("plans").select("id, name, server_id, duration_days, duration_hours, is_test, price, bouquets, package_id, servers(name)"),
       ]);
 
       const clients = clientsRes.data || [];
