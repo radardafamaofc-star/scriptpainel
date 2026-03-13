@@ -231,10 +231,16 @@ async function postXuiForm(
   throw new Error(lastError);
 }
 
-// STEP 1 — create_line (POST form-urlencoded, NO package/bouquets/outputs)
+// Single-step create_line with bouquet and allowed_outputs as JSON strings
 async function createLinePost(
   config: XuiServerConfig,
-  params: { username: string; password: string; expDate?: string },
+  params: {
+    username: string;
+    password: string;
+    expDate?: string;
+    bouquetIds: number[];
+    allowedOutputIds: number[];
+  },
 ): Promise<any> {
   const form = new URLSearchParams();
   form.set('username', params.username);
@@ -242,23 +248,11 @@ async function createLinePost(
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', '1');
   form.set('member_id', '0');
+  form.set('bouquet', JSON.stringify(params.bouquetIds));
+  form.set('allowed_outputs', JSON.stringify(params.allowedOutputIds));
 
   console.log("create_line payload:", form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
-}
-
-// STEP 2 — edit_line with bouquet and allowed_outputs as JSON strings
-async function editLinePost(
-  config: XuiServerConfig,
-  params: { lineId: string; bouquetIds: string[]; allowedOutputIds: string[] },
-): Promise<any> {
-  const form = new URLSearchParams();
-  form.set('id', params.lineId);
-  form.set('bouquet', JSON.stringify(params.bouquetIds.map(Number)));
-  form.set('allowed_outputs', JSON.stringify(params.allowedOutputIds.map(Number)));
-
-  console.log('edit_line payload:', form.toString());
-  return postXuiForm(config, 'edit_line', form, 'edit_line');
 }
 
 async function getOrCreateXuiMemberId(
@@ -351,11 +345,13 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} member_id=${memberId || 'n/a'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
 
-  // STEP 1 — create_line (without package / bouquets / outputs)
+  // Single-step create_line with bouquet + allowed_outputs as JSON strings
   const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+    bouquetIds: bouquetIds.map(Number),
+    allowedOutputIds: allowedOutputIds.map(Number),
   });
 
   const createStatus = String(createData?.status || '').toUpperCase();
@@ -366,18 +362,6 @@ async function provisionUserOnXui(
   // Resolve line_id
   const createdLineId = String(createData?.data?.id || createData?.id || '').trim() || await resolveLineIdByUsername(config, username);
   if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
-
-  // STEP 2 — edit_line with numeric bouquets[] and allowed_outputs[]
-  try {
-    await editLinePost(config, {
-      lineId: createdLineId,
-      bouquetIds,
-      allowedOutputIds,
-    });
-  } catch (e: any) {
-    console.log(`[XUI] edit_line failed: ${e.message}`);
-    throw e;
-  }
 
   // Get final state
   let finalUsername = username;
