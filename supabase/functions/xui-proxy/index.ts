@@ -112,6 +112,15 @@ function parseIdList(value: unknown): string[] {
   return raw.split(',').map(v => v.replace(/[\[\]\s]/g, '').trim()).filter(Boolean);
 }
 
+function toNumericIdList(value: unknown, fallback: string[]): string[] {
+  const ids = parseIdList(value)
+    .map((v) => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  if (!ids.length) return fallback;
+  return Array.from(new Set(ids));
+}
+
 function formatLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -160,55 +169,38 @@ async function resolveLineIdByUsername(config: XuiServerConfig, username: string
   return '';
 }
 
-// Simple POST to player_api.php for create_line
-async function createLineViaPlayerApi(
-  config: XuiServerConfig,
-  params: { username: string; password: string; packageId: string; expDate?: string },
-): Promise<any> {
+function buildPlayerApiUrls(config: XuiServerConfig): string[] {
   const baseUrl = config.url.replace(/\/+$/, '');
+  const urls = [`${baseUrl}/player_api.php?api_key=${encodeURIComponent(config.api_key)}`];
 
-  const form = new URLSearchParams();
-  form.set('action', 'create_line');
-  form.set('username', params.username);
-  form.set('password', params.password);
-  form.set('package', params.packageId);
-  if (params.expDate) form.set('exp_date', params.expDate);
-
-  const payload = form.toString();
-  console.log("create_line payload:", payload);
-
-  // Try player_api.php first, then fall back to access-code path
-  const urlsToTry = [
-    `${baseUrl}/player_api.php`,
-  ];
-  // Also try with api_key in query for auth
   try {
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/player_api.php`);
+      urls.push(`${root}/player_api.php?api_key=${encodeURIComponent(config.api_key)}`);
     }
   } catch {}
 
-  // Also try the standard API endpoint as fallback
-  urlsToTry.push(`${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=create_line`);
+  return Array.from(new Set(urls));
+}
 
-  let lastError = 'create_line falhou';
+async function postPlayerApiForm(
+  config: XuiServerConfig,
+  form: URLSearchParams,
+  actionName: string,
+): Promise<any> {
+  const payload = form.toString();
+  let lastError = `${actionName} falhou`;
 
-  for (const url of urlsToTry) {
+  for (const url of buildPlayerApiUrls(config)) {
     try {
-      // For player_api.php, include api_key in the form body
-      const bodyToSend = url.includes('player_api.php')
-        ? `api_key=${encodeURIComponent(config.api_key)}&${payload}`
-        : `${buildParamEntries({ username: params.username, password: params.password, package: params.packageId, ...(params.expDate ? { exp_date: params.expDate } : {}) }).join('&')}`;
-
       console.log(`[XUI] POST: ${url.replace(config.api_key, '***')}`);
-      console.log(`[XUI] POST body: ${bodyToSend.replace(config.api_key, '***')}`);
+      console.log(`[XUI] POST body: ${payload}`);
 
       const response = await tryFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: bodyToSend,
+        body: payload,
       });
 
       const text = await response.text();
@@ -218,15 +210,56 @@ async function createLineViaPlayerApi(
       }
 
       const json = JSON.parse(text);
-      console.log("create_line response:", JSON.stringify(json).substring(0, 1000));
+      console.log(`${actionName} response:`, JSON.stringify(json).substring(0, 1000));
       return json;
     } catch (e: any) {
       lastError = e.message;
-      console.log(`[XUI] create_line failed at ${url.replace(config.api_key, '***')}: ${e.message}`);
+      console.log(`[XUI] ${actionName} failed at ${url.replace(config.api_key, '***')}: ${e.message}`);
     }
   }
 
   throw new Error(lastError);
+}
+
+// STEP 1 — create_line via player_api.php (POST form-urlencoded)
+async function createLineViaPlayerApi(
+  config: XuiServerConfig,
+  params: { username: string; password: string; expDate?: string },
+): Promise<any> {
+  const form = new URLSearchParams();
+  form.set('action', 'create_line');
+  form.set('username', params.username);
+  form.set('password', params.password);
+  if (params.expDate) form.set('exp_date', params.expDate);
+  form.set('max_connections', '1');
+
+  const payload = form.toString();
+  console.log("create_line payload:", payload);
+
+  return postPlayerApiForm(config, form, 'create_line');
+}
+
+// STEP 2 — edit_line via player_api.php (POST form-urlencoded)
+async function editLineViaPlayerApi(
+  config: XuiServerConfig,
+  params: { lineId: string; bouquetIds: string[]; allowedOutputIds: string[] },
+): Promise<any> {
+  const form = new URLSearchParams();
+  form.set('action', 'edit_line');
+  form.set('id', params.lineId);
+
+  for (const bouquetId of params.bouquetIds) {
+    form.append('bouquets[]', bouquetId);
+  }
+
+  for (const outputId of params.allowedOutputIds) {
+    form.append('allowed_outputs[]', outputId);
+  }
+
+  const payload = form.toString();
+  console.log('edit_line payload:', payload);
+
+  return postPlayerApiForm(config, form, 'edit_line');
 }
 
 async function getOrCreateXuiMemberId(
@@ -289,8 +322,10 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
-// Main provisioning: single POST create_line via player_api.php
-// Package handles bouquets, outputs, max_connections automatically
+const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
+const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
+
+// Main provisioning for XUIOne 1.5.x: create_line then edit_line with numeric IDs
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -299,37 +334,6 @@ async function provisionUserOnXui(
   const username = rawParams.username?.trim();
   const password = rawParams.password?.trim();
   if (!username || !password) throw new Error('username e password são obrigatórios');
-
-  const parsedPackageIds = parseIdList(rawParams.package_id || rawParams.package || '').filter(Boolean);
-  let packageId = parsedPackageIds[0] || '';
-  const rawPlanName = String(rawParams.plan_name || '').trim();
-
-  // Auto-resolve package if not provided
-  if (!packageId && rawPlanName) {
-    try {
-      const payload = await xuiRequest(config, 'get_packages');
-      const rows = (Array.isArray(payload) ? payload : Object.values(payload || {})).filter((i: any) => i && typeof i === 'object');
-      const normalize = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-      const wanted = normalize(rawPlanName);
-      const scored = rows.map((pkg: any) => {
-        const id = String(pkg.id || pkg.package_id || '').trim();
-        if (!id) return null;
-        const name = normalize(String(pkg.package_name || pkg.name || ''));
-        let score = name === wanted ? 10 : 0;
-        for (const t of wanted.split(' ').filter(t => t.length >= 2)) { if (name.includes(t)) score += 2; }
-        return { id, name, score };
-      }).filter(Boolean) as Array<{ id: string; name: string; score: number }>;
-      scored.sort((a, b) => b.score - a.score);
-      if (scored[0]?.score > 0) {
-        packageId = scored[0].id;
-        console.log(`[XUI] Auto-selected package '${scored[0].name}' id=${packageId}`);
-      }
-    } catch (e: any) {
-      console.log(`[XUI] Could not auto-resolve package: ${e.message}`);
-    }
-  }
-
-  if (!packageId) throw new Error('package_id é obrigatório para criar linha');
 
   // Format expiry date
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
@@ -343,13 +347,15 @@ async function provisionUserOnXui(
     }
   }
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId} member_id=${memberId || 'n/a'}`);
+  const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
+  const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
 
-  // Single POST create_line — package handles bouquets, outputs, connections
+  console.log(`[XUI] Provisioning ${username} member_id=${memberId || 'n/a'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+
+  // STEP 1 — create_line (without package / bouquets / outputs)
   const createData = await createLineViaPlayerApi(config, {
     username,
     password,
-    packageId,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
   });
 
@@ -360,25 +366,18 @@ async function provisionUserOnXui(
 
   // Resolve line_id
   const createdLineId = String(createData?.data?.id || createData?.id || '').trim() || await resolveLineIdByUsername(config, username);
+  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
 
-  // STEP 2: Force package application via edit_line
-  // XUI 1.5.x does not fully apply package on create_line, so we re-apply it
-  if (createdLineId) {
-    try {
-      const editPayload = `api_key=${encodeURIComponent(config.api_key)}&action=edit_line&id=${encodeURIComponent(createdLineId)}&package=${encodeURIComponent(packageId)}`;
-      console.log("edit_line payload:", editPayload.replace(config.api_key, '***'));
-
-      const baseUrl = config.url.replace(/\/+$/, '');
-      const editResponse = await tryFetch(`${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=edit_line`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `id=${encodeURIComponent(createdLineId)}&package=${encodeURIComponent(packageId)}`,
-      });
-      const editText = await editResponse.text();
-      console.log("edit_line response:", editText.substring(0, 1000));
-    } catch (e: any) {
-      console.log(`[XUI] edit_line (package reapply) failed: ${e.message}`);
-    }
+  // STEP 2 — edit_line with numeric bouquets[] and allowed_outputs[]
+  try {
+    await editLineViaPlayerApi(config, {
+      lineId: createdLineId,
+      bouquetIds,
+      allowedOutputIds,
+    });
+  } catch (e: any) {
+    console.log(`[XUI] edit_line failed: ${e.message}`);
+    throw e;
   }
 
   // Get final state
