@@ -415,6 +415,7 @@ async function editLinePostStrict(
 
   for (const url of urlsToTry) {
     try {
+      console.log('edit_line payload', params);
       console.log(`[XUI] POST(strict edit): ${url.replace(config.api_key, '***')}`);
       console.log(`[XUI] POST(strict edit) body: ${body.substring(0, 1500)}`);
 
