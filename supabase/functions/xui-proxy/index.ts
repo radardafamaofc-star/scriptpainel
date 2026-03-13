@@ -347,78 +347,115 @@ async function enforceAllowedOutputsPostCreate(
     lineId: string;
     allowedOutputIds: string[];
     expectedBouquetIds?: string[];
+    expectedUsername?: string;
+    expectedPassword?: string;
+    expDate?: string;
+    maxConnections?: string;
   },
 ): Promise<any | null> {
   const lineId = String(params.lineId || '').trim();
   if (!lineId) return null;
 
+  const targetUsername = String(params.expectedUsername || '').trim();
+  const targetPassword = String(params.expectedPassword || '').trim();
+  const targetExpDate = String(params.expDate || '').trim();
+  const targetMaxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim() || '1';
+
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
+
   const expectedBouquetIds = (params.expectedBouquetIds || [])
     .map((id) => String(id).replace(/\D/g, '').trim())
     .filter(Boolean);
+  const expectedBouquetNumeric = expectedBouquetIds.map(Number).filter((id) => Number.isFinite(id));
 
   const allowedJson = JSON.stringify(allowedNumeric);
   const allowedQuotedJson = JSON.stringify(targetAllowed);
   const allowedCsv = allowedNumeric.join(',');
 
-  const attempts: Array<{ label: string; payload: Record<string, string | string[]> }> = [
+  const bouquetJson = JSON.stringify(expectedBouquetNumeric);
+  const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
+  const bouquetCsv = expectedBouquetIds.join(',');
+
+  const buildBaseForm = () => {
+    const form = new URLSearchParams();
+    form.set('id', lineId);
+    form.set('line_id', lineId);
+    form.set('member_id', '0');
+    form.set('max_connections', targetMaxConnections);
+    if (targetUsername) form.set('username', targetUsername);
+    if (targetPassword) form.set('password', targetPassword);
+    if (targetExpDate) form.set('exp_date', targetExpDate);
+    return form;
+  };
+
+  const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
       label: 'json_primary',
-      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedJson },
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          form.set('bouquet', bouquetJson);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
+        form.set('allowed_outputs', allowedJson);
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
+      },
     },
     {
-      label: 'json_with_array_transport',
-      payload: {
-        id: lineId,
-        line_id: lineId,
-        allowed_outputs: allowedJson,
-        'allowed_outputs[]': targetAllowed,
+      label: 'csv_primary',
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          form.set('bouquet', bouquetCsv);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
+        form.set('allowed_outputs', allowedCsv);
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
       },
     },
     {
       label: 'quoted_json_primary',
-      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedQuotedJson },
-    },
-    {
-      label: 'csv_primary',
-      payload: { id: lineId, line_id: lineId, allowed_outputs: allowedCsv },
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          form.set('bouquet', bouquetQuotedJson);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
+        form.set('allowed_outputs', allowedQuotedJson);
+        appendArrayField(form, 'allowed_outputs', targetAllowed);
+      },
     },
   ];
 
   for (const attempt of attempts) {
     try {
-      console.log(`[XUI] edit_line fallback (${attempt.label}) params: ${JSON.stringify(attempt.payload)}`);
-      const editData = await xuiRequest(config, 'edit_line', attempt.payload);
+      const form = buildBaseForm();
+      attempt.fill(form);
+
+      console.log(`[XUI] edit_line sync (${attempt.label}) payload: ${form.toString()}`);
+      const editData = await postXuiForm(config, 'edit_line', form, `edit_line(${attempt.label})`);
 
       const editStatus = String(editData?.status || '').toUpperCase();
       const editError = getXuiError(editData);
       if (editError && !editStatus.includes('SUCCESS')) {
-        console.log(`[XUI] edit_line fallback (${attempt.label}) rejected: ${editError}`);
+        console.log(`[XUI] edit_line sync (${attempt.label}) rejected: ${editError}`);
         continue;
       }
 
-      let refreshed = await getLineRowById(config, lineId);
+      const refreshed = await getLineRowById(config, lineId);
       if (!refreshed) continue;
 
-      const bouquetChanged =
-        expectedBouquetIds.length > 0 && !hasSameNumericIds(refreshed.bouquet, expectedBouquetIds);
-
-      if (bouquetChanged) {
-        console.log(`[XUI] WARNING: edit_line(${attempt.label}) changed bouquet. Restoring...`);
-        await restoreLineBouquets(config, lineId, expectedBouquetIds);
-        refreshed = await getLineRowById(config, lineId);
-      }
+      const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
+      const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed);
+      const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
 
       console.log(
-        `[XUI] After edit_line(${attempt.label}): bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
+        `[XUI] After edit_line(${attempt.label}): username=${refreshed?.username || '?'} bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
       );
 
-      if (hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed)) {
+      if (bouquetOk && outputsOk && usernameOk) {
         return refreshed;
       }
     } catch (e: any) {
-      console.log(`[XUI] edit_line fallback (${attempt.label}) failed: ${e.message}`);
+      console.log(`[XUI] edit_line sync (${attempt.label}) failed: ${e.message}`);
     }
   }
 
