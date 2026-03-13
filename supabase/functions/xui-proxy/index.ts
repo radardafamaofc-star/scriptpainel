@@ -715,18 +715,13 @@ async function provisionUserOnXui(
   ].filter((variant) => Object.keys(variant).length > 0);
 
   const editAssignmentVariants: Array<Record<string, string | string[]>> = [
-    {
-      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
-      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
-      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
-    },
     ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
     ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
     ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquets[]': bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquet[]': bouquetSelectionIds }] : []),
     ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
-    ...(resolvedOutputIds.length
-      ? [{ 'allowed_outputs_selected[]': resolvedOutputIds, 'output_formats[]': resolvedOutputIds }]
-      : []),
   ].filter((variant) => Object.keys(variant).length > 0);
 
   const rawExpDate = String(expDate || '').trim();
@@ -758,9 +753,19 @@ async function provisionUserOnXui(
   console.log(`[XUI] EXP_VARS: ${JSON.stringify(uniqueExpVariants)} raw=${rawExpDate}`);
 
   const tryEditFallback = async (lineId: string, expValue: string) => {
+    // 1) Keep core fields stable first.
+    try {
+      const coreParams = { id: lineId, exp_date: expValue, max_connections: maxConnections };
+      console.log(`[XUI] edit_line core params: ${JSON.stringify(coreParams)}`);
+      await xuiRequest(config, 'edit_line', coreParams);
+    } catch (e: any) {
+      console.log(`[XUI] edit_line core update failed: ${e.message}`);
+    }
+
+    // 2) Apply bouquets in dedicated calls (without package_id/credentials to avoid override).
     for (const assignment of editAssignmentVariants) {
       try {
-        const editParams = { id: lineId, ...baseParams, exp_date: expValue, ...assignment };
+        const editParams = { id: lineId, ...assignment };
         console.log(`[XUI] edit_line fallback params: ${JSON.stringify(editParams)}`);
 
         const edited = await xuiRequest(config, 'edit_line', editParams);
