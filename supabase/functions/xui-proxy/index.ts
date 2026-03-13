@@ -763,8 +763,8 @@ function buildEditLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send every known output key variant used by different XUI builds
-  appendRawParams(parts, buildOutputPayload(outputIds));
+  // allowed_outputs[] with string format names
+  appendRawParams(parts, buildOutputPayload(outputFormats));
 
   if (packageId) {
     parts.push(`package_id=${encodeURIComponent(packageId)}`);
