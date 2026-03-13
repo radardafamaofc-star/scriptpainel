@@ -619,7 +619,75 @@ async function provisionUserOnXui(
   const parsedPackageIds = sanitizeSelectionIds(
     parseIdList(rawParams.package_id || rawParams.bouquet || rawParams.bouquets || ''),
   );
-  const packageId = parsedPackageIds[0] || '';
+  let packageId = parsedPackageIds[0] || '';
+  const rawPlanName = String(rawParams.plan_name || '').trim();
+
+  const resolvePackageFromServer = async (): Promise<string> => {
+    try {
+      const payload = await xuiRequest(config, 'get_packages');
+      const rows = (Array.isArray(payload) ? payload : Object.values(payload || {}))
+        .filter((item: any) => item && typeof item === 'object');
+
+      const normalize = (value: string) => value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+      const wanted = normalize(rawPlanName);
+      const wantAdult = /\bc\s*adult|com\s*adult|adult\b/.test(wanted);
+      const avoidAdult = /\bs\s*adult|sem\s*adult/.test(wanted);
+
+      const candidates = rows
+        .map((pkg: any) => {
+          const id = String(pkg.id || pkg.package_id || '').trim();
+          if (!id) return null;
+          const name = String(pkg.package_name || pkg.name || pkg.title || `package_${id}`).trim();
+          const bouquetsCount = parseIdList(pkg.bouquets).length;
+          return { id, name, nameNorm: normalize(name), bouquetsCount };
+        })
+        .filter(Boolean) as Array<{ id: string; name: string; nameNorm: string; bouquetsCount: number }>;
+
+      if (!candidates.length) return '';
+
+      if (wanted) {
+        const wantedTokens = wanted.split(' ').filter((t) => t.length >= 2);
+        const scored = candidates.map((candidate) => {
+          let score = 0;
+          for (const token of wantedTokens) {
+            if (candidate.nameNorm.includes(token)) score += 2;
+          }
+          if (wantAdult && /adult/.test(candidate.nameNorm)) score += 4;
+          if (avoidAdult && /adult/.test(candidate.nameNorm)) score -= 3;
+          if (candidate.nameNorm === wanted) score += 8;
+          score += Math.min(candidate.bouquetsCount, 20) * 0.05;
+          return { ...candidate, score };
+        }).sort((a, b) => b.score - a.score);
+
+        const bestByName = scored[0];
+        if (bestByName && bestByName.score > 0) {
+          console.log(`[XUI] Auto-selected package by plan name '${rawPlanName}': id=${bestByName.id} name='${bestByName.name}' score=${bestByName.score}`);
+          return bestByName.id;
+        }
+      }
+
+      const bestByCoverage = [...candidates].sort((a, b) => b.bouquetsCount - a.bouquetsCount)[0];
+      if (bestByCoverage?.id) {
+        console.log(`[XUI] Auto-selected package by coverage: id=${bestByCoverage.id} name='${bestByCoverage.name}' bouquets=${bestByCoverage.bouquetsCount}`);
+        return bestByCoverage.id;
+      }
+
+      return '';
+    } catch (e: any) {
+      console.log(`[XUI] Could not auto-resolve package: ${e.message}`);
+      return '';
+    }
+  };
+
+  if (!packageId) {
+    packageId = await resolvePackageFromServer();
+  }
 
   const expUnix = Number(expDate);
   const nowUnix = Math.floor(Date.now() / 1000);
@@ -688,7 +756,7 @@ async function provisionUserOnXui(
     return null;
   };
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
