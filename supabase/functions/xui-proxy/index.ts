@@ -394,6 +394,8 @@ async function enforceAllowedOutputsPostCreate(
     expectedBouquetIds?: string[];
     expectedUsername?: string;
     expectedPassword?: string;
+    expectedMemberId?: string;
+    expectedPackageId?: string;
     expDate?: string;
     maxConnections?: string;
   },
@@ -405,6 +407,8 @@ async function enforceAllowedOutputsPostCreate(
   const targetPassword = String(params.expectedPassword || '').trim();
   const targetExpDate = String(params.expDate || '').trim();
   const targetMaxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim() || '1';
+  const targetMemberId = String(params.expectedMemberId || '').replace(/\D/g, '').trim();
+  const targetPackageId = String(params.expectedPackageId || '').replace(/\D/g, '').trim();
 
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
@@ -422,53 +426,82 @@ async function enforceAllowedOutputsPostCreate(
   const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
   const bouquetCsv = expectedBouquetIds.join(',');
 
+  const outputFormatNames = toOutputFormatNames(targetAllowed);
+
   const buildBaseForm = () => {
     const form = new URLSearchParams();
     form.set('id', lineId);
     form.set('line_id', lineId);
-    form.set('member_id', '0');
     form.set('max_connections', targetMaxConnections);
     if (targetUsername) form.set('username', targetUsername);
     if (targetPassword) form.set('password', targetPassword);
     if (targetExpDate) form.set('exp_date', targetExpDate);
+    if (targetMemberId) form.set('member_id', targetMemberId);
+    if (targetPackageId && targetPackageId !== '0') {
+      form.set('package_id', targetPackageId);
+      form.set('package', targetPackageId);
+    }
     return form;
+  };
+
+  const attachCommonArrayFields = (form: URLSearchParams) => {
+    if (expectedBouquetIds.length) {
+      appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+      appendRepeatedField(form, 'bouquets_selected', expectedBouquetIds);
+    }
+
+    appendArrayField(form, 'allowed_outputs', targetAllowed);
+    appendRepeatedField(form, 'allowed_outputs', targetAllowed);
+    appendArrayField(form, 'allowed_outputs_selected', targetAllowed);
+
+    if (outputFormatNames.length) {
+      appendArrayField(form, 'output_formats', outputFormatNames);
+      appendRepeatedField(form, 'output_formats', outputFormatNames);
+    }
   };
 
   const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
       label: 'json_primary',
       fill: (form) => {
-        if (expectedBouquetIds.length) {
-          form.set('bouquet', bouquetJson);
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
-        }
+        if (expectedBouquetIds.length) form.set('bouquet', bouquetJson);
         form.set('allowed_outputs', allowedJson);
-        appendArrayField(form, 'allowed_outputs', targetAllowed);
+        attachCommonArrayFields(form);
       },
     },
     {
       label: 'csv_primary',
       fill: (form) => {
-        if (expectedBouquetIds.length) {
-          form.set('bouquet', bouquetCsv);
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
-        }
+        if (expectedBouquetIds.length) form.set('bouquet', bouquetCsv);
         form.set('allowed_outputs', allowedCsv);
-        appendArrayField(form, 'allowed_outputs', targetAllowed);
+        attachCommonArrayFields(form);
       },
     },
     {
       label: 'quoted_json_primary',
       fill: (form) => {
-        if (expectedBouquetIds.length) {
-          form.set('bouquet', bouquetQuotedJson);
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
-        }
+        if (expectedBouquetIds.length) form.set('bouquet', bouquetQuotedJson);
         form.set('allowed_outputs', allowedQuotedJson);
-        appendArrayField(form, 'allowed_outputs', targetAllowed);
+        attachCommonArrayFields(form);
       },
     },
   ];
+
+  const checkSynced = async (label: string) => {
+    const refreshed = await getLineRowById(config, lineId);
+    if (!refreshed) return null;
+
+    const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
+    const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed);
+    const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
+
+    console.log(
+      `[XUI] After ${label}: username=${refreshed?.username || '?'} bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
+    );
+
+    if (bouquetOk && outputsOk && usernameOk) return refreshed;
+    return null;
+  };
 
   for (const attempt of attempts) {
     try {
@@ -485,22 +518,66 @@ async function enforceAllowedOutputsPostCreate(
         continue;
       }
 
-      const refreshed = await getLineRowById(config, lineId);
-      if (!refreshed) continue;
-
-      const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
-      const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed);
-      const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
-
-      console.log(
-        `[XUI] After edit_line(${attempt.label}): username=${refreshed?.username || '?'} bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
-      );
-
-      if (bouquetOk && outputsOk && usernameOk) {
-        return refreshed;
-      }
+      const synced = await checkSynced(`edit_line(${attempt.label})`);
+      if (synced) return synced;
     } catch (e: any) {
       console.log(`[XUI] edit_line sync (${attempt.label}) failed: ${e.message}`);
+    }
+  }
+
+  for (const attempt of attempts) {
+    try {
+      const getParams: Record<string, string | string[]> = {
+        id: lineId,
+        line_id: lineId,
+        max_connections: targetMaxConnections,
+      };
+
+      if (targetUsername) getParams.username = targetUsername;
+      if (targetPassword) getParams.password = targetPassword;
+      if (targetExpDate) getParams.exp_date = targetExpDate;
+      if (targetMemberId) getParams.member_id = targetMemberId;
+      if (targetPackageId && targetPackageId !== '0') {
+        getParams.package_id = targetPackageId;
+        getParams.package = targetPackageId;
+      }
+
+      if (attempt.label === 'json_primary') {
+        if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
+        getParams.allowed_outputs = allowedJson;
+      } else if (attempt.label === 'csv_primary') {
+        if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
+        getParams.allowed_outputs = allowedCsv;
+      } else {
+        if (expectedBouquetIds.length) getParams.bouquet = bouquetQuotedJson;
+        getParams.allowed_outputs = allowedQuotedJson;
+      }
+
+      if (expectedBouquetIds.length) {
+        getParams['bouquets_selected[]'] = expectedBouquetIds;
+        getParams.bouquets_selected = expectedBouquetIds;
+      }
+      getParams['allowed_outputs[]'] = targetAllowed;
+      getParams.allowed_outputs_selected = targetAllowed;
+      if (outputFormatNames.length) {
+        getParams['output_formats[]'] = outputFormatNames;
+        getParams.output_formats = outputFormatNames;
+      }
+
+      console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
+      const editData = await xuiRequestGetOnly(config, 'edit_line', getParams);
+
+      const editStatus = String(editData?.status || '').toUpperCase();
+      const editError = getXuiError(editData);
+      if (editError && !editStatus.includes('SUCCESS')) {
+        console.log(`[XUI] edit_line GET sync (${attempt.label}) rejected: ${editError}`);
+        continue;
+      }
+
+      const synced = await checkSynced(`edit_line_get(${attempt.label})`);
+      if (synced) return synced;
+    } catch (e: any) {
+      console.log(`[XUI] edit_line GET sync (${attempt.label}) failed: ${e.message}`);
     }
   }
 
