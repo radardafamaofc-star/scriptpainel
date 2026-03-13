@@ -15,6 +15,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { DEFAULT_TEMPLATE, renderTemplate } from "@/lib/template";
 import { generateUsername as genUser, generatePassword as genPass } from "@/lib/credentials";
+import { extractGeneratedUsername } from "@/lib/xui";
 import { Textarea } from "@/components/ui/textarea";
 
 interface ClientForm {
