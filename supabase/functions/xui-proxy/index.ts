@@ -357,7 +357,7 @@ async function provisionUserOnXui(
   console.log(`[XUI] Provisioning ${username} member_id=${memberId || 'n/a'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
 
   // STEP 1 — create_line (without package / bouquets / outputs)
-  const createData = await createLineViaPlayerApi(config, {
+  const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
