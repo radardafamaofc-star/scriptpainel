@@ -748,14 +748,15 @@ async function syncLineAssignments(
       },
     },
     {
-      label: 'POST edit_line bouquets_selected[]',
+      label: 'POST edit_line bouquets_selected[] + allowed_outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
-          'allowed_outputs_selected[]': normalizedOutputs,
+          allowed_outputs: jsonOutputs,
+          'allowed_outputs[]': normalizedOutputs,
         });
       },
     },
