@@ -228,7 +228,24 @@ async function getOrCreateXuiMemberId(
     return profile.xui_member_id;
   }
 
-  // Helper to save member_id to profiles
+  const normalizeUsername = (value: string): string => {
+    const cleaned = (value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '')
+      .toLowerCase()
+      .trim();
+
+    if (cleaned) return cleaned.slice(0, 24);
+    return `rev_${userId.slice(0, 8)}`;
+  };
+
+  const usernameCandidates = Array.from(new Set([
+    (displayName || '').trim(),
+    normalizeUsername(displayName || ''),
+    `rev_${userId.slice(0, 8)}`,
+  ].filter(Boolean)));
+
   const saveMemberId = async (memberId: string) => {
     await serviceClient
       .from('profiles')
@@ -236,47 +253,36 @@ async function getOrCreateXuiMemberId(
       .eq('user_id', userId);
   };
 
-  // 1) Try user_info to get the API key owner's member_id
-  try {
-    const info = await xuiRequest(config, 'user_info');
-    console.log(`[XUI] user_info keys: ${JSON.stringify(Object.keys(info || {}))}`);
-    
-    // user_info usually returns { user_info: { username, member_id, ... }, server_info: {...} }
-    const userInfo = info?.user_info || info?.data?.user_info || info;
-    console.log(`[XUI] user_info content: ${JSON.stringify(userInfo).substring(0, 500)}`);
-    
-    const ownerMemberId = userInfo?.member_id || userInfo?.id;
-    const ownerUsername = userInfo?.username;
-    
-    if (ownerMemberId) {
-      const mid = String(ownerMemberId);
-      console.log(`[XUI] Got owner member_id=${mid} username=${ownerUsername} from user_info`);
-      await saveMemberId(mid);
-      return mid;
+  const listUsers = async (): Promise<any[]> => {
+    const usersPayload = await xuiRequest(config, 'get_users');
+    const data = usersPayload?.data || usersPayload;
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object') {
+      return Object.values(data).filter((item) => item && typeof item === 'object');
     }
-  } catch (e) {
-    console.log(`[XUI] user_info failed: ${e.message}`);
-  }
+    return [];
+  };
 
-  // 2) Try to find existing user in XUI by display_name
+  const findMatchingUser = (users: any[]): any | null => {
+    const byName = users.find((u: any) => {
+      if (!u || typeof u !== 'object') return false;
+      const username = String(u.username || '').trim().toLowerCase();
+      return usernameCandidates.some((candidate) => username === String(candidate).toLowerCase());
+    });
+    return byName || null;
+  };
+
+  // 1) Find existing user first
   try {
-    const users = await xuiRequest(config, 'get_users');
-    // get_users returns { status, data: [...], recordsTotal, recordsFiltered }
-    const rawData = users?.data || users;
-    const userList = Array.isArray(rawData) ? rawData : Object.values(rawData || {});
-    
-    console.log(`[XUI] get_users returned ${userList.length} users, searching for "${displayName}"`);
-    
-    // Only match by exact username
-    const existing = userList.find((u: any) =>
-      u && typeof u === 'object' && typeof u.username === 'string' && u.username.trim() === displayName
-    );
-    
+    const users = await listUsers();
+    console.log(`[XUI] get_users returned ${users.length} users, searching for ${JSON.stringify(usernameCandidates)}`);
+
+    const existing = findMatchingUser(users);
     if (existing) {
-      const memberId = String(existing.member_id || existing.id || '');
+      const memberId = String(existing.member_id || existing.id || '').trim();
       if (memberId) {
-        console.log(`[XUI] Found exact match member_id=${memberId} for ${displayName}`);
         await saveMemberId(memberId);
+        console.log(`[XUI] Found existing member_id=${memberId} for ${displayName}`);
         return memberId;
       }
     }
@@ -284,32 +290,55 @@ async function getOrCreateXuiMemberId(
     console.log(`[XUI] Could not search existing users: ${e.message}`);
   }
 
-  // 3) Try to create a sub-reseller
-  const subPassword = `panel_${Date.now()}`;
-  const createAttempts = [
-    { action: 'create_subreseller', params: { username: displayName, password: subPassword } },
-    { action: 'create_user', params: { username: displayName, password: subPassword, is_reseller: '1' } },
-    { action: 'create_user', params: { username: displayName, password: subPassword, type: 'reseller' } },
+  // 2) Discover admin owner_id (needed to create sub-users)
+  let ownerId = '1';
+  try {
+    const info = await xuiRequest(config, 'user_info');
+    const infoData = info?.data || info?.user_info || info?.data?.user_info || {};
+    if (infoData?.id) ownerId = String(infoData.id);
+    console.log(`[XUI] user_info owner_id=${ownerId}`);
+  } catch (e) {
+    console.log(`[XUI] user_info failed, using owner_id=1: ${e.message}`);
+  }
+
+  // 3) Create reseller user with proper group mapping
+  const xuiUsername = normalizeUsername(displayName || '');
+  const createPassword = `panel_${Date.now()}`;
+
+  const createAttempts: Array<Record<string, string>> = [
+    { username: xuiUsername, password: createPassword, member_group_id: '2', owner_id: ownerId },
+    { username: xuiUsername, password: createPassword, member_group_id: '2' },
+    { username: xuiUsername, password: createPassword, member_group_id: '2', is_reseller: '1' },
+    { username: xuiUsername, password: createPassword, member_group_id: '2', type: 'reseller' },
   ];
 
-  for (const attempt of createAttempts) {
+  for (const params of createAttempts) {
     try {
-      const result = await xuiRequest(config, attempt.action, attempt.params);
-      console.log(`[XUI] ${attempt.action} result: ${JSON.stringify(result).substring(0, 300)}`);
-      
-      const memberId = result?.data?.member_id
-        || result?.data?.id
-        || result?.member_id
-        || result?.id;
+      const result = await xuiRequest(config, 'create_user', params);
+      const status = String(result?.status || '').toUpperCase();
+      const error = String(result?.error || '');
+      console.log(`[XUI] create_user status=${status || 'n/a'} error=${error || 'n/a'} params=${JSON.stringify(params)}`);
 
-      if (memberId) {
-        const mid = String(memberId);
-        await saveMemberId(mid);
-        console.log(`[XUI] Created via ${attempt.action} member_id=${mid} for ${displayName}`);
-        return mid;
+      const directMemberId = String(result?.data?.member_id || result?.data?.id || result?.member_id || result?.id || '').trim();
+      if (directMemberId) {
+        await saveMemberId(directMemberId);
+        console.log(`[XUI] Created reseller member_id=${directMemberId} username=${xuiUsername}`);
+        return directMemberId;
+      }
+
+      // If API says success/exist but no id in response, re-fetch user list to resolve id
+      if (status.includes('SUCCESS') || status.includes('EXIST')) {
+        const users = await listUsers();
+        const created = findMatchingUser(users);
+        const fetchedMemberId = String(created?.member_id || created?.id || '').trim();
+        if (fetchedMemberId) {
+          await saveMemberId(fetchedMemberId);
+          console.log(`[XUI] Resolved created member_id=${fetchedMemberId} after create_user`);
+          return fetchedMemberId;
+        }
       }
     } catch (e) {
-      console.log(`[XUI] ${attempt.action} failed: ${e.message}`);
+      console.log(`[XUI] create_user failed with params=${JSON.stringify(params)}: ${e.message}`);
     }
   }
 
