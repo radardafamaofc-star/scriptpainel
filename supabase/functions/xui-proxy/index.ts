@@ -1036,14 +1036,25 @@ async function provisionUserOnXui(
       ...(packageId ? { package_id: packageId } : {}),
     };
 
-    // Strategy 1: GET fallback only when there is no package_id
-    if (bouquetIds.length > 0 && !packageId) {
-      const getAttempts: Array<{ label: string; params: Record<string, string> }> = [
-        {
-          label: 'GET create_line (QPanel style)',
-          params: baseLineParams,
-        },
-      ];
+    // Strategy 1: GET with bouquets_selected[] in query string (QPanel style)
+    if (bouquetIds.length > 0) {
+      const getAttempts: Array<{ label: string; params: Record<string, string> }> = [];
+
+      if (packageId) {
+        getAttempts.push({
+          label: 'GET create_line custom (package OFF)',
+          params: {
+            ...baseLineParams,
+            package_id: '0',
+            'package_id[]': '0',
+          },
+        });
+      }
+
+      getAttempts.push({
+        label: 'GET create_line (QPanel style)',
+        params: packageLineParams,
+      });
 
       for (const attempt of getAttempts) {
         try {
@@ -1077,23 +1088,35 @@ async function provisionUserOnXui(
     const outputPayload = buildOutputPayload(outputIds);
     const postAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [];
 
-    if (bouquetIds.length > 0 && !packageId) {
+    if (bouquetIds.length > 0) {
       const bouquetPayload: Record<string, string | string[]> = {
         'bouquets_selected[]': bouquetIds,
         ...outputPayload,
       };
 
+      if (packageId) {
+        postAttempts.push({
+          label: 'POST create_line custom (package OFF)',
+          params: {
+            ...baseLineParams,
+            package_id: '0',
+            'package_id[]': ['0'],
+            ...bouquetPayload,
+          },
+        });
+      }
+
       postAttempts.push({
         label: 'POST create_line bouquets + outputs',
         params: {
-          ...baseLineParams,
+          ...packageLineParams,
           ...bouquetPayload,
         },
       });
     }
 
     postAttempts.push({
-      label: packageId ? 'POST create_line com package_id' : 'POST create_line padrão',
+      label: 'POST create_line padrão',
       params: packageLineParams,
     });
 
