@@ -643,6 +643,7 @@ function buildCreateLineUrl(
   config: XuiServerConfig,
   params: Record<string, string>,
   bouquetIds: string[],
+  outputIds: string[] = ['1', '2', '3'],
 ): string {
   const baseUrl = config.url.replace(/\/+$/, '');
   const parts: string[] = [
@@ -659,9 +660,8 @@ function buildCreateLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Also add allowed_outputs_selected for output formats (1=TS, 2=M3U8, 3=RTMP)
-  for (const fmt of ['1', '2', '3']) {
-    parts.push(`allowed_outputs_selected[]=${fmt}`);
+  for (const fmt of outputIds) {
+    parts.push(`allowed_outputs_selected[]=${encodeURIComponent(fmt)}`);
   }
 
   return `${baseUrl}/?${parts.join('&')}`;
