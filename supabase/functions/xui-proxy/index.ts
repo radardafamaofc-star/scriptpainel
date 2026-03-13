@@ -961,10 +961,17 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ success: true, data }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
-      } catch (e) {
+      } catch (e: any) {
         if (xui_action === 'get_server_stats' || xui_action === 'user_info') {
           await serviceClient.from('servers').update({ status: 'offline' }).eq('id', server_id);
         }
+
+        await appendSystemLog(serviceClient, {
+          type: 'error',
+          action: 'XUI provisioning erro',
+          detail: `server_id=${server_id} action=${xui_action} username=${String(xui_params?.username || 'n/a')} error=${String(e.message || e)}`,
+          user_id: user.id,
+        });
 
         return new Response(JSON.stringify({ success: false, error: e.message }), {
           status: 200,
