@@ -210,7 +210,7 @@ export default function Dashboard() {
               password,
               max_connections: "1",
               exp_date: String(expTimestamp),
-              is_trial: "1",
+              is_trial: "0",
               bouquet: "",
             },
           },
