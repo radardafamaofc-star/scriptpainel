@@ -309,33 +309,15 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string | string[]> {
+function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string> {
   const normalized = sanitizeSelectionIds(outputIds);
   const selected = normalized.length > 0 ? normalized : ['1', '2', '3'];
   const asNumbers = selected
     .map((id) => Number(id))
     .filter((n) => Number.isFinite(n));
+  // Per XUI OpenAPI spec: allowed_outputs is a JSON array string e.g. "[1,2,3]"
   const json = JSON.stringify(asNumbers);
-  const csv = selected.join(',');
-
-  const payload: Record<string, string | string[]> = {
-    // some XUI builds accept JSON, others CSV; send both values under the same key
-    allowed_outputs: [json, csv],
-    output_formats: [json, csv],
-    allowed_outputs_selected: [json, csv],
-    'allowed_outputs[]': selected,
-    'output_formats[]': selected,
-    'allowed_outputs_selected[]': selected,
-  };
-
-  // indexed arrays for panels that parse only key[index] notation
-  selected.forEach((fmt, idx) => {
-    payload[`allowed_outputs[${idx}]`] = fmt;
-    payload[`output_formats[${idx}]`] = fmt;
-    payload[`allowed_outputs_selected[${idx}]`] = fmt;
-  });
-
-  return payload;
+  return { allowed_outputs: json };
 }
 
 function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
