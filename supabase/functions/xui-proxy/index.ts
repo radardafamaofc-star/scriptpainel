@@ -679,6 +679,8 @@ function buildEditLineUrl(
   bouquetIds: string[],
   outputIds: string[] = ['1', '2', '3'],
   packageId: string = '',
+  username: string = '',
+  password: string = '',
 ): string {
   const baseUrl = config.url.replace(/\/+$/, '');
   const parts: string[] = [
@@ -687,15 +689,21 @@ function buildEditLineUrl(
     `id=${encodeURIComponent(lineId)}`,
   ];
 
+  // CRITICAL: preserve username/password so XUI doesn't overwrite them
+  if (username) parts.push(`username=${encodeURIComponent(username)}`);
+  if (password) parts.push(`password=${encodeURIComponent(password)}`);
+
   for (const id of bouquetIds) {
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH formats
+  // Send outputs in BOTH param names (allowed_outputs + output_formats)
   const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
   parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
+  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
   for (const fmt of outputIds) {
     parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
+    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
   }
 
   if (packageId) {
