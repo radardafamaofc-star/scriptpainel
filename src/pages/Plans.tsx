@@ -197,13 +197,14 @@ export default function Plans() {
       is_test: Boolean(plan.is_test),
       price: Number(plan.price),
       credits: plan.bouquets || 0,
+      package_id: String((plan as any).package_id || ""),
       duration_value: value,
       duration_unit: unit,
       max_connections: plan.max_connections,
       bouquets: plan.bouquets,
       template: (plan as any).template || "",
     });
-    setSelectedPackageId(String(plan.bouquets || ""));
+    setSelectedPackageId(String((plan as any).package_id || ""));
     setOpen(true);
   };
 
