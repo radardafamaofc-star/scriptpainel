@@ -309,6 +309,7 @@ async function createLinePost(
     password: string;
     expDate?: string;
     memberId?: string;
+    packageId?: string;
     maxConnections?: number;
     bouquetIds: number[];
     allowedOutputIds: number[];
@@ -320,8 +321,14 @@ async function createLinePost(
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', String(Math.max(1, Number(params.maxConnections ?? 1) || 1)));
 
-  // XUI 1.5.12: force member_id=0 to prevent auto-generated username/profile overrides
-  form.set('member_id', '0');
+  const memberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  if (memberId) form.set('member_id', memberId);
+
+  const packageId = String(params.packageId || '').replace(/\D/g, '').trim();
+  if (packageId && packageId !== '0') {
+    form.set('package_id', packageId);
+    form.set('package', packageId);
+  }
 
   const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
@@ -330,10 +337,19 @@ async function createLinePost(
   const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
 
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
+  appendRepeatedField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
   form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
   appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
+  appendRepeatedField(form, 'allowed_outputs', allowedOutputStringIds);
+  appendArrayField(form, 'allowed_outputs_selected', allowedOutputStringIds);
+
+  const outputFormatNames = toOutputFormatNames(allowedOutputStringIds);
+  if (outputFormatNames.length) {
+    appendArrayField(form, 'output_formats', outputFormatNames);
+    appendRepeatedField(form, 'output_formats', outputFormatNames);
+  }
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
