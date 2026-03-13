@@ -928,6 +928,15 @@ async function provisionUserOnXui(
     }
   }
 
+  const confirmedRow = await waitForLinePresence(config, finalLineId, finalUsername || username, 2, 500);
+  if (!confirmedRow) {
+    throw new Error('XUI não confirmou a criação da linha. Operação abortada para evitar inconsistência.');
+  }
+
+  finalLineId = String(confirmedRow.id || confirmedRow.line_id || finalLineId).trim();
+  finalUsername = String(confirmedRow.username || finalUsername || username).trim();
+  active = isLineActive(confirmedRow);
+
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
 
   return {
