@@ -166,6 +166,50 @@ function isXuiSuccess(payload: any): boolean {
   return !getXuiError(payload) && Object.keys(payload).length > 0;
 }
 
+function payloadContainsUsername(payload: any, username: string): boolean {
+  if (payload === null || payload === undefined) return false;
+
+  if (typeof payload === 'string') {
+    return payload.trim() === username;
+  }
+
+  if (Array.isArray(payload)) {
+    return payload.some((item) => payloadContainsUsername(item, username));
+  }
+
+  if (typeof payload === 'object') {
+    if (typeof payload.username === 'string' && payload.username.trim() === username) return true;
+    return Object.values(payload).some((value) => payloadContainsUsername(value, username));
+  }
+
+  return false;
+}
+
+async function verifyProvisionedUser(config: XuiServerConfig, username: string): Promise<boolean> {
+  const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
+    { action: 'get_line', params: { username } },
+    { action: 'get_user', params: { username } },
+    { action: 'get_lines', params: { search: username } },
+    { action: 'get_users', params: { search: username } },
+    { action: 'get_lines' },
+    { action: 'get_users' },
+  ];
+
+  for (const check of checks) {
+    try {
+      const data = await xuiRequest(config, check.action, check.params || {});
+      if (payloadContainsUsername(data, username)) {
+        console.log(`[XUI] Verification success via ${check.action} for ${username}`);
+        return true;
+      }
+    } catch {
+      // ignore verification endpoint mismatch
+    }
+  }
+
+  return false;
+}
+
 async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<string, string> = {}) {
   const username = rawParams.username?.trim();
   const password = rawParams.password?.trim();
