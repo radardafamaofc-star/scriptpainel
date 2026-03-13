@@ -134,6 +134,7 @@ export default function Dashboard() {
           serverId: p.server_id,
           durationHours: normalizeDurationHours(p),
           serverName: p.servers?.name || "—",
+          bouquetId: String(p.bouquets ?? "").trim(),
         }));
 
       return {
