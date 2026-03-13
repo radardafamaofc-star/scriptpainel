@@ -1281,16 +1281,45 @@ async function provisionUserOnXui(
     }
   }
 
-  // STEP 1: create_line with minimal fields only (username/password/max_connections)
-  // Do NOT send package here — many XUI builds ignore it during create_line.
+  // Fetch bouquets and outputs from the package so we can send them explicitly
+  // XUI 1.5.12 does NOT apply package bouquets/outputs automatically
+  let pkgBouquetIds: string[] = [];
+  let pkgOutputIds: string[] = [];
+  if (packageId) {
+    try {
+      const pkgAssignments = await getPackageAssignments(config, packageId);
+      pkgBouquetIds = pkgAssignments.bouquetIds;
+      pkgOutputIds = pkgAssignments.outputIds;
+      console.log(`[XUI] Package ${packageId} resolved: bouquets=${JSON.stringify(pkgBouquetIds)} outputs=${JSON.stringify(pkgOutputIds)}`);
+    } catch (e: any) {
+      console.log(`[XUI] Could not fetch package assignments: ${e.message}`);
+    }
+  }
+
+  // Default outputs if none resolved from package
+  if (pkgOutputIds.length === 0) {
+    pkgOutputIds = ['ts', 'm3u8', 'rtmp'];
+  }
+
+  // STEP 1: create_line with ALL fields explicitly (XUI 1.5.12 ignores package inheritance)
   const createParams: Record<string, string | string[]> = {
     user: username,
     pass: password,
     max_connections: maxConnections,
+    ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
     ...(memberId ? { member_id: memberId } : {}),
   };
 
+  // Add bouquets[] explicitly
+  if (pkgBouquetIds.length > 0) {
+    createParams['bouquets[]'] = pkgBouquetIds;
+  }
+
+  // Add allowed_outputs[] explicitly
+  createParams['allowed_outputs[]'] = pkgOutputIds;
+
   try {
+    console.log("create_line payload:", buildParamEntries(createParams).join('&'));
     const createData = await createLinePostStrict(config, createParams);
     console.log("create_line response:", JSON.stringify(createData).substring(0, 1200));
 
@@ -1313,12 +1342,18 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou sem line_id');
     }
 
-    // STEP 2: apply package via edit_line (this triggers bouquets + outputs + connections inheritance)
+    // STEP 2: apply package_id via edit_line (for metadata tracking, bouquets already sent above)
     if (packageId) {
       const editParams: Record<string, string | string[]> = {
         id: createdLineId,
         package_id: packageId,
       };
+      // Also re-send bouquets and outputs in edit to ensure they stick
+      if (pkgBouquetIds.length > 0) {
+        editParams['bouquets[]'] = pkgBouquetIds;
+      }
+      editParams['allowed_outputs[]'] = pkgOutputIds;
+
       try {
         const editData = await editLinePostStrict(config, editParams);
         console.log("edit_line response:", JSON.stringify(editData).substring(0, 1200));
