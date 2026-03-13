@@ -373,7 +373,7 @@ async function createLinePostStrict(
 
   for (const url of urlsToTry) {
     try {
-      console.log('create_line payload', params);
+      console.log("create_line payload:", body);
       console.log(`[XUI] POST(strict): ${url.replace(config.api_key, '***')}`);
       console.log(`[XUI] POST(strict) body: ${body.substring(0, 1500)}`);
 
