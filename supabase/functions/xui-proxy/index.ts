@@ -410,8 +410,6 @@ async function enforceAllowedOutputsPostCreate(
   const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
   const bouquetCsv = expectedBouquetIds.join(',');
 
-  const outputFormatNames = toOutputFormatNames(targetAllowed);
-
   const buildBaseForm = () => {
     const form = new URLSearchParams();
     form.set('id', lineId);
@@ -431,16 +429,6 @@ async function enforceAllowedOutputsPostCreate(
   const attachCommonArrayFields = (form: URLSearchParams) => {
     if (expectedBouquetIds.length) {
       appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
-      appendRepeatedField(form, 'bouquets_selected', expectedBouquetIds);
-    }
-
-    appendArrayField(form, 'allowed_outputs', targetAllowed);
-    appendRepeatedField(form, 'allowed_outputs', targetAllowed);
-    appendArrayField(form, 'allowed_outputs_selected', targetAllowed);
-
-    if (outputFormatNames.length) {
-      appendArrayField(form, 'output_formats', outputFormatNames);
-      appendRepeatedField(form, 'output_formats', outputFormatNames);
     }
   };
 
