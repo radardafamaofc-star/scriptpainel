@@ -28,58 +28,79 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
   }
 }
 
+type XuiHttpMethod = 'GET' | 'POST';
+
+function encodeParamKey(key: string): string {
+  // XUI expects bracket notation keys literally (e.g. bouquets_selected[])
+  return key.includes('[]') ? key : encodeURIComponent(key);
+}
+
+function buildParamEntries(params: Record<string, string | string[]> = {}): string[] {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    const encodedKey = encodeParamKey(k);
+    if (Array.isArray(v)) {
+      for (const value of v) parts.push(`${encodedKey}=${encodeURIComponent(value)}`);
+    } else {
+      parts.push(`${encodedKey}=${encodeURIComponent(v)}`);
+    }
+  }
+  return parts;
+}
+
 async function xuiRequest(
   config: XuiServerConfig,
   action: string,
-  params: Record<string, string | string[]> = {}
+  params: Record<string, string | string[]> = {},
+  requestMethod: XuiHttpMethod = 'GET',
 ) {
-  let baseUrl = config.url.replace(/\/+$/, '');
+  const baseUrl = config.url.replace(/\/+$/, '');
 
-  // Build query params — manually to avoid URLSearchParams encoding [] as %5B%5D
-  const parts: string[] = [];
-  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
-  parts.push(`action=${encodeURIComponent(action)}`);
-  if (config.api_version) parts.push(`api_version=${encodeURIComponent(config.api_version)}`);
-  for (const [k, v] of Object.entries(params)) {
-    if (Array.isArray(v)) {
-      for (const value of v) parts.push(`${k}=${encodeURIComponent(value)}`);
-    } else {
-      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
-    }
-  }
-  const queryString = parts.join('&');
+  const coreParts: string[] = [];
+  coreParts.push(`api_key=${encodeURIComponent(config.api_key)}`);
+  coreParts.push(`action=${encodeURIComponent(action)}`);
+  if (config.api_version) coreParts.push(`api_version=${encodeURIComponent(config.api_version)}`);
+
+  const paramParts = buildParamEntries(params);
+  const queryStringCore = coreParts.join('&');
+  const queryStringWithParams = [...coreParts, ...paramParts].join('&');
 
   // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
-  // The URL the user provides IS the base (including access code path).
-  // We just append query params directly to it.
+  const useCoreOnlyInUrl = requestMethod === 'POST';
+  const queryForUrl = useCoreOnlyInUrl ? queryStringCore : queryStringWithParams;
+
   const urlsToTry = [
-    // Primary: URL as-is with query params (access code style)
-    `${baseUrl}/?${queryString}`,
-    // Without trailing slash
-    `${baseUrl}?${queryString}`,
-    // Legacy: api.php style
-    `${baseUrl}/api.php?${queryString}`,
-    `${baseUrl}/player_api.php?${queryString}`,
+    `${baseUrl}/?${queryForUrl}`,
+    `${baseUrl}?${queryForUrl}`,
+    `${baseUrl}/api.php?${queryForUrl}`,
+    `${baseUrl}/player_api.php?${queryForUrl}`,
   ];
 
-  // Also try root host with api.php
   try {
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/api.php?${queryString}`);
-      urlsToTry.push(`${root}/player_api.php?${queryString}`);
+      urlsToTry.push(`${root}/api.php?${queryForUrl}`);
+      urlsToTry.push(`${root}/player_api.php?${queryForUrl}`);
     }
   } catch {}
 
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
+  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action} (${requestMethod})`);
+
+  const requestInit: RequestInit = requestMethod === 'POST'
+    ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: paramParts.join('&'),
+      }
+    : {};
 
   let lastError: Error | null = null;
 
   for (const url of urlsToTry) {
     try {
-      console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
+      console.log(`[XUI] ${requestMethod}: ${url.replace(config.api_key, '***')}`);
+      const response = await tryFetch(url, requestInit);
 
       if (response.status === 404) {
         console.log(`[XUI] 404`);
@@ -96,7 +117,6 @@ async function xuiRequest(
         continue;
       }
 
-      // Skip HTML pages (login pages, etc.)
       if (text.includes('<html') || text.includes('<!DOCTYPE')) {
         console.log(`[XUI] HTML page, skipping`);
         continue;
@@ -106,7 +126,6 @@ async function xuiRequest(
         const json = JSON.parse(text);
         console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
         if (action === 'get_packages') {
-          // Log full first entry to understand structure
           const entries = Object.entries(json);
           if (entries.length > 0) {
             const [firstKey, firstVal] = entries[0];
@@ -118,8 +137,8 @@ async function xuiRequest(
         console.log(`[XUI] Non-JSON: ${text.substring(0, 100)}`);
         continue;
       }
-    } catch (e) {
-      if (e.message.includes('timeout') || e.message.includes('expirou')) throw e;
+    } catch (e: any) {
+      if (e.message?.includes('timeout') || e.message?.includes('expirou')) throw e;
       lastError = e;
       console.log(`[XUI] Error: ${e.message}`);
     }
