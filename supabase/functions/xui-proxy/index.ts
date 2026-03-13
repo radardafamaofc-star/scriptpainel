@@ -397,6 +397,100 @@ async function createLinePostStrict(
   throw new Error(lastError);
 }
 
+async function editLinePostStrict(
+  config: XuiServerConfig,
+  params: Record<string, string | string[]>,
+): Promise<any> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=edit_line`;
+
+  const bodyParts: string[] = [];
+  appendRawParams(bodyParts, params);
+  const body = bodyParts.join('&');
+
+  const urlsToTry = [`${baseUrl}/?${actionQuery}`, `${baseUrl}?${actionQuery}`];
+
+  let lastError = 'edit_line POST falhou';
+
+  for (const url of urlsToTry) {
+    try {
+      console.log(`[XUI] POST(strict edit): ${url.replace(config.api_key, '***')}`);
+      console.log(`[XUI] POST(strict edit) body: ${body.substring(0, 1500)}`);
+
+      const response = await tryFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      const text = await response.text();
+      if (!text || text.includes('<html')) continue;
+
+      const json = JSON.parse(text);
+      console.log(`[XUI] edit_line POST(strict) response: ${JSON.stringify(json).substring(0, 1000)}`);
+      return json;
+    } catch (e: any) {
+      lastError = e.message;
+      console.log(`[XUI] edit_line POST(strict) failed: ${e.message}`);
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+async function ensureOutputFormatsApplied(
+  config: XuiServerConfig,
+  lineId: string,
+  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  username: string = '',
+  password: string = '',
+): Promise<boolean> {
+  if (!lineId) return false;
+
+  const expected = normalizeOutputFormats(outputFormats);
+  const attempts: Array<{ label: string; params: Record<string, string | string[]> }> = [
+    {
+      label: 'POST edit_line output_formats[] only',
+      params: { id: lineId, 'output_formats[]': expected },
+    },
+    {
+      label: 'POST edit_line output_formats[] + identity',
+      params: {
+        id: lineId,
+        ...(username ? { username } : {}),
+        ...(password ? { password } : {}),
+        'output_formats[]': expected,
+      },
+    },
+    {
+      label: 'POST edit_line output_formats[] + allowed_outputs[]',
+      params: { id: lineId, 'output_formats[]': expected, 'allowed_outputs[]': expected },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`[XUI] Output apply attempt: ${attempt.label} line_id=${lineId}`);
+      await editLinePostStrict(config, attempt.params);
+
+      const lineData = await xuiRequest(config, 'get_line', { id: lineId });
+      const actual = normalizeOutputFormats(extractLineAssignments(lineData).outputIds);
+      const ok = expected.every((fmt) => actual.includes(fmt));
+
+      if (ok) {
+        console.log(`[XUI] ✅ Outputs applied via ${attempt.label}: ${JSON.stringify(actual)}`);
+        return true;
+      }
+
+      console.log(`[XUI] Output still mismatch after ${attempt.label}. expected=${JSON.stringify(expected)} actual=${JSON.stringify(actual)}`);
+    } catch (e: any) {
+      console.log(`[XUI] Output apply failed (${attempt.label}): ${e.message}`);
+    }
+  }
+
+  return false;
+}
+
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
   const packages: string[] = [];
