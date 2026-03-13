@@ -212,6 +212,7 @@ export default function Dashboard() {
               max_connections: "1",
               exp_date: String(expTimestamp),
               package_id: plan.packageId && plan.packageId !== "0" ? plan.packageId : "",
+              plan_name: plan.planName || "",
             },
           },
         });
