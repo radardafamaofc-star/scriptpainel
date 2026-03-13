@@ -1305,28 +1305,50 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou status inválido');
     }
 
-    // Line ID from create response
-    const lineId = String(createData?.data?.id || '').trim();
-
-    // Optional confirmation after package apply.
-    try {
-      const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
-      const finalRows = extractLineRows(finalLine);
-      const finalUsername = String(finalRows[0]?.username || '').trim();
-      const finalPackageId = String(finalRows[0]?.package_id || '').trim();
-      const assignments = extractLineAssignments(finalRows[0] || finalLine);
-
-      console.log(`[XUI] Final state: line_id=${lineId} username=${finalUsername} package_id=${finalPackageId} bouquets=${JSON.stringify(assignments.bouquetIds)} outputs=${JSON.stringify(assignments.outputIds)}`);
-
-      if (finalUsername && finalUsername !== username) {
-        throw new Error(`XUI alterou o username (esperado: ${username}, recebido: ${finalUsername})`);
-      }
-    } catch (validationErr: any) {
-      if (validationErr.message?.includes('alterou o username')) throw validationErr;
-      console.log(`[XUI] Validation get_line warning: ${validationErr.message}`);
+    // Step 2/3: validate by line id and read authoritative username directly from XUI
+    const createdLineId = String(createData?.data?.id || '').trim();
+    if (!createdLineId) {
+      throw new Error('create_line retornou sem line_id');
     }
 
-    return { action: 'create_line' as const, data: createData };
+    const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
+    const finalRows = extractLineRows(finalLine);
+    const finalRow = finalRows.find((row: any) => String(row?.id || row?.line_id || '').trim() === createdLineId) || finalRows[0] || {};
+
+    const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
+    const finalUsername = String(finalRow?.username || createData?.data?.username || '').trim();
+    const finalPackageId = String(finalRow?.package_id || '').trim();
+    const assignments = extractLineAssignments(finalRow || finalLine);
+    const active = isLineActive(finalRow);
+
+    console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} package_id=${finalPackageId} active=${active} bouquets=${JSON.stringify(assignments.bouquetIds)} outputs=${JSON.stringify(assignments.outputIds)}`);
+
+    if (!finalLineId) {
+      throw new Error('Não foi possível confirmar line_id após create_line');
+    }
+
+    if (!finalUsername) {
+      throw new Error('Não foi possível confirmar username da linha criada no XUI');
+    }
+
+    if (!active) {
+      throw new Error(`Linha criada no XUI, mas não está ativa (line_id=${finalLineId})`);
+    }
+
+    return {
+      action: 'create_line' as const,
+      data: {
+        ...createData,
+        data: {
+          ...(typeof createData?.data === 'object' && createData?.data ? createData.data : {}),
+          id: finalLineId,
+          username: finalUsername,
+        },
+      },
+      line_id: finalLineId,
+      username: finalUsername,
+      account_active: active,
+    };
   } catch (e: any) {
     console.log(`[XUI] Provisioning flow error: ${e.message}`);
     throw new Error(e.message);
