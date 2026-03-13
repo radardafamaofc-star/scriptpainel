@@ -278,9 +278,6 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const isAdmin = roleData.role === 'admin';
-
     const body = await req.json();
     const { action, server_id, server_config, xui_action, xui_params } = body;
 
