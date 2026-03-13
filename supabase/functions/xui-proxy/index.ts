@@ -125,6 +125,113 @@ async function xuiRequest(
   );
 }
 
+function getXuiError(payload: any): string | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const error = payload.error;
+  if (error !== undefined && error !== null) {
+    const message = String(error).trim();
+    if (message && message.toLowerCase() !== 'none' && message.toLowerCase() !== 'null') return message;
+  }
+
+  const status = payload.status;
+  if (typeof status === 'string') {
+    const normalized = status.toLowerCase();
+    if (normalized.includes('error') || normalized.includes('fail')) return status;
+  }
+
+  return null;
+}
+
+function isXuiSuccess(payload: any): boolean {
+  if (!payload || typeof payload !== 'object') return false;
+
+  if (payload.success === true || payload.ok === true || payload.result === true) return true;
+
+  const status = payload.status;
+  if (status === true || status === 1) return true;
+  if (typeof status === 'string') {
+    const normalized = status.toLowerCase();
+    if (normalized.includes('success') || normalized === 'ok') return true;
+    if (normalized.includes('error') || normalized.includes('fail')) return false;
+  }
+
+  // Responses like get_packages may not have status/error and return object maps.
+  return !getXuiError(payload) && Object.keys(payload).length > 0;
+}
+
+async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<string, string> = {}) {
+  const username = rawParams.username?.trim();
+  const password = rawParams.password?.trim();
+  if (!username || !password) {
+    throw new Error('username e password são obrigatórios para provisionar no XUI');
+  }
+
+  const maxConnections = rawParams.max_connections || '1';
+  const expDate = rawParams.exp_date || '';
+  const isTrial = rawParams.is_trial || '0';
+
+  const bouquetRaw = rawParams.bouquet || rawParams.bouquets || '';
+  const bouquetIds = bouquetRaw
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const bouquetsSelected = bouquetIds.length ? JSON.stringify(bouquetIds) : '[]';
+
+  const actionAttempts = [
+    {
+      action: 'user_create',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expDate,
+        is_trial: isTrial,
+        bouquet: bouquetRaw,
+      },
+    },
+    {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expDate,
+        is_trial: isTrial,
+        bouquets_selected: bouquetsSelected,
+      },
+    },
+    {
+      action: 'create_user',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expDate,
+        is_trial: isTrial,
+        bouquet: bouquetRaw,
+      },
+    },
+  ];
+
+  let lastError = 'A API do XUI rejeitou a criação do usuário';
+
+  for (const attempt of actionAttempts) {
+    const data = await xuiRequest(config, attempt.action, attempt.params);
+    const error = getXuiError(data);
+
+    if (!error && isXuiSuccess(data)) {
+      console.log(`[XUI] Provision success with action: ${attempt.action}`);
+      return { action: attempt.action, data };
+    }
+
+    lastError = error || `Ação ${attempt.action} retornou status inválido`;
+    console.log(`[XUI] Provision failed (${attempt.action}): ${lastError}`);
+  }
+
+  throw new Error(lastError);
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
