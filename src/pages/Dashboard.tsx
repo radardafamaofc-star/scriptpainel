@@ -455,7 +455,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours, bouquetId: testPlan.bouquetId });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours, packageId: testPlan.packageId });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >
