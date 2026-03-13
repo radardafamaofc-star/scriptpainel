@@ -691,8 +691,11 @@ function buildEditLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
+  // Send outputs in BOTH formats
+  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
+  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
   for (const fmt of outputIds) {
-    parts.push(`allowed_outputs_selected[]=${encodeURIComponent(fmt)}`);
+    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
   }
 
   if (packageId) {
