@@ -219,7 +219,6 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
 
   const maxConnections = rawParams.max_connections || '1';
   const expDate = rawParams.exp_date || '';
-  const isTrial = rawParams.is_trial || '0';
 
   const expUnix = Number(expDate);
   const nowUnix = Math.floor(Date.now() / 1000);
@@ -227,7 +226,6 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
     ? Math.max(1, Math.ceil((expUnix - nowUnix) / 3600))
     : 24;
   const remainingDays = Math.max(1, Math.ceil(remainingHours / 24));
-  const expVariants = Array.from(new Set([expDate, `${remainingHours}hours`, `${remainingDays}days`].filter(Boolean)));
 
   const bouquetRaw = rawParams.bouquet || rawParams.bouquets || '';
   const bouquetIds = bouquetRaw
@@ -244,10 +242,10 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
 
       const getPackageId = (pkg: any): string => String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
       const isTrialPackage = (pkg: any): boolean => {
-        const flags = [pkg.is_trial, pkg.trial, pkg.trial_package, pkg.is_trial_package];
+        const flags = [pkg.is_trial, pkg.trial, pkg.trial_package];
         return flags.some((value) => {
-          const normalized = String(value ?? '').toLowerCase();
-          return value === true || value === 1 || normalized === '1' || normalized === 'true' || normalized === 'yes';
+          const n = String(value ?? '').toLowerCase();
+          return value === true || value === 1 || n === '1' || n === 'true';
         });
       };
 
@@ -258,88 +256,74 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
 
       if (pickedId) {
         resolvedBouquetIds = [pickedId];
-        console.log(`[XUI] Auto-selected package for provision: ${pickedId} (trial=${isTrialPackage(picked) ? '1' : '0'})`);
+        console.log(`[XUI] Auto-selected package: ${pickedId} (trial=${isTrialPackage(picked) ? '1' : '0'})`);
       }
     } catch (e) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
     }
   }
 
-  const primaryBouquet = resolvedBouquetIds[0] || bouquetRaw;
   const bouquetsSelected = resolvedBouquetIds.length ? JSON.stringify(resolvedBouquetIds) : '[]';
 
-  const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [];
-
-  for (const expValue of expVariants) {
-    actionAttempts.push(
-      {
-        action: 'user_create',
-        params: {
-          username,
-          password,
-          max_connections: maxConnections,
-          exp_date: expValue,
-          is_trial: isTrial,
-          bouquet: primaryBouquet,
-        },
+  // Based on real XUI One docs: action=create_line with bouquets_selected and exp_date
+  // DO NOT send is_trial — it makes the line show as "Trial" in XUI
+  const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [
+    // Primary: create_line with duration string (e.g. "6hours") — this is what works
+    {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: `${remainingHours}hours`,
+        bouquets_selected: bouquetsSelected,
       },
-      {
-        action: 'create_line',
-        params: {
-          username,
-          password,
-          max_connections: maxConnections,
-          exp_date: expValue,
-          is_trial: isTrial,
-          bouquets_selected: bouquetsSelected,
-        },
+    },
+    // Fallback: create_line with bouquets_selected[] array syntax
+    {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: `${remainingHours}hours`,
+        'bouquets_selected[]': resolvedBouquetIds,
       },
-      {
-        action: 'create_line',
-        params: {
-          username,
-          password,
-          max_connections: maxConnections,
-          exp_date: expValue,
-          is_trial: isTrial,
-          'bouquets_selected[]': resolvedBouquetIds,
-        },
+    },
+    // Fallback: create_line with days
+    {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: `${remainingDays}days`,
+        bouquets_selected: bouquetsSelected,
       },
-      {
-        action: 'create_line',
-        params: {
-          username,
-          password,
-          max_connections: maxConnections,
-          exp_date: expValue,
-          is_trial: isTrial,
-          package: primaryBouquet,
-        },
+    },
+    // Fallback: create_line with unix timestamp
+    {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expDate,
+        bouquets_selected: bouquetsSelected,
       },
-      {
-        action: 'create_line',
-        params: {
-          username,
-          password,
-          max_connections: maxConnections,
-          exp_date: expValue,
-          is_trial: isTrial,
-          package_id: primaryBouquet,
-        },
+    },
+    // Last resort: create_user
+    {
+      action: 'create_user',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: `${remainingHours}hours`,
+        bouquets_selected: bouquetsSelected,
       },
-      {
-        action: 'create_user',
-        params: {
-          username,
-          password,
-          max_connections: maxConnections,
-          exp_date: expValue,
-          is_trial: isTrial,
-          bouquet: primaryBouquet,
-        },
-      }
-    );
-  }
+    },
+  ];
 
   let lastError = 'A API do XUI rejeitou a criação do usuário';
 
