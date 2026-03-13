@@ -31,7 +31,7 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
 async function xuiRequest(
   config: XuiServerConfig,
   action: string,
-  params: Record<string, string> = {}
+  params: Record<string, string | string[]> = {}
 ) {
   let baseUrl = config.url.replace(/\/+$/, '');
 
@@ -40,7 +40,13 @@ async function xuiRequest(
   qs.set('api_key', config.api_key);
   qs.set('action', action);
   if (config.api_version) qs.set('api_version', config.api_version);
-  for (const [k, v] of Object.entries(params)) qs.set(k, v);
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) {
+      for (const value of v) qs.append(k, value);
+    } else {
+      qs.set(k, v);
+    }
+  }
   const queryString = qs.toString();
 
   // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
