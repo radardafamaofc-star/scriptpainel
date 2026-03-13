@@ -776,25 +776,19 @@ async function provisionUserOnXui(
     }
   }
 
-  const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
+  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
+  const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
+
+  const bouquetIds = explicitBouquets.length
+    ? explicitBouquets
+    : requestedPackageId
+      ? [requestedPackageId]
+      : DEFAULT_BOUQUET_IDS;
+
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
-
   const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
-
-  let effectivePackageId = await resolvePackageIdFromBouquets(config, {
-    requestedPackageId,
-    planName: String(rawParams.plan_name || ''),
-    bouquetIds,
-  });
-
-  if (!effectivePackageId && bouquetIds.length) {
-    effectivePackageId = String(bouquetIds[0]).replace(/\D/g, '').trim();
-    if (effectivePackageId) {
-      console.log(`[XUI] Fallback package_id from first bouquet: ${effectivePackageId}`);
-    }
-  }
+  const effectivePackageId = requestedPackageId;
 
   console.log(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
