@@ -409,8 +409,9 @@ async function createLinePost(
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
-  // XUI 1.5.x é sensível a formatos mistos; manter somente JSON aqui
-  form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
+  const allowedOutputsJson = JSON.stringify(allowedOutputIds);
+  form.set('allowed_outputs', allowedOutputsJson);
+  form.set('output_formats', allowedOutputsJson);
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
@@ -515,6 +516,7 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         if (expectedBouquetIds.length) form.set('bouquet', bouquetJson);
         form.set('allowed_outputs', allowedJson);
+        form.set('output_formats', allowedJson);
         attachCommonArrayFields(form);
       },
     },
@@ -523,6 +525,7 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         if (expectedBouquetIds.length) form.set('bouquet', bouquetCsv);
         form.set('allowed_outputs', allowedCsv);
+        form.set('output_formats', allowedCsv);
         attachCommonArrayFields(form);
       },
     },
@@ -531,6 +534,7 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         if (expectedBouquetIds.length) form.set('bouquet', bouquetQuotedJson);
         form.set('allowed_outputs', allowedQuotedJson);
+        form.set('output_formats', allowedQuotedJson);
         attachCommonArrayFields(form);
       },
     },
@@ -541,7 +545,7 @@ async function enforceAllowedOutputsPostCreate(
     if (!refreshed) return null;
 
     const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
-    const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed);
+    const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs ?? refreshed?.output_formats, targetAllowed);
     const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
 
     console.log(
@@ -594,12 +598,15 @@ async function enforceAllowedOutputsPostCreate(
       if (attempt.label === 'json_primary') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
         getParams.allowed_outputs = allowedJson;
+        getParams.output_formats = allowedJson;
       } else if (attempt.label === 'csv_primary') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
         getParams.allowed_outputs = allowedCsv;
+        getParams.output_formats = allowedCsv;
       } else {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetQuotedJson;
         getParams.allowed_outputs = allowedQuotedJson;
+        getParams.output_formats = allowedQuotedJson;
       }
 
       if (expectedBouquetIds.length) {
@@ -624,6 +631,54 @@ async function enforceAllowedOutputsPostCreate(
   }
 
   return getLineRowById(config, lineId);
+}
+
+async function enforceUsernamePostCreate(
+  config: XuiServerConfig,
+  params: {
+    lineId: string;
+    username: string;
+    password?: string;
+    expDate?: string;
+    maxConnections?: string;
+    memberId?: string;
+  },
+): Promise<string> {
+  const lineId = String(params.lineId || '').trim();
+  const username = String(params.username || '').trim();
+  if (!lineId || !username) return '';
+
+  const form = new URLSearchParams();
+  form.set('id', lineId);
+  form.set('line_id', lineId);
+  form.set('username', username);
+
+  const password = String(params.password || '').trim();
+  if (password) form.set('password', password);
+
+  const expDate = String(params.expDate || '').trim();
+  if (expDate) form.set('exp_date', expDate);
+
+  const maxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim();
+  if (maxConnections) form.set('max_connections', maxConnections);
+
+  const memberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  if (memberId) form.set('member_id', memberId);
+
+  try {
+    await postXuiForm(config, 'edit_line', form, 'edit_line(username_fix)');
+  } catch (e: any) {
+    console.log(`[XUI] Username fix POST failed: ${e.message}`);
+  }
+
+  try {
+    await xuiRequestGetOnly(config, 'edit_line', Object.fromEntries(form.entries()));
+  } catch (e: any) {
+    console.log(`[XUI] Username fix GET failed: ${e.message}`);
+  }
+
+  const refreshed = await getLineRowById(config, lineId);
+  return String(refreshed?.username || '').trim();
 }
 
 async function getOrCreateXuiMemberId(
@@ -721,25 +776,19 @@ async function provisionUserOnXui(
     }
   }
 
-  const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
+  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
+  const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
+
+  const bouquetIds = explicitBouquets.length
+    ? explicitBouquets
+    : requestedPackageId
+      ? [requestedPackageId]
+      : DEFAULT_BOUQUET_IDS;
+
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
-
   const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
-
-  let effectivePackageId = await resolvePackageIdFromBouquets(config, {
-    requestedPackageId,
-    planName: String(rawParams.plan_name || ''),
-    bouquetIds,
-  });
-
-  if (!effectivePackageId && bouquetIds.length) {
-    effectivePackageId = String(bouquetIds[0]).replace(/\D/g, '').trim();
-    if (effectivePackageId) {
-      console.log(`[XUI] Fallback package_id from first bouquet: ${effectivePackageId}`);
-    }
-  }
+  const effectivePackageId = requestedPackageId;
 
   console.log(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
@@ -782,7 +831,7 @@ async function provisionUserOnXui(
 
     const currentPackageId = String(finalRow?.package_id || '').replace(/\D/g, '').trim();
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
-    const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
+    const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs ?? finalRow?.output_formats, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
     const needsPackageSync = !!effectivePackageId && currentPackageId !== effectivePackageId;
 
@@ -814,7 +863,21 @@ async function provisionUserOnXui(
   }
 
   if (finalUsername && finalUsername !== username) {
-    console.log(`[XUI] WARNING: XUI changed username ${username} -> ${finalUsername}`);
+    const fixedUsername = await enforceUsernamePostCreate(config, {
+      lineId: finalLineId,
+      username,
+      password,
+      expDate: expDateFormatted,
+      maxConnections,
+      memberId: effectiveMemberId,
+    });
+
+    if (fixedUsername === username) {
+      finalUsername = username;
+      console.log(`[XUI] Username restored to requested value: ${username}`);
+    } else {
+      console.log(`[XUI] WARNING: XUI changed username ${username} -> ${finalUsername}`);
+    }
   }
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
