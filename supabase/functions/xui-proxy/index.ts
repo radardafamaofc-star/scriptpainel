@@ -112,6 +112,15 @@ function parseIdList(value: unknown): string[] {
   return raw.split(',').map(v => v.replace(/[\[\]\s]/g, '').trim()).filter(Boolean);
 }
 
+function toNumericIdList(value: unknown, fallback: string[]): string[] {
+  const ids = parseIdList(value)
+    .map((v) => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  if (!ids.length) return fallback;
+  return Array.from(new Set(ids));
+}
+
 function formatLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
