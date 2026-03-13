@@ -211,7 +211,7 @@ export default function Dashboard() {
               password,
               max_connections: "1",
               exp_date: String(expTimestamp),
-              bouquet: plan.bouquetId && plan.bouquetId !== "0" ? plan.bouquetId : "",
+              package_id: plan.packageId && plan.packageId !== "0" ? plan.packageId : "",
             },
           },
         });
