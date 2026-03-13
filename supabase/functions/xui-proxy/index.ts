@@ -121,6 +121,24 @@ function toNumericIdList(value: unknown, fallback: string[]): string[] {
   return Array.from(new Set(ids));
 }
 
+function normalizeNumericIds(value: unknown): string[] {
+  const ids = parseIdList(value)
+    .map((v) => v.replace(/\D/g, '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(ids)).sort((a, b) => Number(a) - Number(b));
+}
+
+function hasSameNumericIds(current: unknown, expected: string[]): boolean {
+  const currentNorm = normalizeNumericIds(current);
+  const expectedNorm = Array.from(
+    new Set(expected.map((v) => String(v).replace(/\D/g, '').trim()).filter(Boolean))
+  ).sort((a, b) => Number(a) - Number(b));
+
+  if (currentNorm.length !== expectedNorm.length) return false;
+  return currentNorm.every((id, idx) => id === expectedNorm[idx]);
+}
+
 function formatLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
