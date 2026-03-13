@@ -46,25 +46,45 @@ function buildParamEntries(params: Record<string, string | string[]> = {}): stri
   return parts;
 }
 
+function isWriteAction(action: string): boolean {
+  const normalized = String(action || '').toLowerCase();
+  return normalized.startsWith('create_')
+    || normalized.startsWith('edit_')
+    || normalized.startsWith('delete_')
+    || normalized.startsWith('enable_')
+    || normalized.startsWith('disable_')
+    || normalized.startsWith('ban_')
+    || normalized.startsWith('unban_')
+    || normalized.startsWith('convert_')
+    || normalized.startsWith('install_')
+    || normalized.startsWith('start_')
+    || normalized.startsWith('stop_')
+    || normalized.startsWith('reload_')
+    || normalized.startsWith('clear_')
+    || normalized.startsWith('flush_')
+    || normalized.startsWith('add_')
+    || normalized.startsWith('kill_')
+    || normalized === 'mysql_query';
+}
+
 async function xuiRequest(
   config: XuiServerConfig,
   action: string,
   params: Record<string, string | string[]> = {},
 ) {
   const baseUrl = config.url.replace(/\/+$/, '');
-
-  // Build full query string — everything goes in the URL (GET), as per XUI One docs
-  const parts: string[] = [];
-  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
-  parts.push(`action=${encodeURIComponent(action)}`);
-  // Note: api_version is NOT a standard XUI One param — skip it to avoid confusion
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=${encodeURIComponent(action)}`;
   const paramParts = buildParamEntries(params);
-  parts.push(...paramParts);
-  const queryString = parts.join('&');
+  const queryString = [actionQuery, ...paramParts].join('&');
+  const postBody = paramParts.join('&');
 
-  const urlsToTry = [
+  const getUrlsToTry = [
     `${baseUrl}/?${queryString}`,
     `${baseUrl}?${queryString}`,
+  ];
+  const postUrlsToTry = [
+    `${baseUrl}/?${actionQuery}`,
+    `${baseUrl}?${actionQuery}`,
   ];
 
   // Also try root host with api.php for legacy compat
@@ -72,18 +92,59 @@ async function xuiRequest(
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/api.php?${queryString}`);
+      getUrlsToTry.push(`${root}/api.php?${queryString}`);
+      postUrlsToTry.push(`${root}/api.php?${actionQuery}`);
     }
   } catch {}
 
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
+  const writeAction = isWriteAction(action);
+  const attempts: Array<{ method: 'GET' | 'POST'; url: string; init?: RequestInit }> = [];
+
+  if (writeAction) {
+    for (const url of postUrlsToTry) {
+      attempts.push({
+        method: 'POST',
+        url,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: postBody,
+        },
+      });
+    }
+  }
+
+  for (const url of getUrlsToTry) {
+    attempts.push({ method: 'GET', url });
+  }
+
+  // For read actions, keep optional POST fallback as last resort
+  if (!writeAction && postBody) {
+    for (const url of postUrlsToTry) {
+      attempts.push({
+        method: 'POST',
+        url,
+        init: {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: postBody,
+        },
+      });
+    }
+  }
+
+  console.log(`[XUI] Trying ${attempts.length} request patterns for action: ${action}`);
 
   let lastError: Error | null = null;
 
-  for (const url of urlsToTry) {
+  for (const attempt of attempts) {
     try {
-      console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
+      console.log(`[XUI] ${attempt.method}: ${attempt.url.replace(config.api_key, '***')}`);
+      if (attempt.method === 'POST' && attempt.init?.body) {
+        console.log(`[XUI] POST body: ${String(attempt.init.body).substring(0, 1000)}`);
+      }
+
+      const response = await tryFetch(attempt.url, attempt.init || {});
 
       if (response.status === 404) { console.log(`[XUI] 404`); continue; }
       if (response.status === 403) { console.log(`[XUI] 403`); continue; }
@@ -101,8 +162,8 @@ async function xuiRequest(
             console.log(`[XUI] Package[0]: ${JSON.stringify(entries[0][1]).substring(0, 500)}`);
           }
         }
-        if (action === 'create_line') {
-          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
+        if (action === 'create_line' || action === 'edit_line') {
+          console.log(`[XUI] ${action} response: ${JSON.stringify(json).substring(0, 800)}`);
         }
         return json;
       } catch {
@@ -197,8 +258,22 @@ function parseIdList(value: unknown): string[] {
     .filter(Boolean);
 }
 
-function extractAssignedIds(payload: any): string[] {
-  const collected: string[] = [];
+type XuiLineAssignments = {
+  bouquetIds: string[];
+  packageIds: string[];
+  outputIds: string[];
+};
+
+type ExpectedLineAssignments = {
+  bouquetIds?: string[];
+  packageId?: string;
+  outputIds?: string[];
+};
+
+function extractLineAssignments(payload: any): XuiLineAssignments {
+  const bouquets: string[] = [];
+  const packages: string[] = [];
+  const outputs: string[] = [];
 
   const visit = (node: any) => {
     if (!node || typeof node !== 'object') return;
@@ -208,22 +283,48 @@ function extractAssignedIds(payload: any): string[] {
       return;
     }
 
-    const candidates = [node.bouquet, node.bouquets, node.bouquets_selected, node.package_id];
-    for (const candidate of candidates) collected.push(...parseIdList(candidate));
+    bouquets.push(...parseIdList(node.bouquet));
+    bouquets.push(...parseIdList(node.bouquets));
+    bouquets.push(...parseIdList(node.bouquets_selected));
+
+    packages.push(...parseIdList(node.package_id));
+
+    outputs.push(...parseIdList(node.allowed_outputs));
+    outputs.push(...parseIdList(node.output_formats));
+    outputs.push(...parseIdList(node.allowed_outputs_selected));
 
     Object.values(node).forEach(visit);
   };
 
   visit(payload);
-  return Array.from(new Set(collected));
+
+  return {
+    bouquetIds: Array.from(new Set(bouquets)),
+    packageIds: Array.from(new Set(packages)),
+    outputIds: Array.from(new Set(outputs)),
+  };
+}
+
+function matchesExpectedAssignments(actual: XuiLineAssignments, expected: ExpectedLineAssignments): boolean {
+  const expectedBouquets = Array.from(new Set((expected.bouquetIds || []).map((id) => String(id).trim()).filter(Boolean)));
+  const expectedPackage = String(expected.packageId || '').trim();
+  const expectedOutputs = Array.from(new Set((expected.outputIds || []).map((id) => String(id).trim()).filter(Boolean)));
+
+  const bouquetOk = expectedBouquets.length === 0 || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
+  const packageOk = !expectedPackage || actual.packageIds.includes(expectedPackage);
+  const outputsOk = expectedOutputs.length === 0 || expectedOutputs.every((id) => actual.outputIds.includes(id));
+
+  return bouquetOk && packageOk && outputsOk;
 }
 
 async function verifyProvisionedUser(
   config: XuiServerConfig,
   username: string,
-  expectedAssignments: string[] = [],
+  expected: ExpectedLineAssignments = {},
 ): Promise<boolean> {
-  const expected = Array.from(new Set(expectedAssignments.map((id) => String(id).trim()).filter(Boolean)));
+  const expectedBouquets = Array.from(new Set((expected.bouquetIds || []).map((id) => String(id).trim()).filter(Boolean)));
+  const expectedPackage = String(expected.packageId || '').trim();
+  const expectedOutputs = Array.from(new Set((expected.outputIds || []).map((id) => String(id).trim()).filter(Boolean)));
 
   const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
     { action: 'get_line', params: { username } },
@@ -236,19 +337,13 @@ async function verifyProvisionedUser(
       const data = await xuiRequest(config, check.action, check.params || {});
       if (!payloadContainsUsername(data, username)) continue;
 
-      const assignedIds = extractAssignedIds(data);
-      if (!expected.length) {
-        console.log(`[XUI] Verification success via ${check.action} for ${username}`);
+      const actual = extractLineAssignments(data);
+      if (matchesExpectedAssignments(actual, expected)) {
+        console.log(`[XUI] Verification success via ${check.action} for ${username} bouquets=${JSON.stringify(actual.bouquetIds)} outputs=${JSON.stringify(actual.outputIds)} package=${JSON.stringify(actual.packageIds)}`);
         return true;
       }
 
-      const overlap = expected.some((id) => assignedIds.includes(id));
-      if (assignedIds.length > 0 && overlap) {
-        console.log(`[XUI] Verification success via ${check.action} for ${username} with assignments=${JSON.stringify(assignedIds)}`);
-        return true;
-      }
-
-      console.log(`[XUI] Verification found user but assignments mismatch via ${check.action}. expected=${JSON.stringify(expected)} got=${JSON.stringify(assignedIds)}`);
+      console.log(`[XUI] Verification mismatch via ${check.action} for ${username}. expectedBouquets=${JSON.stringify(expectedBouquets)} gotBouquets=${JSON.stringify(actual.bouquetIds)} expectedOutputs=${JSON.stringify(expectedOutputs)} gotOutputs=${JSON.stringify(actual.outputIds)} expectedPackage=${JSON.stringify(expectedPackage)} gotPackage=${JSON.stringify(actual.packageIds)}`);
     } catch {
       // ignore verification endpoint mismatch
     }
@@ -423,6 +518,9 @@ async function provisionUserOnXui(
   let resolvedPackageId = bouquetIds.length === 1 ? bouquetIds[0] : '';
   let resolvedBouquetIds = [...bouquetIds];
 
+  const outputRaw = rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || '';
+  let resolvedOutputIds = parseIdList(outputRaw);
+
   if (!resolvedBouquetIds.length) {
     try {
       const packages = await xuiRequest(config, 'get_packages');
@@ -452,11 +550,20 @@ async function provisionUserOnXui(
           resolvedBouquetIds = [pickedId];
           console.log(`[XUI] Auto-selected package: ${pickedId} (no bouquets field, using package id)`);
         }
+
+        const packageOutputs = parseIdList(picked.output_formats);
+        if (packageOutputs.length > 0) {
+          resolvedOutputIds = packageOutputs;
+          console.log(`[XUI] Auto-selected output formats from package: ${JSON.stringify(packageOutputs)}`);
+        }
       }
     } catch (e: any) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
     }
   }
+
+  resolvedBouquetIds = Array.from(new Set(resolvedBouquetIds.map((id) => String(id).trim()).filter(Boolean)));
+  resolvedOutputIds = Array.from(new Set(resolvedOutputIds.map((id) => String(id).trim()).filter(Boolean)));
 
   const baseParams: Record<string, string> = {
     username,
@@ -465,26 +572,32 @@ async function provisionUserOnXui(
   };
   if (memberId) baseParams.member_id = memberId;
 
-  const expectedAssignments = Array.from(new Set([
-    ...resolvedBouquetIds,
-    resolvedPackageId,
-  ].map((id) => String(id || '').trim()).filter(Boolean)));
+  const expectedAssignments: ExpectedLineAssignments = {
+    bouquetIds: resolvedBouquetIds,
+    packageId: resolvedPackageId || undefined,
+    outputIds: resolvedOutputIds,
+  };
 
   const assignmentVariants: Array<Record<string, string | string[]>> = [
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
       ...(resolvedBouquetIds.length ? { 'bouquets_selected[]': resolvedBouquetIds } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
       ...(resolvedBouquetIds.length ? { bouquets_selected: resolvedBouquetIds } : {}),
+      ...(resolvedOutputIds.length ? { 'allowed_outputs_selected[]': resolvedOutputIds } : {}),
+      ...(resolvedOutputIds.length ? { 'output_formats[]': resolvedOutputIds } : {}),
     },
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
       ...(resolvedBouquetIds.length ? { bouquet: JSON.stringify(resolvedBouquetIds) } : {}),
+      ...(resolvedOutputIds.length ? { output_formats: JSON.stringify(resolvedOutputIds) } : {}),
     },
     {
       ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
+      ...(resolvedOutputIds.length ? { allowed_outputs: JSON.stringify(resolvedOutputIds) } : {}),
     },
   ];
 
@@ -508,15 +621,15 @@ async function provisionUserOnXui(
         continue;
       }
 
-      const responseAssigned = extractAssignedIds(data?.data || data);
-      const responseMatches = expectedAssignments.length === 0 || expectedAssignments.some((id) => responseAssigned.includes(id));
+      const responseAssignments = extractLineAssignments(data?.data || data);
+      const responseMatches = matchesExpectedAssignments(responseAssignments, expectedAssignments);
       const verified = await verifyProvisionedUser(config, username, expectedAssignments);
       if (responseMatches || verified) {
-        console.log(`[XUI] ✅ Provision success for ${username} assignments=${JSON.stringify(responseAssigned)}`);
+        console.log(`[XUI] ✅ Provision success for ${username} bouquets=${JSON.stringify(responseAssignments.bouquetIds)} outputs=${JSON.stringify(responseAssignments.outputIds)} package=${JSON.stringify(responseAssignments.packageIds)}`);
         return { action: 'create_line', data };
       }
 
-      // create_line may succeed but ignore bouquet params depending on panel mode. Force with edit_line.
+      // create_line may succeed but ignore bouquet/output params depending on panel mode. Force with edit_line.
       const lineId = String(data?.data?.id || '').trim();
       if (lineId) {
         try {
@@ -536,7 +649,7 @@ async function provisionUserOnXui(
         }
       }
 
-      lastError = 'Linha criada, mas sem bouquets/pacote aplicados';
+      lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
       console.log(`[XUI] Provision uncertain: ${lastError}`);
     }
   }
