@@ -394,9 +394,25 @@ async function provisionUserOnXui(
       const picked = nonTrial || allWithId[0];
       const pickedId = picked ? getPackageId(picked) : '';
 
-      if (pickedId) {
-        resolvedBouquetIds = [pickedId];
-        console.log(`[XUI] Auto-selected package: ${pickedId} (trial=${isTrialPackage(picked) ? '1' : '0'})`);
+      if (pickedId && picked) {
+        // Extract bouquet IDs from the package's bouquets field
+        let packageBouquets: string[] = [];
+        try {
+          const rawBouquets = picked.bouquets;
+          if (typeof rawBouquets === 'string') {
+            packageBouquets = JSON.parse(rawBouquets).map(String);
+          } else if (Array.isArray(rawBouquets)) {
+            packageBouquets = rawBouquets.map(String);
+          }
+        } catch {}
+
+        if (packageBouquets.length > 0) {
+          resolvedBouquetIds = packageBouquets;
+          console.log(`[XUI] Auto-selected package: ${pickedId} with bouquets: ${JSON.stringify(packageBouquets)}`);
+        } else {
+          resolvedBouquetIds = [pickedId];
+          console.log(`[XUI] Auto-selected package: ${pickedId} (no bouquets field, using package id)`);
+        }
       }
     } catch (e) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
