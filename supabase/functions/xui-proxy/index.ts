@@ -501,8 +501,11 @@ async function enforceAllowedOutputsPostCreate(
   if (!lineId) return null;
 
   const targetUsername = String(params.expectedUsername || '').trim();
+  const targetPassword = String(params.expectedPassword || '').trim();
   const targetExpDate = String(params.expDate || '').trim();
   const targetMaxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim() || '1';
+  const targetMemberId = String(params.expectedMemberId || '').replace(/\D/g, '').trim();
+  const targetPackageId = String(params.expectedPackageId || '').replace(/\D/g, '').trim();
 
   const expectedBouquetIds = (params.expectedBouquetIds || [])
     .map((id) => String(id).replace(/\D/g, '').trim())
@@ -522,7 +525,13 @@ async function enforceAllowedOutputsPostCreate(
     form.set('line_id', lineId);
     form.set('max_connections', targetMaxConnections);
     if (targetUsername) form.set('username', targetUsername);
+    if (targetPassword) form.set('password', targetPassword);
     if (targetExpDate) form.set('exp_date', targetExpDate);
+    if (targetMemberId) form.set('member_id', targetMemberId);
+    if (targetPackageId && targetPackageId !== '0') {
+      form.set('package_id', targetPackageId);
+      form.set('package', targetPackageId);
+    }
     return form;
   };
 
