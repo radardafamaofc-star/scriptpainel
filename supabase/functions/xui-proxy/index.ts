@@ -789,43 +789,6 @@ async function syncLineAssignments(
       },
     },
     {
-      label: 'POST edit_line custom outputs first (package_id=0)',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          package_id: '0',
-          'package_id[]': ['0'],
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line force outputs via restreamer toggle',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          package_id: '0',
-          'package_id[]': ['0'],
-          is_restreamer: '1',
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          package_id: '0',
-          'package_id[]': ['0'],
-          is_restreamer: '0',
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-      },
-    },
-    {
       label: 'POST edit_line bouquets_selected[] + outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
@@ -875,6 +838,50 @@ async function syncLineAssignments(
       },
     },
   ];
+
+  // Legacy fallback for servers that don't accept package-based sync
+  // Only run when there is no package selected.
+  if (packageIds.length === 0) {
+    attempts.unshift(
+      {
+        label: 'POST edit_line force outputs via restreamer toggle',
+        run: async () => {
+          await xuiRequest(config, 'edit_line', {
+            id: lineId,
+            ...identityParams,
+            package_id: '0',
+            'package_id[]': ['0'],
+            is_restreamer: '1',
+            'bouquets_selected[]': bouquetIds,
+            ...outputPayload,
+          });
+
+          await xuiRequest(config, 'edit_line', {
+            id: lineId,
+            ...identityParams,
+            package_id: '0',
+            'package_id[]': ['0'],
+            is_restreamer: '0',
+            'bouquets_selected[]': bouquetIds,
+            ...outputPayload,
+          });
+        },
+      },
+      {
+        label: 'POST edit_line custom outputs first (package_id=0)',
+        run: async () => {
+          await xuiRequest(config, 'edit_line', {
+            id: lineId,
+            ...identityParams,
+            package_id: '0',
+            'package_id[]': ['0'],
+            'bouquets_selected[]': bouquetIds,
+            ...outputPayload,
+          });
+        },
+      },
+    );
+  }
 
   for (const attempt of attempts) {
     try {
