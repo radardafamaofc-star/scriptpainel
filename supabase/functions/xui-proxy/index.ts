@@ -1183,60 +1183,57 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
+  const expectedAssignments: ExpectedLineAssignments = {
+    ...(packageId ? { packageIds: [packageId] } : {}),
+    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
+    ...(outputFormats.length > 0 ? { outputIds: outputFormats } : {}),
+  };
+
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const baseLineParams: Record<string, string> = {
+    const createParams: Record<string, string | string[]> = {
       username,
       password,
       max_connections: maxConnections,
       exp_date: expValue,
+      ...(memberId ? { member_id: memberId } : {}),
+      ...(packageId ? { package_id: packageId } : {}),
+      ...(packageId ? { 'package_id[]': [packageId] } : {}),
+      ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
+      // Strict array params only, as required by XUI
+      ...buildOutputPayload(outputFormats),
     };
-    if (memberId) baseLineParams.member_id = memberId;
 
-    // ===== ALWAYS include bouquets_selected[] and allowed_outputs[] =====
-    // This is exactly how Sigma QPanel does it — never rely on XUI inheritance
-
-    // Strategy 1: GET create_line with explicit bouquets + outputs (QPanel style)
     try {
-      const url = buildCreateLineUrl(config, baseLineParams, bouquetIds, outputFormats);
-      console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
-      const text = await response.text();
-      if (text && !text.includes('<html')) {
-        const json = JSON.parse(text);
-        console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
-        const status = String(json?.status || '').toUpperCase();
-        if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
-          const lineId = String(json?.data?.id || '').trim();
-          return { action: 'create_line' as const, data: json };
-        }
-        const err = getXuiError(json);
-        if (err) { lastError = err; console.log(`[XUI] GET create_line failed: ${err}`); }
-      }
-    } catch (e: any) {
-      console.log(`[XUI] GET create_line error: ${e.message}`);
-      lastError = e.message;
-    }
-
-    // Strategy 2: POST create_line with explicit bouquets + outputs
-    try {
-      const postParams: Record<string, string | string[]> = {
-        ...baseLineParams,
-        'bouquets_selected[]': bouquetIds,
-        ...buildOutputPayload(outputFormats),
-      };
-      console.log(`[XUI] POST create_line (QPanel style) params: ${JSON.stringify(postParams)}`);
-      const data = await xuiRequest(config, 'create_line', postParams);
+      const data = await createLinePostStrict(config, createParams);
       const status = String(data?.status || '').toUpperCase();
-      if (isXuiSuccess(data) || status.includes('EXISTS_USERNAME')) {
-        return { action: 'create_line' as const, data };
+      const createError = getXuiError(data);
+
+      if (createError && !status.includes('EXISTS_USERNAME')) {
+        lastError = createError;
+        continue;
       }
-      const err = getXuiError(data);
-      if (err) { lastError = err; console.log(`[XUI] POST create_line failed: ${err}`); }
+      if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
+        lastError = createError || 'create_line retornou status inválido';
+        continue;
+      }
+
+      const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
+
+      // Validate final state; if missing assignments, force a POST edit sync.
+      const verified = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+      if (!verified && lineId) {
+        const synced = await syncLineAssignments(config, lineId, username, expectedAssignments, outputFormats, password);
+        if (!synced) {
+          throw new Error('Linha criada, mas bouquets/outputs não foram aplicados pelo XUI');
+        }
+      }
+
+      return { action: 'create_line' as const, data };
     } catch (e: any) {
-      console.log(`[XUI] POST create_line error: ${e.message}`);
       lastError = e.message;
+      console.log(`[XUI] POST create_line strict error: ${lastError}`);
     }
   }
 
