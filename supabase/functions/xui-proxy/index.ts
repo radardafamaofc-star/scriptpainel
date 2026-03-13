@@ -762,7 +762,7 @@ async function provisionUserOnXui(
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
-  for (const expValue of expVariants) {
+  for (const expValue of uniqueExpVariants) {
     for (const assignment of createAssignmentVariants) {
       const params = { ...baseParams, exp_date: expValue, ...assignment };
       console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
