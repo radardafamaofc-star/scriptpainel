@@ -574,6 +574,31 @@ function extractLineRows(payload: any): any[] {
   return payload && typeof payload === 'object' ? [payload] : [];
 }
 
+function isLineActive(row: any): boolean {
+  const enabled = String(row?.enabled ?? '').trim().toLowerCase();
+  const adminEnabled = String(row?.admin_enabled ?? '').trim().toLowerCase();
+  const status = String(row?.status ?? row?.line_status ?? '').trim().toLowerCase();
+  const isBanned = String(row?.is_banned ?? row?.banned ?? '').trim().toLowerCase();
+
+  const falseLike = new Set(['0', 'false', 'disabled', 'inactive', 'off', 'no']);
+
+  if (enabled && falseLike.has(enabled)) return false;
+  if (adminEnabled && falseLike.has(adminEnabled)) return false;
+  if (isBanned && !falseLike.has(isBanned)) return false;
+
+  if (status) {
+    if (status.includes('disabled') || status.includes('inactive') || status.includes('banned') || status.includes('suspended')) {
+      return false;
+    }
+
+    if (status.includes('success') || status.includes('active') || status.includes('enabled')) {
+      return true;
+    }
+  }
+
+  return true;
+}
+
 async function resolveLineIdByUsername(config: XuiServerConfig, username: string): Promise<string> {
   const checks: Array<{ action: string; params?: Record<string, string | string[]>; label: string }> = [
     { action: 'get_line', params: { username }, label: `get_line(username=${username})` },
