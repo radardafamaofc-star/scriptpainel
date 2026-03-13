@@ -430,6 +430,38 @@ async function getLineRowById(config: XuiServerConfig, lineId: string): Promise<
   }
 }
 
+async function waitForLinePresence(
+  config: XuiServerConfig,
+  lineId: string,
+  username: string,
+  maxAttempts = 3,
+  delayMs = 700,
+): Promise<any | null> {
+  const normalizedLineId = String(lineId || '').trim();
+  const normalizedUsername = String(username || '').trim();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (normalizedLineId) {
+      const byId = await getLineRowById(config, normalizedLineId);
+      if (byId) return byId;
+    }
+
+    if (normalizedUsername) {
+      const resolvedId = await resolveLineIdByUsername(config, normalizedUsername);
+      if (resolvedId) {
+        const byUsername = await getLineRowById(config, resolvedId);
+        if (byUsername) return byUsername;
+      }
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return null;
+}
+
 async function restoreLineBouquets(
   config: XuiServerConfig,
   lineId: string,
