@@ -648,32 +648,51 @@ type PackageAssignments = {
   outputIds: string[];
 };
 
-// Fetch bouquet/output IDs belonging to a package
+// Fetch bouquet/output config from a specific package using get_package&id=
 async function getPackageAssignments(config: XuiServerConfig, packageId: string): Promise<PackageAssignments> {
   try {
-    const payload = await xuiRequest(config, 'get_packages');
-    const rows = (Array.isArray(payload) ? payload : Object.values(payload || {}))
-      .filter((item: any) => item && typeof item === 'object');
+    // Step 1: Try get_package (singular) with id param — this is the correct API call
+    let pkg: any = null;
+    try {
+      const payload = await xuiRequest(config, 'get_package', { id: packageId });
+      // Response can be { data: {...} } or direct object
+      pkg = payload?.data || payload;
+      if (pkg && typeof pkg === 'object' && !Array.isArray(pkg)) {
+        // If response is a map of packages, find ours
+        if (!pkg.bouquets && !pkg.id) {
+          const found = Object.values(pkg).find((p: any) => 
+            p && typeof p === 'object' && String(p.id || p.package_id || '') === packageId
+          );
+          if (found) pkg = found;
+        }
+      }
+    } catch (e: any) {
+      console.log(`[XUI] get_package failed, falling back to get_packages: ${e.message}`);
+    }
 
-    const pkg = rows.find((p: any) => String((p as any)?.id || (p as any)?.package_id || '') === packageId);
+    // Step 2: Fallback to get_packages (plural) if singular didn't work
+    if (!pkg || (!pkg.bouquets && !pkg.allowed_outputs)) {
+      const payload = await xuiRequest(config, 'get_packages');
+      const rows = (Array.isArray(payload) ? payload : Object.values(payload || {}))
+        .filter((item: any) => item && typeof item === 'object');
+      pkg = rows.find((p: any) => String((p as any)?.id || (p as any)?.package_id || '') === packageId);
+    }
+
     if (!pkg) {
-      return { bouquetIds: [], outputIds: ['1', '2', '3'] };
+      console.log(`[XUI] Package ${packageId} not found`);
+      return { bouquetIds: [], outputIds: OUTPUT_FORMAT_NAMES };
     }
 
     const bouquetIds = sanitizeSelectionIds(parseIdList((pkg as any).bouquets));
-    const outputIds = sanitizeSelectionIds(
-      parseIdList((pkg as any).output_formats || (pkg as any).allowed_outputs || ''),
-    );
+    const rawOutputs = parseIdList((pkg as any).allowed_outputs || (pkg as any).output_formats || '');
+    const outputIds = normalizeOutputFormats(rawOutputs);
 
-    console.log(`[XUI] Package ${packageId} has bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputIds)}`);
+    console.log(`[XUI] Package ${packageId} bouquets=${JSON.stringify(bouquetIds)} allowed_outputs=${JSON.stringify(outputIds)}`);
 
-    return {
-      bouquetIds,
-      outputIds: outputIds.length > 0 ? outputIds : ['1', '2', '3'],
-    };
+    return { bouquetIds, outputIds };
   } catch (e: any) {
     console.log(`[XUI] Failed to get package assignments: ${e.message}`);
-    return { bouquetIds: [], outputIds: ['1', '2', '3'] };
+    return { bouquetIds: [], outputIds: OUTPUT_FORMAT_NAMES };
   }
 }
 
