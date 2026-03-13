@@ -373,7 +373,7 @@ async function createLinePostStrict(
 
   for (const url of urlsToTry) {
     try {
-      console.log('create_line payload', params);
+      console.log("create_line payload:", body);
       console.log(`[XUI] POST(strict): ${url.replace(config.api_key, '***')}`);
       console.log(`[XUI] POST(strict) body: ${body.substring(0, 1500)}`);
 
@@ -415,7 +415,7 @@ async function editLinePostStrict(
 
   for (const url of urlsToTry) {
     try {
-      console.log('edit_line payload', params);
+      console.log("edit_line payload:", body);
       console.log(`[XUI] POST(strict edit): ${url.replace(config.api_key, '***')}`);
       console.log(`[XUI] POST(strict edit) body: ${body.substring(0, 1500)}`);
 
@@ -575,20 +575,27 @@ function extractLineRows(payload: any): any[] {
 }
 
 async function resolveLineIdByUsername(config: XuiServerConfig, username: string): Promise<string> {
-  const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
-    { action: 'get_lines', params: { search: username } },
-    { action: 'get_lines' },
+  const checks: Array<{ action: string; params?: Record<string, string | string[]>; label: string }> = [
+    { action: 'get_line', params: { username }, label: `get_line(username=${username})` },
+    { action: 'get_lines', params: { search: username }, label: `get_lines(search=${username})` },
+    { action: 'get_lines', label: 'get_lines' },
   ];
 
   for (const check of checks) {
     try {
       const data = await xuiRequest(config, check.action, check.params || {});
       const rows = extractLineRows(data);
-      const match = rows.find((row: any) => String(row?.username || '').trim() === username);
-      const lineId = String(match?.id || '').trim();
-      if (lineId) return lineId;
-    } catch {
-      // ignore and try next source
+
+      const exactMatch = rows.find((row: any) => String(row?.username || '').trim() === username);
+      const candidate = exactMatch || rows[0];
+      const lineId = String(candidate?.id || candidate?.line_id || '').trim();
+
+      if (lineId) {
+        console.log(`[XUI] Resolved line_id=${lineId} via ${check.label}`);
+        return lineId;
+      }
+    } catch (e: any) {
+      console.log(`[XUI] resolveLineIdByUsername failed via ${check.label}: ${e.message}`);
     }
   }
 
@@ -1183,10 +1190,9 @@ async function provisionUserOnXui(
     throw new Error('username e password são obrigatórios para provisionar no XUI');
   }
 
-  const maxConnections = rawParams.max_connections || '1';
-  const expDate = rawParams.exp_date || '';
+  const maxConnections = String(rawParams.max_connections || '1').trim() || '1';
   const parsedPackageIds = sanitizeSelectionIds(
-    parseIdList(rawParams.package_id || rawParams.bouquet || rawParams.bouquets || ''),
+    parseIdList(rawParams.package_id || rawParams.package || rawParams.bouquet || rawParams.bouquets || ''),
   );
   let packageId = parsedPackageIds[0] || '';
   const rawPlanName = String(rawParams.plan_name || '').trim();
@@ -1236,69 +1242,81 @@ async function provisionUserOnXui(
     }
   }
 
-  // ===== PACKAGE-BASED PROVISIONING =====
-  // When a package_id is set, XUI inherits ALL settings (bouquets, outputs, max_connections)
-  // from the package. We must NOT send bouquets_selected, output_formats, or edit_line.
-  // Only send: username, password, package_id, exp_date.
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} max_connections=${maxConnections} member_id=${memberId || 'n/a'}`);
 
-  // Convert exp_date: XUI expects YYYY-MM-DD, not unix timestamps
-  let expDateFormatted = '';
-  const rawExp = String(expDate || '').trim();
-  if (rawExp) {
-    const asNum = Number(rawExp);
-    if (Number.isFinite(asNum) && asNum > 1000000000) {
-      const d = new Date(asNum * 1000);
-      if (!Number.isNaN(d.getTime())) {
-        expDateFormatted = formatLocalDateString(d);
-      }
-    } else if (/^\d{4}-\d{2}-\d{2}/.test(rawExp)) {
-      expDateFormatted = rawExp.substring(0, 10);
-    } else {
-      expDateFormatted = rawExp;
-    }
-  }
-
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} exp_date=${expDateFormatted || 'n/a'} (raw: ${rawExp})`);
-
-  // Build minimal create_line params — let the package handle bouquets/outputs/connections
+  // Step 1: create_line with minimal payload only.
   const createParams: Record<string, string | string[]> = {
     username,
     password,
-    ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
-    ...(packageId ? { package: packageId } : {}),
-    ...(memberId ? { member_id: memberId } : {}),
+    max_connections: maxConnections,
   };
 
-  console.log('create_line payload', createParams);
-
   try {
-    const data = await createLinePostStrict(config, createParams);
-    const status = String(data?.status || '').toUpperCase();
-    const createError = getXuiError(data);
+    const createData = await createLinePostStrict(config, createParams);
+    const createStatus = String(createData?.status || '').toUpperCase();
+    const createError = getXuiError(createData);
 
-    if (status.includes('EXISTS_USERNAME')) {
+    if (createStatus.includes('EXISTS_USERNAME')) {
       throw new Error(`Username já existe no XUI: ${username}`);
     }
     if (createError) {
       throw new Error(createError);
     }
-    if (!isXuiSuccess(data)) {
+    if (!isXuiSuccess(createData)) {
       throw new Error('create_line retornou status inválido');
     }
 
-    const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
-    if (!lineId) {
-      throw new Error('Linha criada, mas não foi possível resolver o ID');
+    // Step 2: resolve line ID using get_line by username.
+    let lineId = '';
+    try {
+      const byUsername = await xuiRequest(config, 'get_line', { username });
+      const rows = extractLineRows(byUsername);
+      const exact = rows.find((row: any) => String(row?.username || '').trim() === username) || rows[0];
+      lineId = String(exact?.id || exact?.line_id || '').trim();
+    } catch (e: any) {
+      console.log(`[XUI] get_line(username) failed: ${e.message}`);
     }
 
-    // Optional: validate with get_line (no edit_line needed — package manages everything)
+    if (!lineId) {
+      lineId = await resolveLineIdByUsername(config, username);
+    }
+
+    if (!lineId) {
+      lineId = String(createData?.data?.id || '').trim();
+    }
+
+    if (!lineId) {
+      throw new Error('Linha criada, mas não foi possível resolver o ID para aplicar pacote');
+    }
+
+    // Step 3: apply package via edit_line id + package_id.
+    if (packageId) {
+      const editParams: Record<string, string | string[]> = {
+        id: lineId,
+        package_id: packageId,
+      };
+
+      const editData = await editLinePostStrict(config, editParams);
+      const editError = getXuiError(editData);
+      if (editError) {
+        throw new Error(`Falha ao aplicar pacote no edit_line: ${editError}`);
+      }
+      if (!isXuiSuccess(editData)) {
+        throw new Error('edit_line retornou status inválido ao aplicar pacote');
+      }
+    } else {
+      console.log(`[XUI] package_id ausente para ${username}; edit_line de pacote não executado`);
+    }
+
+    // Optional confirmation after package apply.
     try {
       const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
       const finalRows = extractLineRows(finalLine);
       const finalUsername = String(finalRows[0]?.username || '').trim();
       const finalPackageId = String(finalRows[0]?.package_id || '').trim();
+      const assignments = extractLineAssignments(finalRows[0] || finalLine);
 
-      console.log(`[XUI] Final state: line_id=${lineId} username=${finalUsername} package_id=${finalPackageId}`);
+      console.log(`[XUI] Final state: line_id=${lineId} username=${finalUsername} package_id=${finalPackageId} bouquets=${JSON.stringify(assignments.bouquetIds)} outputs=${JSON.stringify(assignments.outputIds)}`);
 
       if (finalUsername && finalUsername !== username) {
         throw new Error(`XUI alterou o username (esperado: ${username}, recebido: ${finalUsername})`);
@@ -1308,9 +1326,9 @@ async function provisionUserOnXui(
       console.log(`[XUI] Validation get_line warning: ${validationErr.message}`);
     }
 
-    return { action: 'create_line' as const, data };
+    return { action: 'create_line' as const, data: createData };
   } catch (e: any) {
-    console.log(`[XUI] POST create_line error: ${e.message}`);
+    console.log(`[XUI] Provisioning flow error: ${e.message}`);
     throw new Error(e.message);
   }
 }
