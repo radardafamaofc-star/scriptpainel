@@ -47,7 +47,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string } | null>(null);
+  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string; bouquetId: string } | null>(null);
   const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
