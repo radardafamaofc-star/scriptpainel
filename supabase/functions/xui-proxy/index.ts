@@ -1310,12 +1310,12 @@ async function provisionUserOnXui(
     ...(memberId ? { member_id: memberId } : {}),
   };
 
-  // Add bouquets[] explicitly
+  // Add bouquets_selected[] — the working parameter name for XUI
   if (pkgBouquetIds.length > 0) {
-    createParams['bouquets[]'] = pkgBouquetIds;
+    createParams['bouquets_selected[]'] = pkgBouquetIds;
   }
 
-  // Add allowed_outputs[] explicitly
+  // Add allowed_outputs[] explicitly (ts, m3u8, rtmp)
   createParams['allowed_outputs[]'] = pkgOutputIds;
 
   try {
