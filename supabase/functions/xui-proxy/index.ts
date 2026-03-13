@@ -210,7 +210,104 @@ async function verifyProvisionedUser(config: XuiServerConfig, username: string):
   return false;
 }
 
-async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<string, string> = {}) {
+async function getOrCreateXuiMemberId(
+  config: XuiServerConfig,
+  userId: string,
+  displayName: string,
+  serviceClient: any,
+): Promise<string> {
+  // Check if we already have a cached member_id
+  const { data: profile } = await serviceClient
+    .from('profiles')
+    .select('xui_member_id')
+    .eq('user_id', userId)
+    .single();
+
+  if (profile?.xui_member_id) {
+    return profile.xui_member_id;
+  }
+
+  // Try to find existing subreseller in XUI by username
+  try {
+    const users = await xuiRequest(config, 'get_users');
+    const userList = Array.isArray(users) ? users : Object.values(users || {});
+    const existing = userList.find((u: any) =>
+      u && typeof u === 'object' && (u.username === displayName || u.member_id)
+    );
+    if (existing?.member_id || existing?.id) {
+      const memberId = String(existing.member_id || existing.id);
+      await serviceClient
+        .from('profiles')
+        .update({ xui_member_id: memberId })
+        .eq('user_id', userId);
+      console.log(`[XUI] Found existing member_id=${memberId} for ${displayName}`);
+      return memberId;
+    }
+  } catch (e) {
+    console.log(`[XUI] Could not search existing users: ${e.message}`);
+  }
+
+  // Create a new subreseller in XUI
+  try {
+    const subPassword = `panel_${Date.now()}`;
+    const createResult = await xuiRequest(config, 'create_subreseller', {
+      username: displayName,
+      password: subPassword,
+    });
+
+    const memberId = createResult?.data?.member_id
+      || createResult?.data?.id
+      || createResult?.member_id
+      || createResult?.id;
+
+    if (memberId) {
+      const memberIdStr = String(memberId);
+      await serviceClient
+        .from('profiles')
+        .update({ xui_member_id: memberIdStr })
+        .eq('user_id', userId);
+      console.log(`[XUI] Created subreseller member_id=${memberIdStr} for ${displayName}`);
+      return memberIdStr;
+    }
+  } catch (e) {
+    console.log(`[XUI] Could not create subreseller: ${e.message}`);
+  }
+
+  // Fallback: try create_user as reseller
+  try {
+    const subPassword = `panel_${Date.now()}`;
+    const createResult = await xuiRequest(config, 'create_user', {
+      username: displayName,
+      password: subPassword,
+      is_reseller: '1',
+    });
+
+    const memberId = createResult?.data?.member_id
+      || createResult?.data?.id
+      || createResult?.member_id
+      || createResult?.id;
+
+    if (memberId) {
+      const memberIdStr = String(memberId);
+      await serviceClient
+        .from('profiles')
+        .update({ xui_member_id: memberIdStr })
+        .eq('user_id', userId);
+      console.log(`[XUI] Created user-reseller member_id=${memberIdStr} for ${displayName}`);
+      return memberIdStr;
+    }
+  } catch (e) {
+    console.log(`[XUI] Could not create user-reseller: ${e.message}`);
+  }
+
+  return '';
+}
+
+async function provisionUserOnXui(
+  config: XuiServerConfig,
+  rawParams: Record<string, string> = {},
+  memberId: string = '',
+) {
   const username = rawParams.username?.trim();
   const password = rawParams.password?.trim();
   if (!username || !password) {
@@ -267,61 +364,34 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
 
   // Based on real XUI One docs: action=create_line with bouquets_selected and exp_date
   // DO NOT send is_trial — it makes the line show as "Trial" in XUI
+  // Pass member_id to assign correct owner
+  const baseParams: Record<string, string> = {
+    username,
+    password,
+    max_connections: maxConnections,
+  };
+  if (memberId) baseParams.member_id = memberId;
+
   const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [
-    // Primary: create_line with duration string (e.g. "6hours") — this is what works
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingHours}hours`,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, bouquets_selected: bouquetsSelected },
     },
-    // Fallback: create_line with bouquets_selected[] array syntax
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingHours}hours`,
-        'bouquets_selected[]': resolvedBouquetIds,
-      },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
     },
-    // Fallback: create_line with days
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingDays}days`,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: `${remainingDays}days`, bouquets_selected: bouquetsSelected },
     },
-    // Fallback: create_line with unix timestamp
     {
       action: 'create_line',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: expDate,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: expDate, bouquets_selected: bouquetsSelected },
     },
-    // Last resort: create_user
     {
       action: 'create_user',
-      params: {
-        username,
-        password,
-        max_connections: maxConnections,
-        exp_date: `${remainingHours}hours`,
-        bouquets_selected: bouquetsSelected,
-      },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, bouquets_selected: bouquetsSelected },
     },
   ];
 
@@ -459,7 +529,18 @@ Deno.serve(async (req) => {
 
       try {
         if (xui_action === 'user_create') {
-          const provisionResult = await provisionUserOnXui(config, xui_params || {});
+          // Resolve XUI member_id for the calling user
+          const { data: profile } = await serviceClient
+            .from('profiles')
+            .select('display_name')
+            .eq('user_id', user.id)
+            .single();
+          const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
+
+          const xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
+          console.log(`[XUI] Provisioning line with member_id=${xuiMemberId} for ${displayName}`);
+
+          const provisionResult = await provisionUserOnXui(config, xui_params || {}, xuiMemberId);
           return new Response(JSON.stringify({
             success: true,
             data: provisionResult.data,
