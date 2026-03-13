@@ -247,20 +247,15 @@ async function createLinePost(
   return postXuiForm(config, 'create_line', form, 'create_line');
 }
 
-// STEP 2 — edit_line with numeric bouquets[] and allowed_outputs[]
+// STEP 2 — edit_line with bouquet and allowed_outputs as JSON strings
 async function editLinePost(
   config: XuiServerConfig,
   params: { lineId: string; bouquetIds: string[]; allowedOutputIds: string[] },
 ): Promise<any> {
   const form = new URLSearchParams();
   form.set('id', params.lineId);
-
-  for (const id of params.bouquetIds) {
-    form.append('bouquets[]', id);
-  }
-  for (const id of params.allowedOutputIds) {
-    form.append('allowed_outputs[]', id);
-  }
+  form.set('bouquet', JSON.stringify(params.bouquetIds.map(Number)));
+  form.set('allowed_outputs', JSON.stringify(params.allowedOutputIds.map(Number)));
 
   console.log('edit_line payload:', form.toString());
   return postXuiForm(config, 'edit_line', form, 'edit_line');
