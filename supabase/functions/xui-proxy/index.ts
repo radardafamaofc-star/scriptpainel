@@ -176,7 +176,25 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean);
-  const bouquetsSelected = bouquetIds.length ? JSON.stringify(bouquetIds) : '[]';
+
+  let resolvedBouquetIds = [...bouquetIds];
+  if (!resolvedBouquetIds.length) {
+    try {
+      const packages = await xuiRequest(config, 'get_packages');
+      const packageList = Array.isArray(packages) ? packages : Object.values(packages || {});
+      const firstPackage = packageList.find((pkg: any) => pkg && (pkg.id || pkg.package_id));
+      const firstPackageId = firstPackage ? String(firstPackage.id || firstPackage.package_id) : '';
+      if (firstPackageId) {
+        resolvedBouquetIds = [firstPackageId];
+        console.log(`[XUI] Auto-selected package for provision: ${firstPackageId}`);
+      }
+    } catch (e) {
+      console.log(`[XUI] Could not auto-select package: ${e.message}`);
+    }
+  }
+
+  const primaryBouquet = resolvedBouquetIds[0] || bouquetRaw;
+  const bouquetsSelected = resolvedBouquetIds.length ? JSON.stringify(resolvedBouquetIds) : '[]';
 
   const actionAttempts = [
     {
