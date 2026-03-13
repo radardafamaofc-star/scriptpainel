@@ -231,10 +231,16 @@ async function postXuiForm(
   throw new Error(lastError);
 }
 
-// STEP 1 — create_line (POST form-urlencoded, NO package/bouquets/outputs)
+// Single-step create_line with bouquet and allowed_outputs as JSON strings
 async function createLinePost(
   config: XuiServerConfig,
-  params: { username: string; password: string; expDate?: string },
+  params: {
+    username: string;
+    password: string;
+    expDate?: string;
+    bouquetIds: number[];
+    allowedOutputIds: number[];
+  },
 ): Promise<any> {
   const form = new URLSearchParams();
   form.set('username', params.username);
@@ -242,23 +248,11 @@ async function createLinePost(
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', '1');
   form.set('member_id', '0');
+  form.set('bouquet', JSON.stringify(params.bouquetIds));
+  form.set('allowed_outputs', JSON.stringify(params.allowedOutputIds));
 
   console.log("create_line payload:", form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
-}
-
-// STEP 2 — edit_line with bouquet and allowed_outputs as JSON strings
-async function editLinePost(
-  config: XuiServerConfig,
-  params: { lineId: string; bouquetIds: string[]; allowedOutputIds: string[] },
-): Promise<any> {
-  const form = new URLSearchParams();
-  form.set('id', params.lineId);
-  form.set('bouquet', JSON.stringify(params.bouquetIds.map(Number)));
-  form.set('allowed_outputs', JSON.stringify(params.allowedOutputIds.map(Number)));
-
-  console.log('edit_line payload:', form.toString());
-  return postXuiForm(config, 'edit_line', form, 'edit_line');
 }
 
 async function getOrCreateXuiMemberId(
