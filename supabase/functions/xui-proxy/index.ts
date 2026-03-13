@@ -598,12 +598,15 @@ async function enforceAllowedOutputsPostCreate(
       if (attempt.label === 'json_primary') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
         getParams.allowed_outputs = allowedJson;
+        getParams.output_formats = allowedJson;
       } else if (attempt.label === 'csv_primary') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
         getParams.allowed_outputs = allowedCsv;
+        getParams.output_formats = allowedCsv;
       } else {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetQuotedJson;
         getParams.allowed_outputs = allowedQuotedJson;
+        getParams.output_formats = allowedQuotedJson;
       }
 
       if (expectedBouquetIds.length) {
