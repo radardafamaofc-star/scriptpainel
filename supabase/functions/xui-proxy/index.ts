@@ -194,7 +194,18 @@ function getXuiError(payload: any): string | null {
   const status = payload.status;
   if (typeof status === 'string') {
     const normalized = status.toLowerCase();
-    if (normalized.includes('error') || normalized.includes('fail')) return status;
+    if (normalized.includes('success') || normalized === 'ok' || normalized.includes('exists')) return null;
+
+    if (
+      normalized.startsWith('status_')
+      || normalized.includes('error')
+      || normalized.includes('fail')
+      || normalized.includes('invalid')
+      || normalized.includes('denied')
+      || normalized.includes('forbidden')
+    ) {
+      return status;
+    }
   }
 
   return null;
@@ -209,8 +220,17 @@ function isXuiSuccess(payload: any): boolean {
   if (status === true || status === 1) return true;
   if (typeof status === 'string') {
     const normalized = status.toLowerCase();
-    if (normalized.includes('success') || normalized === 'ok') return true;
-    if (normalized.includes('error') || normalized.includes('fail')) return false;
+    if (normalized.includes('success') || normalized === 'ok' || normalized.includes('exists')) return true;
+    if (
+      normalized.startsWith('status_')
+      || normalized.includes('error')
+      || normalized.includes('fail')
+      || normalized.includes('invalid')
+      || normalized.includes('denied')
+      || normalized.includes('forbidden')
+    ) {
+      return false;
+    }
   }
 
   // Responses like get_packages may not have status/error and return object maps.
