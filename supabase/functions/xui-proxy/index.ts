@@ -837,8 +837,7 @@ async function syncLineAssignments(
           ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           'bouquet[]': bouquetIds,
-          'allowed_outputs[]': normalizedOutputs,
-          'output_formats[]': normalizedOutputs,
+          ...outputPayload,
         });
       },
     },
