@@ -633,6 +633,54 @@ async function enforceAllowedOutputsPostCreate(
   return getLineRowById(config, lineId);
 }
 
+async function enforceUsernamePostCreate(
+  config: XuiServerConfig,
+  params: {
+    lineId: string;
+    username: string;
+    password?: string;
+    expDate?: string;
+    maxConnections?: string;
+    memberId?: string;
+  },
+): Promise<string> {
+  const lineId = String(params.lineId || '').trim();
+  const username = String(params.username || '').trim();
+  if (!lineId || !username) return '';
+
+  const form = new URLSearchParams();
+  form.set('id', lineId);
+  form.set('line_id', lineId);
+  form.set('username', username);
+
+  const password = String(params.password || '').trim();
+  if (password) form.set('password', password);
+
+  const expDate = String(params.expDate || '').trim();
+  if (expDate) form.set('exp_date', expDate);
+
+  const maxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim();
+  if (maxConnections) form.set('max_connections', maxConnections);
+
+  const memberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  if (memberId) form.set('member_id', memberId);
+
+  try {
+    await postXuiForm(config, 'edit_line', form, 'edit_line(username_fix)');
+  } catch (e: any) {
+    console.log(`[XUI] Username fix POST failed: ${e.message}`);
+  }
+
+  try {
+    await xuiRequestGetOnly(config, 'edit_line', Object.fromEntries(form.entries()));
+  } catch (e: any) {
+    console.log(`[XUI] Username fix GET failed: ${e.message}`);
+  }
+
+  const refreshed = await getLineRowById(config, lineId);
+  return String(refreshed?.username || '').trim();
+}
+
 async function getOrCreateXuiMemberId(
   config: XuiServerConfig,
   userId: string,
