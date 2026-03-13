@@ -863,7 +863,21 @@ async function provisionUserOnXui(
   }
 
   if (finalUsername && finalUsername !== username) {
-    console.log(`[XUI] WARNING: XUI changed username ${username} -> ${finalUsername}`);
+    const fixedUsername = await enforceUsernamePostCreate(config, {
+      lineId: finalLineId,
+      username,
+      password,
+      expDate: expDateFormatted,
+      maxConnections,
+      memberId: effectiveMemberId,
+    });
+
+    if (fixedUsername === username) {
+      finalUsername = username;
+      console.log(`[XUI] Username restored to requested value: ${username}`);
+    } else {
+      console.log(`[XUI] WARNING: XUI changed username ${username} -> ${finalUsername}`);
+    }
   }
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
