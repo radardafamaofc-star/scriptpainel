@@ -712,6 +712,7 @@ async function syncLineAssignments(
   username: string,
   expected: ExpectedLineAssignments,
   outputIds: string[] = ['1', '2', '3'],
+  password: string = '',
 ): Promise<boolean> {
   const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
   const packageIds = sanitizeSelectionIds(expected.packageIds || []);
@@ -730,11 +731,16 @@ async function syncLineAssignments(
   const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
   const jsonOutputs = JSON.stringify(normalizedOutputs.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
 
+  // CRITICAL: Always include username+password to prevent XUI from overwriting them
+  const identityParams: Record<string, string> = {};
+  if (username) identityParams.username = username;
+  if (password) identityParams.password = password;
+
   const attempts: Array<{ label: string; run: () => Promise<void> }> = [
     {
       label: 'GET edit_line bouquets_selected[]',
       run: async () => {
-        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, packageIds[0] || '');
+        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, packageIds[0] || '', username, password);
         console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
         const response = await tryFetch(url);
         const text = await response.text();
@@ -753,24 +759,30 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           package_id: '0',
           'package_id[]': ['0'],
           'bouquets_selected[]': bouquetIds,
           allowed_outputs: jsonOutputs,
           'allowed_outputs[]': normalizedOutputs,
+          output_formats: jsonOutputs,
+          'output_formats[]': normalizedOutputs,
         });
       },
     },
     {
-      label: 'POST edit_line bouquets_selected[] + allowed_outputs',
+      label: 'POST edit_line bouquets_selected[] + outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
           allowed_outputs: jsonOutputs,
           'allowed_outputs[]': normalizedOutputs,
+          output_formats: jsonOutputs,
+          'output_formats[]': normalizedOutputs,
         });
       },
     },
@@ -779,9 +791,11 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquets_selected: jsonBouquets,
           allowed_outputs: jsonOutputs,
+          output_formats: jsonOutputs,
         });
       },
     },
@@ -790,9 +804,11 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquet: jsonBouquets,
           allowed_outputs: jsonOutputs,
+          output_formats: jsonOutputs,
         });
       },
     },
@@ -801,22 +817,11 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           'bouquet[]': bouquetIds,
           'allowed_outputs[]': normalizedOutputs,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line custom outputs (package_id=0)',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          package_id: '0',
-          'package_id[]': ['0'],
-          'bouquets_selected[]': bouquetIds,
-          allowed_outputs: jsonOutputs,
-          'allowed_outputs[]': normalizedOutputs,
+          'output_formats[]': normalizedOutputs,
         });
       },
     },
