@@ -754,7 +754,7 @@ async function syncLineAssignments(
   if (!hasExpected) return true;
 
   const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
-  const jsonOutputs = JSON.stringify(normalizedOutputs.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+  const outputPayload = buildOutputPayload(normalizedOutputs);
 
   // CRITICAL: Always include username+password to prevent XUI from overwriting them
   const identityParams: Record<string, string> = {};
