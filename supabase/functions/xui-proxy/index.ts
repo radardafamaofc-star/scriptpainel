@@ -589,16 +589,22 @@ Deno.serve(async (req) => {
 
       try {
         if (xui_action === 'user_create') {
-          // Resolve XUI member_id for the calling user
-          const { data: profile } = await serviceClient
-            .from('profiles')
-            .select('display_name')
-            .eq('user_id', user.id)
-            .single();
-          const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
+          // Admin deve criar linhas diretamente no owner principal do XUI.
+          // member_id para admin pode gerar linhas sem acesso real ao conteúdo.
+          let xuiMemberId = '';
+          if (roleData.role !== 'admin') {
+            const { data: profile } = await serviceClient
+              .from('profiles')
+              .select('display_name')
+              .eq('user_id', user.id)
+              .single();
+            const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
 
-          const xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
-          console.log(`[XUI] Provisioning line with member_id=${xuiMemberId} for ${displayName}`);
+            xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
+            console.log(`[XUI] Provisioning line with member_id=${xuiMemberId} for ${displayName}`);
+          } else {
+            console.log('[XUI] Admin provisioning without member_id (owner line)');
+          }
 
           const provisionResult = await provisionUserOnXui(config, xui_params || {}, xuiMemberId);
           return new Response(JSON.stringify({
