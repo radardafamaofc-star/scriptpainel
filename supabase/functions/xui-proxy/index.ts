@@ -349,6 +349,55 @@ function appendRawParams(parts: string[], params: Record<string, string | string
   }
 }
 
+async function createLinePostStrict(
+  config: XuiServerConfig,
+  params: Record<string, string | string[]>,
+): Promise<any> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=create_line`;
+
+  const bodyParts: string[] = [];
+  appendRawParams(bodyParts, params);
+  const body = bodyParts.join('&');
+
+  const urlsToTry = [`${baseUrl}/?${actionQuery}`, `${baseUrl}?${actionQuery}`];
+
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.pathname && parsed.pathname !== '/') {
+      const root = `${parsed.protocol}//${parsed.host}`;
+      urlsToTry.push(`${root}/api.php?${actionQuery}`);
+    }
+  } catch {}
+
+  let lastError = 'create_line POST falhou';
+
+  for (const url of urlsToTry) {
+    try {
+      console.log(`[XUI] POST(strict): ${url.replace(config.api_key, '***')}`);
+      console.log(`[XUI] POST(strict) body: ${body.substring(0, 1500)}`);
+
+      const response = await tryFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      const text = await response.text();
+      if (!text || text.includes('<html')) continue;
+
+      const json = JSON.parse(text);
+      console.log(`[XUI] create_line POST(strict) response: ${JSON.stringify(json).substring(0, 1000)}`);
+      return json;
+    } catch (e: any) {
+      lastError = e.message;
+      console.log(`[XUI] create_line POST(strict) failed: ${e.message}`);
+    }
+  }
+
+  throw new Error(lastError);
+}
+
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
   const packages: string[] = [];
