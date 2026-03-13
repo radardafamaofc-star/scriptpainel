@@ -438,13 +438,22 @@ async function createLinePost(
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
-
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
+  form.set('bouquets', JSON.stringify(bouquetIds));
+  form.set('bouquets_selected', JSON.stringify(bouquetIds));
 
+  const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
+  const allowedOutputNames = toOutputFormatNames(allowedOutputStringIds);
   const allowedOutputsJson = JSON.stringify(allowedOutputIds);
+
   form.set('allowed_outputs', allowedOutputsJson);
   form.set('output_formats', allowedOutputsJson);
+  appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
+  appendArrayField(form, 'output_formats', allowedOutputStringIds);
+  if (allowedOutputNames.length) {
+    appendArrayField(form, 'output_formats', allowedOutputNames);
+  }
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
