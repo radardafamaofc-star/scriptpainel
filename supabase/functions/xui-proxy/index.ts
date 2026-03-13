@@ -279,6 +279,28 @@ async function postXuiForm(
   throw new Error(lastError);
 }
 
+async function xuiRequestGetOnly(
+  config: XuiServerConfig,
+  action: string,
+  params: Record<string, string | string[]> = {},
+): Promise<any> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=${encodeURIComponent(action)}`;
+  const paramParts = buildParamEntries(params);
+  const queryString = [actionQuery, ...paramParts].join('&');
+  const url = `${baseUrl}/?${queryString}`;
+
+  console.log(`[XUI] GET-only: ${url.replace(config.api_key, '***')}`);
+  const response = await tryFetch(url, { method: 'GET' });
+  const text = await response.text();
+
+  if (!text?.trim() || text.includes('<html') || text.includes('<!DOCTYPE')) {
+    throw new Error('Resposta vazia/HTML em GET-only');
+  }
+
+  return JSON.parse(text);
+}
+
 // Single-step create_line focused on explicit credentials + package fields
 async function createLinePost(
   config: XuiServerConfig,
