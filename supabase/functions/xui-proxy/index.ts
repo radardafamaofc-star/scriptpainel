@@ -248,8 +248,16 @@ async function createLinePost(
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', '1');
   form.set('member_id', '0');
-  form.set('bouquet', JSON.stringify(params.bouquetIds));
-  form.set('allowed_outputs', JSON.stringify(params.allowedOutputIds));
+
+  // XUIOne 1.5.12 compatibility:
+  // - DB column is `bouquet`
+  // - API may parse only `bouquets_selected`
+  // Send both as JSON strings (without [] fields) to avoid empty bouquet on create_line.
+  const bouquetJson = JSON.stringify(params.bouquetIds.map(Number));
+  const allowedOutputsJson = JSON.stringify(params.allowedOutputIds.map(Number));
+  form.set('bouquet', bouquetJson);
+  form.set('bouquets_selected', bouquetJson);
+  form.set('allowed_outputs', allowedOutputsJson);
 
   console.log("create_line payload:", form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
@@ -377,7 +385,7 @@ async function provisionUserOnXui(
         finalLineId = String(row.id || row.line_id || createdLineId).trim();
         finalUsername = String(row.username || username).trim();
         active = isLineActive(row);
-        console.log(`[XUI] After edit_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
+        console.log(`[XUI] After create_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
       }
     } catch {}
   }
