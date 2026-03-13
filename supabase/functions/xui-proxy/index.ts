@@ -194,7 +194,18 @@ function getXuiError(payload: any): string | null {
   const status = payload.status;
   if (typeof status === 'string') {
     const normalized = status.toLowerCase();
-    if (normalized.includes('error') || normalized.includes('fail')) return status;
+    if (normalized.includes('success') || normalized === 'ok' || normalized.includes('exists')) return null;
+
+    if (
+      normalized.startsWith('status_')
+      || normalized.includes('error')
+      || normalized.includes('fail')
+      || normalized.includes('invalid')
+      || normalized.includes('denied')
+      || normalized.includes('forbidden')
+    ) {
+      return status;
+    }
   }
 
   return null;
@@ -209,8 +220,17 @@ function isXuiSuccess(payload: any): boolean {
   if (status === true || status === 1) return true;
   if (typeof status === 'string') {
     const normalized = status.toLowerCase();
-    if (normalized.includes('success') || normalized === 'ok') return true;
-    if (normalized.includes('error') || normalized.includes('fail')) return false;
+    if (normalized.includes('success') || normalized === 'ok' || normalized.includes('exists')) return true;
+    if (
+      normalized.startsWith('status_')
+      || normalized.includes('error')
+      || normalized.includes('fail')
+      || normalized.includes('invalid')
+      || normalized.includes('denied')
+      || normalized.includes('forbidden')
+    ) {
+      return false;
+    }
   }
 
   // Responses like get_packages may not have status/error and return object maps.
@@ -622,7 +642,7 @@ async function provisionUserOnXui(
   }
 
   const selectedPackageId = selectedPackageIds[0] || '';
-  const bouquetSelectionIds = selectedPackageIds.length ? selectedPackageIds : directBouquetIds;
+  const bouquetSelectionIds = directBouquetIds.length ? directBouquetIds : selectedPackageIds;
 
   const expectedAssignments: ExpectedLineAssignments = {
     bouquetIds: directBouquetIds,
@@ -681,10 +701,21 @@ async function provisionUserOnXui(
     },
   ];
 
-  const expVariants = [`${remainingHours}hours`, `${remainingDays}days`];
+  const expVariantCandidates: string[] = [];
   if (expDate && Number.isFinite(Number(expDate)) && Number(expDate) > 0) {
-    expVariants.push(expDate);
+    const unixTs = Number(expDate);
+    const expAsDate = new Date(unixTs * 1000);
+    if (!Number.isNaN(expAsDate.getTime())) {
+      expVariantCandidates.push(expAsDate.toISOString().slice(0, 10));
+      expVariantCandidates.push(expAsDate.toISOString().slice(0, 19).replace('T', ' '));
+    }
   }
+
+  expVariantCandidates.push(`${remainingHours}hours`, `${remainingDays}days`);
+  if (expDate) expVariantCandidates.push(expDate);
+
+  const expVariants = Array.from(new Set(expVariantCandidates.map((v) => String(v).trim()).filter(Boolean)));
+  console.log(`[XUI] exp_date variants: ${JSON.stringify(expVariants)}`);
 
   const tryEditFallback = async (lineId: string, expValue: string) => {
     for (const assignment of editAssignmentVariants) {
