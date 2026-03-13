@@ -788,10 +788,7 @@ async function syncLineAssignments(
           package_id: '0',
           'package_id[]': ['0'],
           'bouquets_selected[]': bouquetIds,
-          allowed_outputs: jsonOutputs,
-          'allowed_outputs[]': normalizedOutputs,
-          output_formats: jsonOutputs,
-          'output_formats[]': normalizedOutputs,
+          ...outputPayload,
         });
       },
     },
