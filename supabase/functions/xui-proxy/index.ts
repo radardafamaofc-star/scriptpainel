@@ -255,9 +255,14 @@ async function createLinePost(
   // Send both as JSON strings (without [] fields) to avoid empty bouquet on create_line.
   const bouquetJson = JSON.stringify(params.bouquetIds.map(Number));
   const allowedOutputsJson = JSON.stringify(params.allowedOutputIds.map(Number));
+
   form.set('bouquet', bouquetJson);
   form.set('bouquets_selected', bouquetJson);
+
+  // XUIOne 1.5.12 compatibility for access outputs (all without [] keys)
   form.set('allowed_outputs', allowedOutputsJson);
+  form.set('allowed_outputs_selected', allowedOutputsJson);
+  form.set('output_formats', allowedOutputsJson);
 
   console.log("create_line payload:", form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
