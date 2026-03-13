@@ -660,8 +660,13 @@ function buildCreateLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
+  // Send outputs in BOTH formats to maximize compatibility
+  // 1) allowed_outputs as JSON string (per XUI API spec)
+  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
+  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
+  // 2) allowed_outputs[] as individual params (alternative format)
   for (const fmt of outputIds) {
-    parts.push(`allowed_outputs_selected[]=${encodeURIComponent(fmt)}`);
+    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
   }
 
   return `${baseUrl}/?${parts.join('&')}`;
@@ -686,8 +691,11 @@ function buildEditLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
+  // Send outputs in BOTH formats
+  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
+  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
   for (const fmt of outputIds) {
-    parts.push(`allowed_outputs_selected[]=${encodeURIComponent(fmt)}`);
+    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
   }
 
   if (packageId) {
@@ -711,9 +719,10 @@ async function syncLineAssignments(
 
   if (!lineId) return false;
 
-  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : { packageIds };
+  const expectedCheck: ExpectedLineAssignments = {
+    ...(bouquetIds.length > 0 ? { bouquetIds } : { packageIds }),
+    outputIds: normalizedOutputs,
+  };
 
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
@@ -740,14 +749,15 @@ async function syncLineAssignments(
       },
     },
     {
-      label: 'POST edit_line bouquets_selected[]',
+      label: 'POST edit_line bouquets_selected[] + allowed_outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
-          'allowed_outputs_selected[]': normalizedOutputs,
+          allowed_outputs: jsonOutputs,
+          'allowed_outputs[]': normalizedOutputs,
         });
       },
     },
@@ -902,11 +912,13 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
-  const expectedAssignments: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : (packageId ? { packageIds: [packageId] } : {});
+  const expectedAssignments: ExpectedLineAssignments = {
+    ...(bouquetIds.length > 0 ? { bouquetIds } : (packageId ? { packageIds: [packageId] } : {})),
+    outputIds, // Always verify outputs are set
+  };
   const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
-    || (expectedAssignments.packageIds?.length || 0) > 0;
+    || (expectedAssignments.packageIds?.length || 0) > 0
+    || (expectedAssignments.outputIds?.length || 0) > 0;
 
   const ensureExpectedAssignments = async (lineIdCandidate: string): Promise<'create_line' | 'create_and_edit'> => {
     if (!hasExpectedAssignments) return 'create_line';
