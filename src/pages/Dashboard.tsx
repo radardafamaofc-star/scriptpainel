@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 
 import { useToast } from "@/hooks/use-toast";
 import { renderTemplate, DEFAULT_TEMPLATE } from "@/lib/template";
+import { extractGeneratedUsername } from "@/lib/xui";
 
 const chartStyle = { fontSize: 10, fill: "hsl(215, 15%, 55%)" };
 const tooltipStyle = {
