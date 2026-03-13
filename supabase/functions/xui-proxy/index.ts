@@ -677,6 +677,21 @@ async function getPackageAssignments(config: XuiServerConfig, packageId: string)
   }
 }
 
+function buildActionGetUrl(
+  config: XuiServerConfig,
+  action: string,
+  params: Record<string, string> = {},
+): string {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const parts: string[] = [
+    `api_key=${encodeURIComponent(config.api_key)}`,
+    `action=${encodeURIComponent(action)}`,
+  ];
+
+  appendRawParams(parts, params);
+  return `${baseUrl}/?${parts.join('&')}`;
+}
+
 // Build a raw GET URL for create_line with bouquets_selected[] as literal bracket params
 // This is how QPanel and the official XUI docs do it
 function buildCreateLineUrl(
@@ -755,9 +770,11 @@ async function syncLineAssignments(
   if (!lineId) return false;
 
   // Don't verify outputs — XUI manages them at package level
-  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : { packageIds };
+  // but always validate bouquets/package when available.
+  const expectedCheck: ExpectedLineAssignments = {
+    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
+    ...(packageIds.length > 0 ? { packageIds } : {}),
+  };
 
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
@@ -1096,10 +1113,11 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
-  // When package_id exists, prioritize package verification to preserve inherited outputs.
-  const expectedAssignments: ExpectedLineAssignments = packageId
-    ? { packageIds: [packageId] }
-    : (bouquetIds.length > 0 ? { bouquetIds } : {});
+  // Validate both package and bouquet assignment when available.
+  const expectedAssignments: ExpectedLineAssignments = {
+    ...(packageId ? { packageIds: [packageId] } : {}),
+    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
+  };
   const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
     || (expectedAssignments.packageIds?.length || 0) > 0;
 
@@ -1136,38 +1154,45 @@ async function provisionUserOnXui(
       ...(packageId ? { package_id: packageId } : {}),
     };
 
-    // Strategy 1: GET with bouquets_selected[] in query string (QPanel style)
-    if (bouquetIds.length > 0) {
-      const getAttempts: Array<{ label: string; params: Record<string, string> }> = [];
+    // Strategy 1: GET create_line variants
+    if (bouquetIds.length > 0 || !!packageId) {
+      const getAttempts: Array<{ label: string; params: Record<string, string>; includeAssignments: boolean }> = [];
 
-      // Try with actual package FIRST — this inherits both bouquets AND outputs
+      // Package-only first: lets XUI inherit package rules without noisy overrides.
       if (packageId) {
         getAttempts.push({
-          label: 'GET create_line with package (inherits outputs)',
+          label: 'GET create_line with package only',
           params: packageLineParams,
+          includeAssignments: false,
         });
       }
 
-      // Fallback: custom mode (package OFF) — bouquets via manual sync, outputs best-effort
-      if (packageId) {
+      if (bouquetIds.length > 0) {
+        // Fallback: custom mode (package OFF) — manual bouquet/output assignment.
+        if (packageId) {
+          getAttempts.push({
+            label: 'GET create_line custom (package OFF)',
+            params: {
+              ...baseLineParams,
+              package_id: '0',
+              'package_id[]': '0',
+            },
+            includeAssignments: true,
+          });
+        }
+
         getAttempts.push({
-          label: 'GET create_line custom (package OFF)',
-          params: {
-            ...baseLineParams,
-            package_id: '0',
-            'package_id[]': '0',
-          },
+          label: 'GET create_line (QPanel style)',
+          params: baseLineParams,
+          includeAssignments: true,
         });
       }
-
-      getAttempts.push({
-        label: 'GET create_line (QPanel style)',
-        params: baseLineParams,
-      });
 
       for (const attempt of getAttempts) {
         try {
-          const url = buildCreateLineUrl(config, attempt.params, bouquetIds, outputIds);
+          const url = attempt.includeAssignments
+            ? buildCreateLineUrl(config, attempt.params, bouquetIds, outputIds)
+            : buildActionGetUrl(config, 'create_line', attempt.params);
           console.log(`[XUI] ${attempt.label}: ${url.replace(config.api_key, '***')}`);
           const response = await tryFetch(url);
           const text = await response.text();
@@ -1197,11 +1222,27 @@ async function provisionUserOnXui(
     const outputPayload = buildOutputPayload(outputIds);
     const postAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [];
 
+    if (packageId) {
+      postAttempts.push({
+        label: 'POST create_line package only',
+        params: packageLineParams,
+      });
+    }
+
     if (bouquetIds.length > 0) {
       const bouquetPayload: Record<string, string | string[]> = {
         'bouquets_selected[]': bouquetIds,
         ...outputPayload,
       };
+
+      postAttempts.push({
+        label: 'POST create_line bouquets + outputs',
+        params: {
+          ...baseLineParams,
+          ...(packageId ? { package_id: packageId } : {}),
+          ...bouquetPayload,
+        },
+      });
 
       if (packageId) {
         postAttempts.push({
@@ -1214,20 +1255,14 @@ async function provisionUserOnXui(
           },
         });
       }
-
-      postAttempts.push({
-        label: 'POST create_line bouquets + outputs',
-        params: {
-          ...packageLineParams,
-          ...bouquetPayload,
-        },
-      });
     }
 
-    postAttempts.push({
-      label: 'POST create_line padrão',
-      params: packageLineParams,
-    });
+    if (!packageId) {
+      postAttempts.push({
+        label: 'POST create_line padrão',
+        params: packageLineParams,
+      });
+    }
 
     for (const attempt of postAttempts) {
       try {
