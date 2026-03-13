@@ -719,10 +719,10 @@ async function syncLineAssignments(
 
   if (!lineId) return false;
 
-  const expectedCheck: ExpectedLineAssignments = {
-    ...(bouquetIds.length > 0 ? { bouquetIds } : { packageIds }),
-    outputIds: normalizedOutputs,
-  };
+  // Don't verify outputs — XUI manages them at package level
+  const expectedCheck: ExpectedLineAssignments = bouquetIds.length > 0
+    ? { bouquetIds }
+    : { packageIds };
 
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
@@ -912,13 +912,14 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
-  const expectedAssignments: ExpectedLineAssignments = {
-    ...(bouquetIds.length > 0 ? { bouquetIds } : (packageId ? { packageIds: [packageId] } : {})),
-    outputIds, // Always verify outputs are set
-  };
+  // Don't include outputIds in verification — XUI stores outputs at the PACKAGE level,
+  // not at the line level. The line's allowed_outputs field stays [] when a package is assigned.
+  // We still SEND outputs in create/edit calls as best-effort.
+  const expectedAssignments: ExpectedLineAssignments = bouquetIds.length > 0
+    ? { bouquetIds }
+    : (packageId ? { packageIds: [packageId] } : {});
   const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
-    || (expectedAssignments.packageIds?.length || 0) > 0
-    || (expectedAssignments.outputIds?.length || 0) > 0;
+    || (expectedAssignments.packageIds?.length || 0) > 0;
 
   const ensureExpectedAssignments = async (lineIdCandidate: string): Promise<'create_line' | 'create_and_edit'> => {
     if (!hasExpectedAssignments) return 'create_line';
