@@ -749,6 +749,19 @@ async function syncLineAssignments(
       },
     },
     {
+      label: 'POST edit_line custom outputs first (package_id=0)',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          package_id: '0',
+          'package_id[]': ['0'],
+          'bouquets_selected[]': bouquetIds,
+          allowed_outputs: jsonOutputs,
+          'allowed_outputs[]': normalizedOutputs,
+        });
+      },
+    },
+    {
       label: 'POST edit_line bouquets_selected[] + allowed_outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
@@ -790,6 +803,19 @@ async function syncLineAssignments(
           id: lineId,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           'bouquet[]': bouquetIds,
+          'allowed_outputs[]': normalizedOutputs,
+        });
+      },
+    },
+    {
+      label: 'POST edit_line custom outputs (package_id=0)',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          package_id: '0',
+          'package_id[]': ['0'],
+          'bouquets_selected[]': bouquetIds,
+          allowed_outputs: jsonOutputs,
           'allowed_outputs[]': normalizedOutputs,
         });
       },
