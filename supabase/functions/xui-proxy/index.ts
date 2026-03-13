@@ -542,7 +542,7 @@ async function enforceAllowedOutputsPostCreate(
     if (!refreshed) return null;
 
     const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
-    const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs, targetAllowed);
+    const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs ?? refreshed?.output_formats, targetAllowed);
     const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
 
     console.log(
