@@ -559,16 +559,19 @@ async function provisionUserOnXui(
 
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
-  const effectiveMemberId = String(rawParams.member_id || memberId || '').replace(/\D/g, '').trim();
+  const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
 
-  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId || '0'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+  // XUI 1.5.12 stability: always create with member_id=0 to keep explicit credentials
+  const effectiveMemberId = '0';
 
-  // Single-step create_line with bouquet + allowed_outputs as JSON strings
+  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+
   const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
-    memberId: effectiveMemberId || '0',
+    memberId: effectiveMemberId,
+    maxConnections: Number(maxConnections),
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
   });
@@ -594,16 +597,26 @@ async function provisionUserOnXui(
       finalLineId = String(finalRow.id || finalRow.line_id || createdLineId).trim();
       finalUsername = String(finalRow.username || username).trim();
       active = isLineActive(finalRow);
-      console.log(`[XUI] After create_line: bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
+      console.log(`[XUI] After create_line: username=${finalRow.username || '?'} bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
     }
 
-    const needsOutputFallback = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
-    if (needsOutputFallback) {
-      console.log(`[XUI] allowed_outputs mismatch for line_id=${createdLineId}. Trying edit_line fallback...`);
+    const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
+    const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
+    const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
+
+    if (needsBouquetSync || needsOutputSync || needsUsernameSync) {
+      console.log(
+        `[XUI] Sync required for line_id=${createdLineId} bouquet=${needsBouquetSync} outputs=${needsOutputSync} username=${needsUsernameSync}`,
+      );
+
       const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
         lineId: createdLineId,
         allowedOutputIds,
         expectedBouquetIds: bouquetIds,
+        expectedUsername: username,
+        expectedPassword: password,
+        expDate: expDateFormatted,
+        maxConnections,
       });
 
       if (fallbackRow) {
@@ -611,7 +624,7 @@ async function provisionUserOnXui(
         finalLineId = String(fallbackRow.id || fallbackRow.line_id || finalLineId).trim();
         finalUsername = String(fallbackRow.username || finalUsername || username).trim();
         active = isLineActive(fallbackRow);
-        console.log(`[XUI] After fallback: bouquet=${fallbackRow.bouquet || '?'} allowed_outputs=${fallbackRow.allowed_outputs || '?'}`);
+        console.log(`[XUI] After sync: username=${fallbackRow.username || '?'} bouquet=${fallbackRow.bouquet || '?'} allowed_outputs=${fallbackRow.allowed_outputs || '?'}`);
       }
     }
   }
