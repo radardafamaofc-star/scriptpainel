@@ -390,8 +390,13 @@ async function provisionUserOnXui(
       };
 
       const allWithId = packageList.filter((pkg: any) => !!getPackageId(pkg));
-      const nonTrial = allWithId.find((pkg: any) => !isTrialPackage(pkg));
-      const picked = nonTrial || allWithId[0];
+      // Pick package with most bouquets for maximum content coverage
+      const sorted = [...allWithId].sort((a: any, b: any) => {
+        const bqA = Array.isArray(a.bouquets) ? a.bouquets : (typeof a.bouquets === 'string' ? JSON.parse(a.bouquets || '[]') : []);
+        const bqB = Array.isArray(b.bouquets) ? b.bouquets : (typeof b.bouquets === 'string' ? JSON.parse(b.bouquets || '[]') : []);
+        return bqB.length - bqA.length;
+      });
+      const picked = sorted[0];
       const pickedId = picked ? getPackageId(picked) : '';
 
       if (pickedId && picked) {
