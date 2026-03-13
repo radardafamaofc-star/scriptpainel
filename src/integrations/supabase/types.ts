@@ -217,6 +217,7 @@ export type Database = {
           is_test: boolean
           max_connections: number
           name: string
+          package_id: string | null
           price: number
           server_id: string | null
           template: string | null
@@ -232,6 +233,7 @@ export type Database = {
           is_test?: boolean
           max_connections?: number
           name: string
+          package_id?: string | null
           price?: number
           server_id?: string | null
           template?: string | null
@@ -247,6 +249,7 @@ export type Database = {
           is_test?: boolean
           max_connections?: number
           name?: string
+          package_id?: string | null
           price?: number
           server_id?: string | null
           template?: string | null
