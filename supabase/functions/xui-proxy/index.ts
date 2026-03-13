@@ -743,7 +743,7 @@ function buildEditLineUrl(
   config: XuiServerConfig,
   lineId: string,
   bouquetIds: string[],
-  outputIds: string[] = ['1', '2', '3'],
+  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
   packageId: string = '',
   username: string = '',
   password: string = '',
