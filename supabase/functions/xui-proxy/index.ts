@@ -1301,7 +1301,7 @@ async function provisionUserOnXui(
     pkgOutputIds = ['ts', 'm3u8', 'rtmp'];
   }
 
-  // STEP 1: create_line via POST with bouquets_selected[] and allowed_outputs[]
+  // STEP 1: create_line via POST with minimal fields only (no bouquets/outputs)
   const createParams: Record<string, string | string[]> = {
     username,
     password,
@@ -1309,16 +1309,6 @@ async function provisionUserOnXui(
     ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
     ...(memberId ? { member_id: memberId } : {}),
   };
-
-  // Add bouquets as bouquets_selected[] array
-  if (pkgBouquetIds.length > 0) {
-    createParams['bouquets_selected[]'] = pkgBouquetIds;
-  }
-
-  // Add outputs as allowed_outputs[] array
-  if (pkgOutputIds.length > 0) {
-    createParams['allowed_outputs[]'] = pkgOutputIds;
-  }
 
   try {
     const createData = await createLinePostStrict(config, createParams);
@@ -1342,30 +1332,27 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou sem line_id');
     }
 
-    // STEP 2: edit_line via POST to apply package_id + bouquets + outputs
-    // CRITICAL: include username+password so XUI doesn't overwrite them
-    if (packageId || pkgBouquetIds.length > 0) {
-      const editParams: Record<string, string | string[]> = {
-        id: createdLineId,
-        username,
-        password,
-      };
-      if (packageId) {
-        editParams.package_id = packageId;
-      }
-      if (pkgBouquetIds.length > 0) {
-        editParams['bouquets_selected[]'] = pkgBouquetIds;
-      }
-      if (pkgOutputIds.length > 0) {
-        editParams['allowed_outputs[]'] = pkgOutputIds;
-      }
+    // STEP 2: edit_line via POST with bouquets[] + allowed_outputs[] only
+    const editBouquetIds = pkgBouquetIds.length > 0
+      ? pkgBouquetIds
+      : ['1', '2', '3', '177', '178'];
 
-      try {
-        await editLinePostStrict(config, editParams);
-      } catch (editErr: any) {
-        console.log(`[XUI] edit_line package apply warning: ${editErr.message}`);
-      }
+    const editOutputIds = pkgOutputIds.length > 0
+      ? pkgOutputIds
+      : ['ts', 'm3u8', 'rtmp'];
+
+    const editParams: Record<string, string | string[]> = {
+      id: createdLineId,
+      'bouquets[]': editBouquetIds,
+      'allowed_outputs[]': editOutputIds,
+    };
+
+    try {
+      await editLinePostStrict(config, editParams);
+    } catch (editErr: any) {
+      console.log(`[XUI] edit_line apply warning: ${editErr.message}`);
     }
+
 
     // STEP 3: read final state from XUI (authoritative username, bouquets, outputs)
     const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
