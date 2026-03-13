@@ -28,8 +28,6 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
   }
 }
 
-type XuiHttpMethod = 'GET' | 'POST';
-
 function encodeParamKey(key: string): string {
   // XUI expects bracket notation keys literally (e.g. bouquets_selected[])
   return key.includes('[]') ? key : encodeURIComponent(key);
@@ -52,85 +50,59 @@ async function xuiRequest(
   config: XuiServerConfig,
   action: string,
   params: Record<string, string | string[]> = {},
-  requestMethod: XuiHttpMethod = 'GET',
 ) {
   const baseUrl = config.url.replace(/\/+$/, '');
 
-  const coreParts: string[] = [];
-  coreParts.push(`api_key=${encodeURIComponent(config.api_key)}`);
-  coreParts.push(`action=${encodeURIComponent(action)}`);
-  if (config.api_version) coreParts.push(`api_version=${encodeURIComponent(config.api_version)}`);
-
+  // Build full query string — everything goes in the URL (GET), as per XUI One docs
+  const parts: string[] = [];
+  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
+  parts.push(`action=${encodeURIComponent(action)}`);
+  // Note: api_version is NOT a standard XUI One param — skip it to avoid confusion
   const paramParts = buildParamEntries(params);
-  const queryStringCore = coreParts.join('&');
-  const queryStringWithParams = [...coreParts, ...paramParts].join('&');
-
-  // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
-  const useCoreOnlyInUrl = requestMethod === 'POST';
-  const queryForUrl = useCoreOnlyInUrl ? queryStringCore : queryStringWithParams;
+  parts.push(...paramParts);
+  const queryString = parts.join('&');
 
   const urlsToTry = [
-    `${baseUrl}/?${queryForUrl}`,
-    `${baseUrl}?${queryForUrl}`,
-    `${baseUrl}/api.php?${queryForUrl}`,
-    `${baseUrl}/player_api.php?${queryForUrl}`,
+    `${baseUrl}/?${queryString}`,
+    `${baseUrl}?${queryString}`,
   ];
 
+  // Also try root host with api.php for legacy compat
   try {
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/api.php?${queryForUrl}`);
-      urlsToTry.push(`${root}/player_api.php?${queryForUrl}`);
+      urlsToTry.push(`${root}/api.php?${queryString}`);
     }
   } catch {}
 
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action} (${requestMethod})`);
-
-  const requestInit: RequestInit = requestMethod === 'POST'
-    ? {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: paramParts.join('&'),
-      }
-    : {};
+  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
 
   let lastError: Error | null = null;
 
   for (const url of urlsToTry) {
     try {
-      console.log(`[XUI] ${requestMethod}: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url, requestInit);
+      console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
+      const response = await tryFetch(url);
 
-      if (response.status === 404) {
-        console.log(`[XUI] 404`);
-        continue;
-      }
-      if (response.status === 403) {
-        console.log(`[XUI] 403 Forbidden`);
-        continue;
-      }
+      if (response.status === 404) { console.log(`[XUI] 404`); continue; }
+      if (response.status === 403) { console.log(`[XUI] 403`); continue; }
 
       const text = await response.text();
-      if (!text || text.trim() === '') {
-        console.log(`[XUI] Empty response`);
-        continue;
-      }
-
-      if (text.includes('<html') || text.includes('<!DOCTYPE')) {
-        console.log(`[XUI] HTML page, skipping`);
-        continue;
-      }
+      if (!text || text.trim() === '') { console.log(`[XUI] Empty`); continue; }
+      if (text.includes('<html') || text.includes('<!DOCTYPE')) { console.log(`[XUI] HTML, skip`); continue; }
 
       try {
         const json = JSON.parse(text);
-        console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
+        console.log(`[XUI] ✅ Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
         if (action === 'get_packages') {
           const entries = Object.entries(json);
           if (entries.length > 0) {
-            const [firstKey, firstVal] = entries[0];
-            console.log(`[XUI] Package entry key="${firstKey}" fields=${JSON.stringify(firstVal).substring(0, 500)}`);
+            console.log(`[XUI] Package[0]: ${JSON.stringify(entries[0][1]).substring(0, 500)}`);
           }
+        }
+        if (action === 'create_line') {
+          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
         }
         return json;
       } catch {
@@ -145,8 +117,7 @@ async function xuiRequest(
   }
 
   throw lastError || new Error(
-    `Não foi possível conectar ao XUI One. Verifique se a URL e a chave de API estão corretas.\n` +
-    `Formato esperado: http://SEU_IP:PORTA/accesscode`
+    `Não foi possível conectar ao XUI One. Verifique URL e API Key.\nFormato: http://IP:PORTA/accesscode`
   );
 }
 
