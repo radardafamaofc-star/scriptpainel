@@ -239,12 +239,26 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
   if (!resolvedBouquetIds.length) {
     try {
       const packages = await xuiRequest(config, 'get_packages');
-      const packageList = Array.isArray(packages) ? packages : Object.values(packages || {});
-      const firstPackage = packageList.find((pkg: any) => pkg && (pkg.id || pkg.package_id));
-      const firstPackageId = firstPackage ? String(firstPackage.id || firstPackage.package_id) : '';
-      if (firstPackageId) {
-        resolvedBouquetIds = [firstPackageId];
-        console.log(`[XUI] Auto-selected package for provision: ${firstPackageId}`);
+      const packageList = (Array.isArray(packages) ? packages : Object.values(packages || {}))
+        .filter((pkg: any) => pkg && typeof pkg === 'object');
+
+      const getPackageId = (pkg: any): string => String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
+      const isTrialPackage = (pkg: any): boolean => {
+        const flags = [pkg.is_trial, pkg.trial, pkg.trial_package, pkg.is_trial_package];
+        return flags.some((value) => {
+          const normalized = String(value ?? '').toLowerCase();
+          return value === true || value === 1 || normalized === '1' || normalized === 'true' || normalized === 'yes';
+        });
+      };
+
+      const allWithId = packageList.filter((pkg: any) => !!getPackageId(pkg));
+      const nonTrial = allWithId.find((pkg: any) => !isTrialPackage(pkg));
+      const picked = nonTrial || allWithId[0];
+      const pickedId = picked ? getPackageId(picked) : '';
+
+      if (pickedId) {
+        resolvedBouquetIds = [pickedId];
+        console.log(`[XUI] Auto-selected package for provision: ${pickedId} (trial=${isTrialPackage(picked) ? '1' : '0'})`);
       }
     } catch (e) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
