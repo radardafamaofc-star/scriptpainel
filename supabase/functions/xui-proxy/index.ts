@@ -516,6 +516,7 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         if (expectedBouquetIds.length) form.set('bouquet', bouquetJson);
         form.set('allowed_outputs', allowedJson);
+        form.set('output_formats', allowedJson);
         attachCommonArrayFields(form);
       },
     },
@@ -524,6 +525,7 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         if (expectedBouquetIds.length) form.set('bouquet', bouquetCsv);
         form.set('allowed_outputs', allowedCsv);
+        form.set('output_formats', allowedCsv);
         attachCommonArrayFields(form);
       },
     },
@@ -532,6 +534,7 @@ async function enforceAllowedOutputsPostCreate(
       fill: (form) => {
         if (expectedBouquetIds.length) form.set('bouquet', bouquetQuotedJson);
         form.set('allowed_outputs', allowedQuotedJson);
+        form.set('output_formats', allowedQuotedJson);
         attachCommonArrayFields(form);
       },
     },
