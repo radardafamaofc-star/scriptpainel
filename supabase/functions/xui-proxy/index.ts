@@ -29,8 +29,8 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
 }
 
 function encodeParamKey(key: string): string {
-  // XUI expects bracket notation keys literally (e.g. bouquets_selected[])
-  return key.includes('[]') ? key : encodeURIComponent(key);
+  // XUI expects bracket notation keys literally (e.g. bouquets_selected[], bouquets_selected[0])
+  return (key.includes('[') && key.includes(']')) ? key : encodeURIComponent(key);
 }
 
 function buildParamEntries(params: Record<string, string | string[]> = {}): string[] {
