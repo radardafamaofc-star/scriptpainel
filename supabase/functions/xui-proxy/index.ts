@@ -375,14 +375,16 @@ async function provisionUserOnXui(
 
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
+  const effectiveMemberId = String(rawParams.member_id || memberId || '').replace(/\D/g, '').trim();
 
-  console.log(`[XUI] Provisioning ${username} member_id=${memberId || 'n/a'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId || '0'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
 
   // Single-step create_line with bouquet + allowed_outputs as JSON strings
   const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+    memberId: effectiveMemberId || '0',
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
   });
