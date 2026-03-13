@@ -274,6 +274,41 @@ function normalizeIds(ids: string[] = []): string[] {
   return Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean)));
 }
 
+function extractLineAssignments(payload: any): XuiLineAssignments {
+  const bouquets: string[] = [];
+  const packages: string[] = [];
+  const outputs: string[] = [];
+
+  const visit = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    bouquets.push(...parseIdList(node.bouquet));
+    bouquets.push(...parseIdList(node.bouquets));
+    bouquets.push(...parseIdList(node.bouquets_selected));
+
+    packages.push(...parseIdList(node.package_id));
+
+    outputs.push(...parseIdList(node.allowed_outputs));
+    outputs.push(...parseIdList(node.output_formats));
+    outputs.push(...parseIdList(node.allowed_outputs_selected));
+
+    Object.values(node).forEach(visit);
+  };
+
+  visit(payload);
+
+  return {
+    bouquetIds: normalizeIds(bouquets),
+    packageIds: normalizeIds(packages),
+    outputIds: normalizeIds(outputs),
+  };
+}
+
 function matchesExpectedAssignments(actual: XuiLineAssignments, expected: ExpectedLineAssignments): boolean {
   const expectedBouquets = normalizeIds(expected.bouquetIds || []);
   const expectedPackages = normalizeIds(expected.packageIds || []);
