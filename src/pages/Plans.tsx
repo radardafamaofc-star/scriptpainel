@@ -146,6 +146,7 @@ export default function Plans() {
         is_test: f.is_test,
         price: f.price,
         bouquets: f.credits,
+        package_id: f.package_id || null,
         server_id: f.server_id || null,
         template: f.template || null,
       };
