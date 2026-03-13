@@ -870,8 +870,11 @@ async function provisionUserOnXui(
 
   // Get bouquet IDs from the package
   let bouquetIds: string[] = [];
+  let outputIds: string[] = ['1', '2', '3'];
   if (packageId) {
-    bouquetIds = await getPackageBouquetIds(config, packageId);
+    const assignments = await getPackageAssignments(config, packageId);
+    bouquetIds = assignments.bouquetIds;
+    outputIds = assignments.outputIds;
   }
 
   // Calculate expiration variants
