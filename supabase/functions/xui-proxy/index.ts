@@ -831,7 +831,7 @@ async function provisionUserOnXui(
 
     const currentPackageId = String(finalRow?.package_id || '').replace(/\D/g, '').trim();
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
-    const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
+    const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs ?? finalRow?.output_formats, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
     const needsPackageSync = !!effectivePackageId && currentPackageId !== effectivePackageId;
 
