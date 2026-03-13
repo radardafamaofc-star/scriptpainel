@@ -677,6 +677,21 @@ async function getPackageAssignments(config: XuiServerConfig, packageId: string)
   }
 }
 
+function buildActionGetUrl(
+  config: XuiServerConfig,
+  action: string,
+  params: Record<string, string> = {},
+): string {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const parts: string[] = [
+    `api_key=${encodeURIComponent(config.api_key)}`,
+    `action=${encodeURIComponent(action)}`,
+  ];
+
+  appendRawParams(parts, params);
+  return `${baseUrl}/?${parts.join('&')}`;
+}
+
 // Build a raw GET URL for create_line with bouquets_selected[] as literal bracket params
 // This is how QPanel and the official XUI docs do it
 function buildCreateLineUrl(
