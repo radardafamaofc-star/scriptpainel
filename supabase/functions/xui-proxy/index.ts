@@ -603,6 +603,76 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
+// Fetch bouquet IDs belonging to a package
+async function getPackageBouquetIds(config: XuiServerConfig, packageId: string): Promise<string[]> {
+  try {
+    const payload = await xuiRequest(config, 'get_packages');
+    const rows = Array.isArray(payload) ? payload : Object.values(payload || {});
+    const pkg = rows.find((p: any) => String(p?.id || '') === packageId);
+    if (!pkg) return [];
+    const bouquets = parseIdList((pkg as any).bouquets);
+    console.log(`[XUI] Package ${packageId} has bouquets: ${JSON.stringify(bouquets)}`);
+    return bouquets;
+  } catch (e: any) {
+    console.log(`[XUI] Failed to get package bouquets: ${e.message}`);
+    return [];
+  }
+}
+
+// Build a raw GET URL for create_line with bouquets_selected[] as literal bracket params
+// This is how QPanel and the official XUI docs do it
+function buildCreateLineUrl(
+  config: XuiServerConfig,
+  params: Record<string, string>,
+  bouquetIds: string[],
+): string {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const parts: string[] = [
+    `api_key=${encodeURIComponent(config.api_key)}`,
+    `action=create_line`,
+  ];
+
+  for (const [k, v] of Object.entries(params)) {
+    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+  }
+
+  // bouquets_selected[] as individual params with literal brackets (NOT encoded)
+  for (const id of bouquetIds) {
+    parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
+  }
+
+  // Also add allowed_outputs_selected for output formats (1=TS, 2=M3U8, 3=RTMP)
+  for (const fmt of ['1', '2', '3']) {
+    parts.push(`allowed_outputs_selected[]=${fmt}`);
+  }
+
+  return `${baseUrl}/?${parts.join('&')}`;
+}
+
+// Build a raw GET URL for edit_line with bouquets_selected[]
+function buildEditLineUrl(
+  config: XuiServerConfig,
+  lineId: string,
+  bouquetIds: string[],
+): string {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const parts: string[] = [
+    `api_key=${encodeURIComponent(config.api_key)}`,
+    `action=edit_line`,
+    `id=${encodeURIComponent(lineId)}`,
+  ];
+
+  for (const id of bouquetIds) {
+    parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
+  }
+
+  for (const fmt of ['1', '2', '3']) {
+    parts.push(`allowed_outputs_selected[]=${fmt}`);
+  }
+
+  return `${baseUrl}/?${parts.join('&')}`;
+}
+
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -622,7 +692,8 @@ async function provisionUserOnXui(
   let packageId = parsedPackageIds[0] || '';
   const rawPlanName = String(rawParams.plan_name || '').trim();
 
-  const resolvePackageFromServer = async (): Promise<string> => {
+  // Auto-resolve package if not provided
+  if (!packageId && rawPlanName) {
     try {
       const payload = await xuiRequest(config, 'get_packages');
       const rows = (Array.isArray(payload) ? payload : Object.values(payload || {}))
@@ -636,59 +707,43 @@ async function provisionUserOnXui(
         .trim();
 
       const wanted = normalize(rawPlanName);
-      const wantAdult = /\bc\s*adult|com\s*adult|adult\b/.test(wanted);
-      const avoidAdult = /\bs\s*adult|sem\s*adult/.test(wanted);
-
-      const candidates = rows
-        .map((pkg: any) => {
-          const id = String(pkg.id || pkg.package_id || '').trim();
-          if (!id) return null;
-          const name = String(pkg.package_name || pkg.name || pkg.title || `package_${id}`).trim();
-          const bouquetsCount = parseIdList(pkg.bouquets).length;
-          return { id, name, nameNorm: normalize(name), bouquetsCount };
-        })
-        .filter(Boolean) as Array<{ id: string; name: string; nameNorm: string; bouquetsCount: number }>;
-
-      if (!candidates.length) return '';
-
-      if (wanted) {
-        const wantedTokens = wanted.split(' ').filter((t) => t.length >= 2);
-        const scored = candidates.map((candidate) => {
-          let score = 0;
-          for (const token of wantedTokens) {
-            if (candidate.nameNorm.includes(token)) score += 2;
-          }
-          if (wantAdult && /adult/.test(candidate.nameNorm)) score += 4;
-          if (avoidAdult && /adult/.test(candidate.nameNorm)) score -= 3;
-          if (candidate.nameNorm === wanted) score += 8;
-          score += Math.min(candidate.bouquetsCount, 20) * 0.05;
-          return { ...candidate, score };
-        }).sort((a, b) => b.score - a.score);
-
-        const bestByName = scored[0];
-        if (bestByName && bestByName.score > 0) {
-          console.log(`[XUI] Auto-selected package by plan name '${rawPlanName}': id=${bestByName.id} name='${bestByName.name}' score=${bestByName.score}`);
-          return bestByName.id;
+      const candidates = rows.map((pkg: any) => {
+        const id = String(pkg.id || pkg.package_id || '').trim();
+        if (!id) return null;
+        const name = String(pkg.package_name || pkg.name || '').trim();
+        const nameNorm = normalize(name);
+        const bouquetsCount = parseIdList(pkg.bouquets).length;
+        let score = 0;
+        const tokens = wanted.split(' ').filter((t) => t.length >= 2);
+        for (const token of tokens) {
+          if (nameNorm.includes(token)) score += 2;
         }
-      }
+        if (nameNorm === wanted) score += 8;
+        score += Math.min(bouquetsCount, 20) * 0.05;
+        return { id, name, score, bouquetsCount };
+      }).filter(Boolean) as Array<{ id: string; name: string; score: number; bouquetsCount: number }>;
 
-      const bestByCoverage = [...candidates].sort((a, b) => b.bouquetsCount - a.bouquetsCount)[0];
-      if (bestByCoverage?.id) {
-        console.log(`[XUI] Auto-selected package by coverage: id=${bestByCoverage.id} name='${bestByCoverage.name}' bouquets=${bestByCoverage.bouquetsCount}`);
-        return bestByCoverage.id;
+      candidates.sort((a, b) => b.score - a.score);
+      if (candidates[0]?.score > 0) {
+        packageId = candidates[0].id;
+        console.log(`[XUI] Auto-selected package '${candidates[0].name}' id=${packageId} score=${candidates[0].score}`);
+      } else if (candidates.length > 0) {
+        candidates.sort((a, b) => b.bouquetsCount - a.bouquetsCount);
+        packageId = candidates[0].id;
+        console.log(`[XUI] Fallback package by coverage: '${candidates[0].name}' id=${packageId}`);
       }
-
-      return '';
     } catch (e: any) {
       console.log(`[XUI] Could not auto-resolve package: ${e.message}`);
-      return '';
     }
-  };
-
-  if (!packageId) {
-    packageId = await resolvePackageFromServer();
   }
 
+  // Get bouquet IDs from the package
+  let bouquetIds: string[] = [];
+  if (packageId) {
+    bouquetIds = await getPackageBouquetIds(config, packageId);
+  }
+
+  // Calculate expiration variants
   const expUnix = Number(expDate);
   const nowUnix = Math.floor(Date.now() / 1000);
   const remainingHours = Number.isFinite(expUnix) && expUnix > nowUnix
@@ -698,53 +753,90 @@ async function provisionUserOnXui(
 
   const rawExpDate = String(expDate || '').trim();
   const expVariants: string[] = [];
-
   if (rawExpDate) {
     const compactRaw = rawExpDate.toLowerCase().replace(/\s+/g, '');
     if (/^\d+(hours?|days?)$/.test(compactRaw)) expVariants.push(compactRaw);
     if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(rawExpDate)) expVariants.push(rawExpDate);
   }
-
   expVariants.push(`${remainingHours}hours`, `${remainingDays}days`);
-
   if (Number.isFinite(expUnix) && expUnix > 0) {
     const expAsDate = new Date(expUnix * 1000);
     if (!Number.isNaN(expAsDate.getTime())) expVariants.push(formatLocalDateString(expAsDate));
   }
-
   const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
 
-  const baseParams: Record<string, string> = {
-    username,
-    password,
-    max_connections: maxConnections,
-  };
-  if (memberId) baseParams.member_id = memberId;
-  if (packageId) baseParams.package_id = packageId;
-
-  const expectedAssignments: ExpectedLineAssignments = {
-    packageIds: packageId ? [packageId] : [],
-  };
-
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const params = { ...baseParams, exp_date: expValue };
-    console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
+    const lineParams: Record<string, string> = {
+      username,
+      password,
+      max_connections: maxConnections,
+      exp_date: expValue,
+    };
+    if (memberId) lineParams.member_id = memberId;
+    if (packageId) lineParams.package_id = packageId;
 
+    // Strategy 1: GET with bouquets_selected[] in query string (QPanel style)
+    if (bouquetIds.length > 0) {
+      try {
+        const url = buildCreateLineUrl(config, lineParams, bouquetIds);
+        console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
+        const response = await tryFetch(url);
+        const text = await response.text();
+        if (text && !text.includes('<html')) {
+          const json = JSON.parse(text);
+          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
+          if (isXuiSuccess(json) || String(json?.status || '').toUpperCase().includes('EXISTS_USERNAME')) {
+            const lineId = String(json?.data?.id || '').trim();
+            const currentBouquets = parseIdList(json?.data?.bouquet);
+            console.log(`[XUI] ✅ Line created id=${lineId} bouquets=${JSON.stringify(currentBouquets)}`);
+
+            // If bouquets still empty, try edit_line via GET
+            if (currentBouquets.length === 0 && lineId) {
+              console.log(`[XUI] Bouquets empty, trying edit_line via GET...`);
+              const editUrl = buildEditLineUrl(config, lineId, bouquetIds);
+              console.log(`[XUI] GET edit_line: ${editUrl.replace(config.api_key, '***')}`);
+              const editResp = await tryFetch(editUrl);
+              const editText = await editResp.text();
+              if (editText && !editText.includes('<html')) {
+                const editJson = JSON.parse(editText);
+                console.log(`[XUI] edit_line response: ${JSON.stringify(editJson).substring(0, 800)}`);
+                const editBouquets = parseIdList(editJson?.data?.bouquet);
+                if (editBouquets.length > 0) {
+                  console.log(`[XUI] ✅ Bouquets applied via edit_line: ${JSON.stringify(editBouquets)}`);
+                  return { action: 'create_and_edit', data: json };
+                }
+              }
+            }
+
+            return { action: 'create_line', data: json };
+          }
+          const err = getXuiError(json);
+          if (err) {
+            lastError = err;
+            console.log(`[XUI] create_line (GET) failed: ${err}`);
+          }
+        }
+      } catch (e: any) {
+        console.log(`[XUI] GET create_line error: ${e.message}`);
+        lastError = e.message;
+      }
+    }
+
+    // Strategy 2: Standard xuiRequest (POST fallback)
     try {
-      const data = await xuiRequest(config, 'create_line', params);
+      console.log(`[XUI] Fallback: POST create_line params: ${JSON.stringify(lineParams)}`);
+      const data = await xuiRequest(config, 'create_line', lineParams);
       const createError = getXuiError(data);
       const status = String(data?.status || '').toUpperCase();
 
       if (createError && !status.includes('EXISTS_USERNAME')) {
         lastError = createError;
-        console.log(`[XUI] create_line failed: ${lastError}`);
         continue;
       }
-
       if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
         lastError = createError || 'create_line retornou status inválido';
         continue;
@@ -752,28 +844,31 @@ async function provisionUserOnXui(
 
       const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
 
-      if (!packageId) {
-        console.log(`[XUI] ✅ Line created for ${username} (without package_id)`);
-        return { action: 'create_line', data };
+      // Try edit_line via GET to apply bouquets
+      if (bouquetIds.length > 0 && lineId) {
+        try {
+          const editUrl = buildEditLineUrl(config, lineId, bouquetIds);
+          console.log(`[XUI] GET edit_line post-create: ${editUrl.replace(config.api_key, '***')}`);
+          const editResp = await tryFetch(editUrl);
+          const editText = await editResp.text();
+          if (editText && !editText.includes('<html')) {
+            const editJson = JSON.parse(editText);
+            const editBouquets = parseIdList(editJson?.data?.bouquet);
+            if (editBouquets.length > 0) {
+              console.log(`[XUI] ✅ Bouquets applied via edit_line after POST create: ${JSON.stringify(editBouquets)}`);
+              return { action: 'create_and_edit', data };
+            }
+          }
+        } catch (e: any) {
+          console.log(`[XUI] edit_line GET fallback error: ${e.message}`);
+        }
       }
 
-      const directAssignments = extractLineAssignments(data);
-      const packageAppliedDirectly =
-        directAssignments.packageIds.includes(packageId)
-        || directAssignments.bouquetIds.includes(packageId)
-        || await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-
-      if (packageAppliedDirectly) {
-        console.log(`[XUI] ✅ Line created for ${username} with package_id=${packageId}`);
-        return { action: 'create_line', data };
-      }
-
-      const warning = 'Linha criada com package_id, mas API não confirmou os detalhes dos bouquets';
-      console.log(`[XUI] ⚠️ ${warning} username=${username} line_id=${lineId || 'n/a'} package_id=${packageId}`);
-      return { action: 'create_line_unverified', data, warning, line_id: lineId };
+      console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'}`);
+      return { action: 'create_line', data };
     } catch (e: any) {
       lastError = e.message;
-      console.log(`[XUI] create_line error: ${lastError}`);
+      console.log(`[XUI] create_line POST error: ${lastError}`);
     }
   }
 
