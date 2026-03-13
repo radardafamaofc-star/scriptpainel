@@ -1265,7 +1265,7 @@ async function provisionUserOnXui(
     username,
     password,
     ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
-    ...(packageId ? { package_id: packageId } : {}),
+    ...(packageId ? { package: packageId } : {}),
     ...(memberId ? { member_id: memberId } : {}),
   };
 
