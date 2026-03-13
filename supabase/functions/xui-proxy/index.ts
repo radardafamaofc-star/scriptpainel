@@ -616,12 +616,11 @@ async function provisionUserOnXui(
 
   const maxConnections = rawParams.max_connections || '1';
   const expDate = rawParams.exp_date || '';
+  const parsedPackageIds = sanitizeSelectionIds(
+    parseIdList(rawParams.package_id || rawParams.bouquet || rawParams.bouquets || ''),
+  );
+  const packageId = parsedPackageIds[0] || '';
 
-  // The package_id from the plan already has all bouquets/outputs configured on XUI.
-  // We just need to pass it directly — no need to extract individual bouquets.
-  const packageId = String(rawParams.bouquet || rawParams.bouquets || rawParams.package_id || '').trim();
-
-  // Build expiration variants
   const expUnix = Number(expDate);
   const nowUnix = Math.floor(Date.now() / 1000);
   const remainingHours = Number.isFinite(expUnix) && expUnix > nowUnix
@@ -634,21 +633,15 @@ async function provisionUserOnXui(
 
   if (rawExpDate) {
     const compactRaw = rawExpDate.toLowerCase().replace(/\s+/g, '');
-    if (/^\d+(hours?|days?)$/.test(compactRaw)) {
-      expVariants.push(compactRaw);
-    }
-    if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(rawExpDate)) {
-      expVariants.push(rawExpDate);
-    }
+    if (/^\d+(hours?|days?)$/.test(compactRaw)) expVariants.push(compactRaw);
+    if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(rawExpDate)) expVariants.push(rawExpDate);
   }
 
   expVariants.push(`${remainingHours}hours`, `${remainingDays}days`);
 
   if (Number.isFinite(expUnix) && expUnix > 0) {
     const expAsDate = new Date(expUnix * 1000);
-    if (!Number.isNaN(expAsDate.getTime())) {
-      expVariants.push(formatLocalDateString(expAsDate));
-    }
+    if (!Number.isNaN(expAsDate.getTime())) expVariants.push(formatLocalDateString(expAsDate));
   }
 
   const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
@@ -659,13 +652,43 @@ async function provisionUserOnXui(
     max_connections: maxConnections,
   };
   if (memberId) baseParams.member_id = memberId;
+  if (packageId) baseParams.package_id = packageId;
 
-  // Simple: just pass package_id. XUI assigns bouquets/outputs from the package config.
-  if (packageId) {
-    baseParams.package_id = packageId;
-  }
+  const expectedAssignments: ExpectedLineAssignments = {
+    packageIds: packageId ? [packageId] : [],
+  };
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
+  const tryApplyPackageFallback = async (lineId: string) => {
+    if (!packageId || !lineId) return null;
+
+    const variants: Array<Record<string, string | string[]>> = [
+      { package_id: packageId },
+      { package_id: [packageId] },
+      { 'package_id[]': [packageId] },
+      { bouquet: packageId },
+      { bouquets: packageId },
+      { 'bouquets_selected[]': [packageId] },
+    ];
+
+    for (const variant of variants) {
+      try {
+        const editParams = { id: lineId, ...variant };
+        console.log(`[XUI] edit_line package fallback params: ${JSON.stringify(editParams)}`);
+        const edited = await xuiRequest(config, 'edit_line', editParams);
+        const err = getXuiError(edited);
+        if (err || !isXuiSuccess(edited)) continue;
+
+        const verified = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+        if (verified) return edited;
+      } catch (e: any) {
+        console.log(`[XUI] edit_line package fallback failed: ${e.message}`);
+      }
+    }
+
+    return null;
+  };
+
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
@@ -684,12 +707,38 @@ async function provisionUserOnXui(
         continue;
       }
 
-      if (isXuiSuccess(data) || status.includes('EXISTS_USERNAME')) {
-        console.log(`[XUI] ✅ Line created for ${username}`);
+      if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
+        lastError = createError || 'create_line retornou status inválido';
+        continue;
+      }
+
+      const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
+
+      if (!packageId) {
+        console.log(`[XUI] ✅ Line created for ${username} (without package_id)`);
         return { action: 'create_line', data };
       }
 
-      lastError = createError || 'create_line retornou status inválido';
+      const directAssignments = extractLineAssignments(data);
+      const packageAppliedDirectly =
+        directAssignments.packageIds.includes(packageId)
+        || directAssignments.bouquetIds.includes(packageId)
+        || await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+
+      if (packageAppliedDirectly) {
+        console.log(`[XUI] ✅ Line created for ${username} with package_id=${packageId}`);
+        return { action: 'create_line', data };
+      }
+
+      const edited = await tryApplyPackageFallback(lineId);
+      if (edited) {
+        console.log(`[XUI] ✅ Package applied via edit_line for ${username}`);
+        return { action: 'edit_line', data: edited };
+      }
+
+      const warning = 'Linha criada, mas package_id não foi confirmado via API';
+      console.log(`[XUI] ⚠️ ${warning} username=${username} line_id=${lineId || 'n/a'} package_id=${packageId}`);
+      return { action: 'create_line_unverified', data, warning, line_id: lineId };
     } catch (e: any) {
       lastError = e.message;
       console.log(`[XUI] create_line error: ${lastError}`);

@@ -23,6 +23,7 @@ interface PlanForm {
   is_test: boolean;
   price: number;
   credits: number;
+  package_id: string;
   duration_value: number;
   duration_unit: DurationUnit;
   max_connections: number;
@@ -32,7 +33,7 @@ interface PlanForm {
 
 const emptyForm: PlanForm = {
   name: "", server_id: "", order: 0, status: "active", is_test: false,
-  price: 0, credits: 1, duration_value: 1, duration_unit: "months",
+  price: 0, credits: 1, package_id: "", duration_value: 1, duration_unit: "months",
   max_connections: 2, bouquets: 0, template: "",
 };
 
@@ -145,6 +146,7 @@ export default function Plans() {
         is_test: f.is_test,
         price: f.price,
         bouquets: f.credits,
+        package_id: f.package_id || null,
         server_id: f.server_id || null,
         template: f.template || null,
       };
@@ -195,13 +197,14 @@ export default function Plans() {
       is_test: Boolean(plan.is_test),
       price: Number(plan.price),
       credits: plan.bouquets || 0,
+      package_id: String((plan as any).package_id || ""),
       duration_value: value,
       duration_unit: unit,
       max_connections: plan.max_connections,
       bouquets: plan.bouquets,
       template: (plan as any).template || "",
     });
-    setSelectedPackageId(String(plan.bouquets || ""));
+    setSelectedPackageId(String((plan as any).package_id || ""));
     setOpen(true);
   };
 
@@ -241,7 +244,11 @@ export default function Plans() {
                     {servers.map(s => (
                       <label key={s.id} className="flex items-center gap-2 cursor-pointer">
                         <input type="radio" name="server" className="accent-primary" checked={form.server_id === s.id}
-                          onChange={() => handleChange("server_id", s.id)} />
+                          onChange={() => {
+                            handleChange("server_id", s.id);
+                            handleChange("package_id", "");
+                            setSelectedPackageId("");
+                          }} />
                         <span className="text-sm text-foreground">{s.name}</span>
                       </label>
                     ))}
@@ -273,7 +280,7 @@ export default function Plans() {
                               checked={selectedPackageId === pkg.id}
                               onChange={() => {
                                 setSelectedPackageId(pkg.id);
-                                handleChange("bouquets", parseInt(pkg.id) || 0);
+                                handleChange("package_id", pkg.id);
                               }}
                             />
                             <span className="text-sm text-foreground">{pkg.name}</span>
@@ -401,7 +408,7 @@ export default function Plans() {
                 <Button
                   className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                   onClick={() => saveMutation.mutate(form)}
-                  disabled={saveMutation.isPending || !form.name}
+                  disabled={saveMutation.isPending || !form.name || !form.server_id || !form.package_id}
                 >
                   {saveMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   {editId ? "Salvar Alterações" : "Adicionar Plano"}

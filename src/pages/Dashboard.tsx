@@ -47,7 +47,7 @@ export default function Dashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string; bouquetId: string } | null>(null);
+  const [testPlan, setTestPlan] = useState<{ id: string; name: string; serverId: string | null; durationHours: number; serverName: string; packageId: string } | null>(null);
   const [testResult, setTestResult] = useState<{ username: string; password: string; template?: string } | null>(null);
 
   const { data: stats, isLoading } = useQuery({
@@ -59,7 +59,7 @@ export default function Dashboard() {
         supabase.from("servers").select("id, name, status, created_at"),
         supabase.from("active_connections").select("id, client_id", { count: "exact" }),
         supabase.from("credit_transactions").select("amount, type, created_at"),
-        supabase.from("plans").select("id, name, server_id, duration_days, duration_hours, is_test, price, bouquets, servers(name)"),
+        supabase.from("plans").select("id, name, server_id, duration_days, duration_hours, is_test, price, bouquets, package_id, servers(name)"),
       ]);
 
       const clients = clientsRes.data || [];
@@ -134,7 +134,7 @@ export default function Dashboard() {
           serverId: p.server_id,
           durationHours: normalizeDurationHours(p),
           serverName: p.servers?.name || "—",
-          bouquetId: String(p.bouquets ?? "").trim(),
+          packageId: String((p as any).package_id ?? "").trim(),
         }));
 
       return {
@@ -183,7 +183,7 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { serverId: string | null; durationHours: number; bouquetId: string }) => {
+    mutationFn: async (plan: { serverId: string | null; durationHours: number; packageId: string }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
       const totalHours = Math.max(1, plan.durationHours || 0);
@@ -211,7 +211,7 @@ export default function Dashboard() {
               password,
               max_connections: "1",
               exp_date: String(expTimestamp),
-              bouquet: plan.bouquetId && plan.bouquetId !== "0" ? plan.bouquetId : "",
+              package_id: plan.packageId && plan.packageId !== "0" ? plan.packageId : "",
             },
           },
         });
@@ -253,7 +253,7 @@ export default function Dashboard() {
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
-  const handleQuickTest = async (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string; bouquetId: string }) => {
+  const handleQuickTest = async (plan: { id: string; name: string; serverId: string | null; durationHours: number; serverName: string; packageId: string }) => {
     let nextPlan = plan;
 
     const { data } = await supabase
@@ -455,7 +455,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours, bouquetId: testPlan.bouquetId });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours, packageId: testPlan.packageId });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >
