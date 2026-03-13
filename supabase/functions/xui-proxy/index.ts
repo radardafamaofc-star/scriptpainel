@@ -701,10 +701,21 @@ async function provisionUserOnXui(
     },
   ];
 
-  const expVariants = [`${remainingHours}hours`, `${remainingDays}days`];
+  const expVariantCandidates: string[] = [];
   if (expDate && Number.isFinite(Number(expDate)) && Number(expDate) > 0) {
-    expVariants.push(expDate);
+    const unixTs = Number(expDate);
+    const expAsDate = new Date(unixTs * 1000);
+    if (!Number.isNaN(expAsDate.getTime())) {
+      expVariantCandidates.push(expAsDate.toISOString().slice(0, 10));
+      expVariantCandidates.push(expAsDate.toISOString().slice(0, 19).replace('T', ' '));
+    }
   }
+
+  expVariantCandidates.push(`${remainingHours}hours`, `${remainingDays}days`);
+  if (expDate) expVariantCandidates.push(expDate);
+
+  const expVariants = Array.from(new Set(expVariantCandidates.map((v) => String(v).trim()).filter(Boolean)));
+  console.log(`[XUI] exp_date variants: ${JSON.stringify(expVariants)}`);
 
   const tryEditFallback = async (lineId: string, expValue: string) => {
     for (const assignment of editAssignmentVariants) {
