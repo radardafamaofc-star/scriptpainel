@@ -483,30 +483,20 @@ async function enforceAllowedOutputsPostCreate(
   if (!lineId) return null;
 
   const targetUsername = String(params.expectedUsername || '').trim();
-  const targetPassword = String(params.expectedPassword || '').trim();
   const targetExpDate = String(params.expDate || '').trim();
   const targetMaxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim() || '1';
-  const targetMemberId = String(params.expectedMemberId || '').replace(/\D/g, '').trim();
-  const targetPackageId = String(params.expectedPackageId || '').replace(/\D/g, '').trim();
-
-  const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
-  const targetAllowed = allowedNumeric.map((id) => String(id));
-  const targetOutputNames = toOutputFormatNames(targetAllowed);
 
   const expectedBouquetIds = (params.expectedBouquetIds || [])
     .map((id) => String(id).replace(/\D/g, '').trim())
     .filter(Boolean);
   const expectedBouquetNumeric = expectedBouquetIds.map(Number).filter((id) => Number.isFinite(id));
 
-  const allowedJson = JSON.stringify(allowedNumeric);
-  const allowedQuotedJson = JSON.stringify(targetAllowed);
-  const allowedCsv = allowedNumeric.join(',');
-  const outputNameJson = JSON.stringify(targetOutputNames);
-  const outputNameCsv = targetOutputNames.join(',');
+  const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
+  const targetAllowed = allowedNumeric.map((id) => String(id));
 
   const bouquetJson = JSON.stringify(expectedBouquetNumeric);
-  const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
   const bouquetCsv = expectedBouquetIds.join(',');
+  const allowedJson = JSON.stringify(allowedNumeric);
 
   const buildBaseForm = () => {
     const form = new URLSearchParams();
@@ -514,71 +504,42 @@ async function enforceAllowedOutputsPostCreate(
     form.set('line_id', lineId);
     form.set('max_connections', targetMaxConnections);
     if (targetUsername) form.set('username', targetUsername);
-    if (targetPassword) form.set('password', targetPassword);
     if (targetExpDate) form.set('exp_date', targetExpDate);
-    if (targetMemberId) form.set('member_id', targetMemberId);
-    if (targetPackageId && targetPackageId !== '0') {
-      form.set('package_id', targetPackageId);
-      form.set('package', targetPackageId);
-    }
     return form;
-  };
-
-  const attachCommonArrayFields = (form: URLSearchParams) => {
-    if (expectedBouquetIds.length) {
-      appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
-      form.set('bouquets_selected', bouquetJson);
-      form.set('bouquets', bouquetJson);
-    }
-
-    if (targetAllowed.length) {
-      appendArrayField(form, 'allowed_outputs', targetAllowed);
-      appendArrayField(form, 'output_formats', targetAllowed);
-      if (targetOutputNames.length) {
-        appendArrayField(form, 'output_formats', targetOutputNames);
-      }
-    }
   };
 
   const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
-      label: 'json_primary',
+      label: 'arrays_json',
       fill: (form) => {
-        if (expectedBouquetIds.length) form.set('bouquet', bouquetJson);
-        form.set('allowed_outputs', allowedJson);
-        form.set('output_formats', allowedJson);
-        attachCommonArrayFields(form);
-      },
-    },
-    {
-      label: 'csv_primary',
-      fill: (form) => {
-        if (expectedBouquetIds.length) form.set('bouquet', bouquetCsv);
-        form.set('allowed_outputs', allowedCsv);
-        form.set('output_formats', allowedCsv);
-        attachCommonArrayFields(form);
-      },
-    },
-    {
-      label: 'quoted_json_primary',
-      fill: (form) => {
-        if (expectedBouquetIds.length) form.set('bouquet', bouquetQuotedJson);
-        form.set('allowed_outputs', allowedQuotedJson);
-        form.set('output_formats', allowedQuotedJson);
-        attachCommonArrayFields(form);
-      },
-    },
-    {
-      label: 'output_names',
-      fill: (form) => {
-        if (expectedBouquetIds.length) form.set('bouquet', bouquetJson);
-        form.set('allowed_outputs', allowedJson);
-        if (targetOutputNames.length) {
-          form.set('output_formats', outputNameJson);
-        } else {
+        if (expectedBouquetIds.length) {
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          form.set('bouquet', bouquetJson);
+        }
+        if (allowedNumeric.length) {
+          form.set('allowed_outputs', allowedJson);
           form.set('output_formats', allowedJson);
         }
-        attachCommonArrayFields(form);
+      },
+    },
+    {
+      label: 'arrays_csv',
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          form.set('bouquet', bouquetCsv);
+        }
+        if (allowedNumeric.length) {
+          form.set('allowed_outputs', allowedJson);
+        }
+      },
+    },
+    {
+      label: 'arrays_only',
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+        }
       },
     },
   ];
@@ -588,14 +549,13 @@ async function enforceAllowedOutputsPostCreate(
     if (!refreshed) return null;
 
     const bouquetOk = expectedBouquetIds.length === 0 || hasSameNumericIds(refreshed?.bouquet, expectedBouquetIds);
-    const outputsOk = hasSameNumericIds(refreshed?.allowed_outputs ?? refreshed?.output_formats, targetAllowed);
-    const usernameOk = !targetUsername || String(refreshed?.username || '').trim() === targetUsername;
+    const outputsOk = targetAllowed.length === 0 || hasSameNumericIds(refreshed?.allowed_outputs ?? refreshed?.output_formats, targetAllowed);
 
     console.log(
       `[XUI] After ${label}: username=${refreshed?.username || '?'} bouquet=${refreshed?.bouquet || '?'} allowed_outputs=${refreshed?.allowed_outputs || '?'}`,
     );
 
-    if (bouquetOk && outputsOk && usernameOk) return refreshed;
+    if (bouquetOk && outputsOk) return refreshed;
     return null;
   };
 
@@ -630,48 +590,23 @@ async function enforceAllowedOutputsPostCreate(
       };
 
       if (targetUsername) getParams.username = targetUsername;
-      if (targetPassword) getParams.password = targetPassword;
       if (targetExpDate) getParams.exp_date = targetExpDate;
-      if (targetMemberId) getParams.member_id = targetMemberId;
-      if (targetPackageId && targetPackageId !== '0') {
-        getParams.package_id = targetPackageId;
-        getParams.package = targetPackageId;
-      }
 
-      if (attempt.label === 'json_primary') {
+      if (attempt.label === 'arrays_json') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
-        getParams.allowed_outputs = allowedJson;
-        getParams.output_formats = allowedJson;
-      } else if (attempt.label === 'csv_primary') {
+        if (allowedNumeric.length) {
+          getParams.allowed_outputs = allowedJson;
+          getParams.output_formats = allowedJson;
+        }
+      } else if (attempt.label === 'arrays_csv') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
-        getParams.allowed_outputs = allowedCsv;
-        getParams.output_formats = allowedCsv;
-      } else if (attempt.label === 'quoted_json_primary') {
-        if (expectedBouquetIds.length) getParams.bouquet = bouquetQuotedJson;
-        getParams.allowed_outputs = allowedQuotedJson;
-        getParams.output_formats = allowedQuotedJson;
-      } else {
-        if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
-        getParams.allowed_outputs = allowedJson;
-        getParams.output_formats = targetOutputNames.length ? outputNameJson : allowedJson;
+        if (allowedNumeric.length) {
+          getParams.allowed_outputs = allowedJson;
+        }
       }
 
       if (expectedBouquetIds.length) {
         getParams['bouquets_selected[]'] = expectedBouquetIds;
-        getParams.bouquets_selected = expectedBouquetIds;
-        getParams.bouquets = bouquetJson;
-      }
-
-      if (targetAllowed.length) {
-        getParams['allowed_outputs[]'] = targetAllowed;
-        getParams['output_formats[]'] = targetAllowed;
-      }
-
-      if (targetOutputNames.length) {
-        getParams['output_formats[]'] = [...targetAllowed, ...targetOutputNames];
-        if (attempt.label === 'output_names') {
-          getParams.output_formats = outputNameCsv || outputNameJson;
-        }
       }
 
       console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
