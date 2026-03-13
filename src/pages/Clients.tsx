@@ -161,7 +161,8 @@ export default function Clients() {
         // Provision on XUI
         if (f.server_id) {
           const expTimestamp = Math.floor(new Date(expiryISO!).getTime() / 1000);
-          await supabase.functions.invoke("xui-proxy", {
+          const bouquetId = String(selectedPlan?.bouquets ?? "");
+          const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
             body: {
               action: "xui_command",
               server_id: f.server_id,
@@ -172,10 +173,16 @@ export default function Clients() {
                 max_connections: "1",
                 exp_date: String(expTimestamp),
                 is_trial: "1",
-                bouquet: "",
+                bouquet: bouquetId,
               },
             },
           });
+
+          const xuiMessage = xuiErr?.message || (xuiRes && !xuiRes.success ? xuiRes.error : null);
+          if (xuiMessage) {
+            await supabase.from("test_lines").delete().eq("id", data.id);
+            throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
+          }
         }
 
         return { data, isTest: true };
@@ -201,7 +208,8 @@ export default function Clients() {
         // Provision on XUI
         if (f.server_id) {
           const expTimestamp = expiryISO ? Math.floor(new Date(expiryISO).getTime() / 1000) : 0;
-          await supabase.functions.invoke("xui-proxy", {
+          const bouquetId = String(selectedPlan?.bouquets ?? "");
+          const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
             body: {
               action: "xui_command",
               server_id: f.server_id,
@@ -212,10 +220,16 @@ export default function Clients() {
                 max_connections: String(f.max_connections),
                 exp_date: String(expTimestamp),
                 is_trial: "0",
-                bouquet: "",
+                bouquet: bouquetId,
               },
             },
           });
+
+          const xuiMessage = xuiErr?.message || (xuiRes && !xuiRes.success ? xuiRes.error : null);
+          if (xuiMessage) {
+            await supabase.from("clients").delete().eq("id", data.id);
+            throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
+          }
         }
 
         return { data, isTest: false };

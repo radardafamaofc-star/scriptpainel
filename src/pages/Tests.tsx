@@ -55,14 +55,14 @@ export default function Tests() {
       expiresAt.setHours(expiresAt.getHours() + hours);
 
       // 1. Save locally
-      const { error } = await supabase.from("test_lines").insert({
+      const { data: createdTest, error } = await supabase.from("test_lines").insert({
         username: creds.username,
         password: creds.password,
         server_id: serverId || null,
         created_by: user!.id,
         duration_hours: hours,
         expires_at: expiresAt.toISOString(),
-      });
+      }).select("id").single();
       if (error) throw error;
 
       // 2. Provision on XUI server
@@ -83,8 +83,12 @@ export default function Tests() {
             },
           },
         });
-        if (xuiErr) console.error("XUI provision error:", xuiErr);
-        else if (xuiRes && !xuiRes.success) console.warn("XUI provision warning:", xuiRes.error);
+
+        const xuiMessage = xuiErr?.message || (xuiRes && !xuiRes.success ? xuiRes.error : null);
+        if (xuiMessage) {
+          await supabase.from("test_lines").delete().eq("id", createdTest.id);
+          throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
+        }
       }
 
       return creds;

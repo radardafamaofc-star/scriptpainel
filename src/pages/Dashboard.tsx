@@ -190,17 +190,17 @@ export default function Dashboard() {
       expiresAt.setHours(expiresAt.getHours() + totalHours);
 
       const serverId = plan.serverId || "";
-      const { error } = await supabase.from("test_lines").insert({
+      const { data: createdTest, error } = await supabase.from("test_lines").insert({
         username, password, server_id: serverId || null,
         created_by: user!.id, duration_hours: totalHours,
         expires_at: expiresAt.toISOString(),
-      });
+      }).select("id").single();
       if (error) throw error;
 
       // Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
-        await supabase.functions.invoke("xui-proxy", {
+        const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
           body: {
             action: "xui_command",
             server_id: serverId,
@@ -215,6 +215,12 @@ export default function Dashboard() {
             },
           },
         });
+
+        const xuiMessage = xuiErr?.message || (xuiRes && !xuiRes.success ? xuiRes.error : null);
+        if (xuiMessage) {
+          await supabase.from("test_lines").delete().eq("id", createdTest.id);
+          throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
+        }
       }
 
       const srv: any = servers4test.find((s: any) => s.id === serverId);
