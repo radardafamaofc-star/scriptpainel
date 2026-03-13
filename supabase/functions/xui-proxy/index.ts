@@ -682,23 +682,15 @@ function buildCreateLineUrl(
     `action=create_line`,
   ];
 
-  for (const [k, v] of Object.entries(params)) {
-    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
-  }
+  appendRawParams(parts, params);
 
   // bouquets_selected[] as individual params with literal brackets (NOT encoded)
   for (const id of bouquetIds) {
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH param names for compatibility
-  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
-  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
-  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
-  for (const fmt of outputIds) {
-    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
-    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
-  }
+  // Send every known output key variant used by different XUI builds
+  appendRawParams(parts, buildOutputPayload(outputIds));
 
   return `${baseUrl}/?${parts.join('&')}`;
 }
