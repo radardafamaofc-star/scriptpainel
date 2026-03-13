@@ -397,6 +397,100 @@ async function createLinePostStrict(
   throw new Error(lastError);
 }
 
+async function editLinePostStrict(
+  config: XuiServerConfig,
+  params: Record<string, string | string[]>,
+): Promise<any> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=edit_line`;
+
+  const bodyParts: string[] = [];
+  appendRawParams(bodyParts, params);
+  const body = bodyParts.join('&');
+
+  const urlsToTry = [`${baseUrl}/?${actionQuery}`, `${baseUrl}?${actionQuery}`];
+
+  let lastError = 'edit_line POST falhou';
+
+  for (const url of urlsToTry) {
+    try {
+      console.log(`[XUI] POST(strict edit): ${url.replace(config.api_key, '***')}`);
+      console.log(`[XUI] POST(strict edit) body: ${body.substring(0, 1500)}`);
+
+      const response = await tryFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      const text = await response.text();
+      if (!text || text.includes('<html')) continue;
+
+      const json = JSON.parse(text);
+      console.log(`[XUI] edit_line POST(strict) response: ${JSON.stringify(json).substring(0, 1000)}`);
+      return json;
+    } catch (e: any) {
+      lastError = e.message;
+      console.log(`[XUI] edit_line POST(strict) failed: ${e.message}`);
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+async function ensureOutputFormatsApplied(
+  config: XuiServerConfig,
+  lineId: string,
+  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  username: string = '',
+  password: string = '',
+): Promise<boolean> {
+  if (!lineId) return false;
+
+  const expected = normalizeOutputFormats(outputFormats);
+  const attempts: Array<{ label: string; params: Record<string, string | string[]> }> = [
+    {
+      label: 'POST edit_line output_formats[] only',
+      params: { id: lineId, 'output_formats[]': expected },
+    },
+    {
+      label: 'POST edit_line output_formats[] + identity',
+      params: {
+        id: lineId,
+        ...(username ? { username } : {}),
+        ...(password ? { password } : {}),
+        'output_formats[]': expected,
+      },
+    },
+    {
+      label: 'POST edit_line output_formats[] + allowed_outputs[]',
+      params: { id: lineId, 'output_formats[]': expected, 'allowed_outputs[]': expected },
+    },
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      console.log(`[XUI] Output apply attempt: ${attempt.label} line_id=${lineId}`);
+      await editLinePostStrict(config, attempt.params);
+
+      const lineData = await xuiRequest(config, 'get_line', { id: lineId });
+      const actual = normalizeOutputFormats(extractLineAssignments(lineData).outputIds);
+      const ok = expected.every((fmt) => actual.includes(fmt));
+
+      if (ok) {
+        console.log(`[XUI] ✅ Outputs applied via ${attempt.label}: ${JSON.stringify(actual)}`);
+        return true;
+      }
+
+      console.log(`[XUI] Output still mismatch after ${attempt.label}. expected=${JSON.stringify(expected)} actual=${JSON.stringify(actual)}`);
+    } catch (e: any) {
+      console.log(`[XUI] Output apply failed (${attempt.label}): ${e.message}`);
+    }
+  }
+
+  return false;
+}
+
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
   const packages: string[] = [];
@@ -1186,8 +1280,8 @@ async function provisionUserOnXui(
   const expectedAssignments: ExpectedLineAssignments = {
     ...(packageId ? { packageIds: [packageId] } : {}),
     ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
-    ...(outputFormats.length > 0 ? { outputIds: outputFormats } : {}),
   };
+  const expectedOutputs = normalizeOutputFormats(outputFormats);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
@@ -1201,8 +1295,7 @@ async function provisionUserOnXui(
       ...(packageId ? { package_id: packageId } : {}),
       ...(packageId ? { 'package_id[]': [packageId] } : {}),
       ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
-      // Strict array params only, as required by XUI
-      ...buildOutputPayload(outputFormats),
+      ...buildOutputPayload(expectedOutputs),
     };
 
     try {
@@ -1221,13 +1314,24 @@ async function provisionUserOnXui(
 
       const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
 
-      // Validate final state; if missing assignments, force a POST edit sync.
-      const verified = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-      if (!verified && lineId) {
-        const synced = await syncLineAssignments(config, lineId, username, expectedAssignments, outputFormats, password);
+      // 1) Ensure bouquets/package first
+      const verifiedAssignments = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+      if (!verifiedAssignments && lineId) {
+        const synced = await syncLineAssignments(config, lineId, username, expectedAssignments, expectedOutputs, password);
         if (!synced) {
-          throw new Error('Linha criada, mas bouquets/outputs não foram aplicados pelo XUI');
+          throw new Error('Linha criada, mas bouquets/pacote não foram aplicados pelo XUI');
         }
+      }
+
+      // 2) Sigma-style: apply outputs right after create with minimal edit_line
+      const finalLineId = lineId || await resolveLineIdByUsername(config, username);
+      if (!finalLineId) {
+        throw new Error('Linha criada, mas não foi possível resolver o ID para aplicar Access Outputs');
+      }
+
+      const outputsApplied = await ensureOutputFormatsApplied(config, finalLineId, expectedOutputs, username, password);
+      if (!outputsApplied) {
+        throw new Error('Linha criada, bouquets aplicados, porém Access Outputs não foram ativados pelo XUI');
       }
 
       return { action: 'create_line' as const, data };
