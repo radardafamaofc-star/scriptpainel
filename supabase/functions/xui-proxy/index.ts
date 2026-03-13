@@ -330,19 +330,10 @@ async function createLinePost(
   const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
 
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
-  appendRepeatedField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
+  // XUI 1.5.x é sensível a formatos mistos; manter somente JSON aqui
   form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
-  appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
-  appendRepeatedField(form, 'allowed_outputs', allowedOutputStringIds);
-  appendArrayField(form, 'allowed_outputs_selected', allowedOutputStringIds);
-
-  const outputFormatNames = toOutputFormatNames(allowedOutputStringIds);
-  if (outputFormatNames.length) {
-    appendArrayField(form, 'output_formats', outputFormatNames);
-    appendRepeatedField(form, 'output_formats', outputFormatNames);
-  }
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
