@@ -309,30 +309,30 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string | string[]> {
-  const normalized = sanitizeSelectionIds(outputIds);
-  const selected = normalized.length > 0 ? normalized : ['1', '2', '3'];
-  const asNumbers = selected
-    .map((id) => Number(id))
-    .filter((n) => Number.isFinite(n));
-  const json = JSON.stringify(asNumbers);
-  const csv = selected.join(',');
+// XUI allowed_outputs use string format names, not numeric IDs
+const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
 
+// Map between numeric IDs and format names
+const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
+const OUTPUT_NAME_TO_ID: Record<string, string> = { 'm3u8': '1', 'ts': '2', 'rtmp': '3', 'hls': '1', 'mpegts': '2' };
+
+function normalizeOutputFormats(raw: string[]): string[] {
+  if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
+  const result: string[] = [];
+  for (const v of raw) {
+    const trimmed = String(v).trim().toLowerCase();
+    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) { result.push(trimmed); continue; }
+    const mapped = OUTPUT_ID_TO_NAME[trimmed];
+    if (mapped) result.push(mapped);
+  }
+  return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_FORMAT_NAMES;
+}
+
+function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
+  const formats = normalizeOutputFormats(outputFormats);
   const payload: Record<string, string | string[]> = {
-    allowed_outputs: [json, csv],
-    output_formats: [json, csv],
-    allowed_outputs_selected: [json, csv],
-    'allowed_outputs[]': selected,
-    'output_formats[]': selected,
-    'allowed_outputs_selected[]': selected,
+    'allowed_outputs[]': formats,
   };
-
-  selected.forEach((fmt, idx) => {
-    payload[`allowed_outputs[${idx}]`] = fmt;
-    payload[`output_formats[${idx}]`] = fmt;
-    payload[`allowed_outputs_selected[${idx}]`] = fmt;
-  });
-
   return payload;
 }
 
