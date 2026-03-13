@@ -1281,7 +1281,7 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    // STEP 1: create_line with bouquets only (NO output_formats — XUI ignores them on create)
+    // STEP 1: create_line with bouquets_selected[]
     const createParams: Record<string, string | string[]> = {
       username,
       password,
@@ -1290,6 +1290,8 @@ async function provisionUserOnXui(
       ...(memberId ? { member_id: memberId } : {}),
       ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
     };
+
+    console.log('create_line payload', createParams);
 
     try {
       const data = await createLinePostStrict(config, createParams);
@@ -1310,13 +1312,38 @@ async function provisionUserOnXui(
         throw new Error('Linha criada, mas não foi possível resolver o ID');
       }
 
-      // STEP 2: edit_line to apply output_formats ONLY (minimal payload)
-      await ensureOutputFormatsApplied(config, lineId, expectedOutputs, username, password);
+      // STEP 2: edit_line only for output_formats[] (preserving original username/password)
+      const outputsApplied = await ensureOutputFormatsApplied(
+        config,
+        lineId,
+        expectedOutputs,
+        username,
+        password,
+        bouquetIds,
+      );
 
-      // STEP 3: Verify final state
+      // STEP 3: final validation with get_line
       const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
       const finalAssignments = extractLineAssignments(finalLine);
-      console.log(`[XUI] Final state: bouquets=${JSON.stringify(finalAssignments.bouquetIds)} outputs=${JSON.stringify(finalAssignments.outputIds)} package=${JSON.stringify(finalAssignments.packageIds)}`);
+      const finalRows = extractLineRows(finalLine);
+      const finalUsername = String(finalRows[0]?.username || '').trim();
+      const finalOutputs = normalizeOutputFormats(finalAssignments.outputIds);
+
+      const bouquetsOk = bouquetIds.length === 0 || bouquetIds.every((id) => finalAssignments.bouquetIds.includes(id));
+      const outputsOk = expectedOutputs.every((fmt) => finalOutputs.includes(fmt));
+      const usernameOk = !finalUsername || finalUsername === username;
+
+      console.log(`[XUI] Final state: username=${finalUsername || 'n/a'} bouquets=${JSON.stringify(finalAssignments.bouquetIds)} outputs=${JSON.stringify(finalOutputs)} package=${JSON.stringify(finalAssignments.packageIds)}`);
+
+      if (!usernameOk) {
+        throw new Error(`XUI alterou o username após provisionamento (esperado: ${username}, recebido: ${finalUsername || 'vazio'})`);
+      }
+      if (!bouquetsOk) {
+        throw new Error(`Bouquets não aplicados no create_line (esperado: ${JSON.stringify(bouquetIds)}, recebido: ${JSON.stringify(finalAssignments.bouquetIds)})`);
+      }
+      if (!outputsApplied || !outputsOk) {
+        throw new Error(`Access Output não aplicado no edit_line (esperado: ${JSON.stringify(expectedOutputs)}, recebido: ${JSON.stringify(finalOutputs)})`);
+      }
 
       return { action: 'create_line' as const, data };
     } catch (e: any) {
