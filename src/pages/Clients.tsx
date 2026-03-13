@@ -157,6 +157,27 @@ export default function Clients() {
           .select("*, servers(name, host, dns, template)")
           .single();
         if (error) throw error;
+
+        // Provision on XUI
+        if (f.server_id) {
+          const expTimestamp = Math.floor(new Date(expiryISO!).getTime() / 1000);
+          await supabase.functions.invoke("xui-proxy", {
+            body: {
+              action: "xui_command",
+              server_id: f.server_id,
+              xui_action: "user_create",
+              xui_params: {
+                username: f.username,
+                password: f.password,
+                max_connections: "1",
+                exp_date: String(expTimestamp),
+                is_trial: "1",
+                bouquet: "",
+              },
+            },
+          });
+        }
+
         return { data, isTest: true };
       } else {
         // Insert into clients
@@ -176,6 +197,27 @@ export default function Clients() {
           .select("*, plans(name, duration_days, max_connections, price, template, server_id), servers(name, host, dns, template)")
           .single();
         if (error) throw error;
+
+        // Provision on XUI
+        if (f.server_id) {
+          const expTimestamp = expiryISO ? Math.floor(new Date(expiryISO).getTime() / 1000) : 0;
+          await supabase.functions.invoke("xui-proxy", {
+            body: {
+              action: "xui_command",
+              server_id: f.server_id,
+              xui_action: "user_create",
+              xui_params: {
+                username: f.username,
+                password: f.password,
+                max_connections: String(f.max_connections),
+                exp_date: String(expTimestamp),
+                is_trial: "0",
+                bouquet: "",
+              },
+            },
+          });
+        }
+
         return { data, isTest: false };
       }
     },
