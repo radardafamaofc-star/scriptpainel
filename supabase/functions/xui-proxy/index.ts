@@ -1286,16 +1286,14 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
+    // STEP 1: create_line with bouquets only (NO output_formats — XUI ignores them on create)
     const createParams: Record<string, string | string[]> = {
       username,
       password,
       max_connections: maxConnections,
       exp_date: expValue,
       ...(memberId ? { member_id: memberId } : {}),
-      ...(packageId ? { package_id: packageId } : {}),
-      ...(packageId ? { 'package_id[]': [packageId] } : {}),
       ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
-      ...buildOutputPayload(expectedOutputs),
     };
 
     try {
@@ -1313,26 +1311,17 @@ async function provisionUserOnXui(
       }
 
       const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
-
-      // 1) Ensure bouquets/package first
-      const verifiedAssignments = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-      if (!verifiedAssignments && lineId) {
-        const synced = await syncLineAssignments(config, lineId, username, expectedAssignments, expectedOutputs, password);
-        if (!synced) {
-          throw new Error('Linha criada, mas bouquets/pacote não foram aplicados pelo XUI');
-        }
+      if (!lineId) {
+        throw new Error('Linha criada, mas não foi possível resolver o ID');
       }
 
-      // 2) Sigma-style: apply outputs right after create with minimal edit_line
-      const finalLineId = lineId || await resolveLineIdByUsername(config, username);
-      if (!finalLineId) {
-        throw new Error('Linha criada, mas não foi possível resolver o ID para aplicar Access Outputs');
-      }
+      // STEP 2: edit_line to apply output_formats ONLY (minimal payload)
+      await ensureOutputFormatsApplied(config, lineId, expectedOutputs, username, password);
 
-      const outputsApplied = await ensureOutputFormatsApplied(config, finalLineId, expectedOutputs, username, password);
-      if (!outputsApplied) {
-        throw new Error('Linha criada, bouquets aplicados, porém Access Outputs não foram ativados pelo XUI');
-      }
+      // STEP 3: Verify final state
+      const finalLine = await xuiRequest(config, 'get_line', { id: lineId });
+      const finalAssignments = extractLineAssignments(finalLine);
+      console.log(`[XUI] Final state: bouquets=${JSON.stringify(finalAssignments.bouquetIds)} outputs=${JSON.stringify(finalAssignments.outputIds)} package=${JSON.stringify(finalAssignments.packageIds)}`);
 
       return { action: 'create_line' as const, data };
     } catch (e: any) {
