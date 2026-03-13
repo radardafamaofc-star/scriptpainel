@@ -205,7 +205,7 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
         max_connections: maxConnections,
         exp_date: expDate,
         is_trial: isTrial,
-        bouquet: bouquetRaw,
+        bouquet: primaryBouquet,
       },
     },
     {
