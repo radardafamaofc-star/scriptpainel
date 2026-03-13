@@ -292,28 +292,47 @@ async function createLinePost(
   const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
   form.set('member_id', normalizedMemberId || '0');
 
-  // XUIOne 1.5.12 compatibility:
-  // - bouquet and allowed_outputs must be sent as JSON string (without [] fields)
-  // - some panels only parse access outputs from alternate non-array keys/encodings
+  // XUIOne compatibility:
+  // - keep JSON-string payloads
+  // - also send [] array notation exactly like bouquets flow
   const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
 
+  const bouquetStringIds = bouquetIds.map((id) => String(id));
+  const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
+  const outputFormatNames = toOutputFormatNames(allowedOutputStringIds);
+
   const bouquetJson = JSON.stringify(bouquetIds);
   const allowedOutputsJson = JSON.stringify(allowedOutputIds);
-  const allowedOutputsQuotedJson = JSON.stringify(allowedOutputIds.map((id) => String(id)));
+  const allowedOutputsQuotedJson = JSON.stringify(allowedOutputStringIds);
   const allowedOutputsCsv = allowedOutputIds.join(',');
+  const outputFormatsCsv = outputFormatNames.length ? outputFormatNames.join(',') : allowedOutputsCsv;
+  const outputFormatsJson = outputFormatNames.length
+    ? JSON.stringify(outputFormatNames)
+    : allowedOutputsQuotedJson;
 
   form.set('bouquet', bouquetJson);
   form.set('bouquets_selected', bouquetJson);
+  appendArrayField(form, 'bouquets_selected', bouquetStringIds);
 
-  // Keep primary contract exactly as requested
+  // Keep primary contract
   form.set('allowed_outputs', allowedOutputsJson);
-
-  // Extra compatibility aliases (still no [] notation)
   form.set('allowed_outputs_selected', allowedOutputsQuotedJson);
-  form.set('output_formats', allowedOutputsCsv);
-  form.set('output_formats_selected', allowedOutputsQuotedJson);
-  form.set('allowed_output_formats', allowedOutputsQuotedJson);
+  form.set('output_formats', outputFormatsCsv);
+  form.set('output_formats_selected', outputFormatsJson);
+  form.set('allowed_output_formats', outputFormatsJson);
+
+  // Same strategy used for bouquets: also send [] variants
+  appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
+  appendArrayField(form, 'allowed_outputs_selected', allowedOutputStringIds);
+
+  if (outputFormatNames.length) {
+    appendArrayField(form, 'output_formats', outputFormatNames);
+    appendArrayField(form, 'allowed_output_formats', outputFormatNames);
+  } else {
+    appendArrayField(form, 'output_formats', allowedOutputStringIds);
+    appendArrayField(form, 'allowed_output_formats', allowedOutputStringIds);
+  }
 
   console.log("create_line payload:", form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
