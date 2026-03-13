@@ -971,7 +971,7 @@ async function provisionUserOnXui(
       throw new Error('Linha criada, mas não foi possível localizar o ID no XUI para sincronizar bouquets.');
     }
 
-    const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds);
+    const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds, password);
     if (synced) return 'create_and_edit';
 
     throw new Error('Linha criada no XUI, mas o pacote não aplicou bouquets. No XUI, deixe Trial/Standard Package em OFF e valide os bouquets do pacote.');
