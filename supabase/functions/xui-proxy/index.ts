@@ -990,14 +990,22 @@ async function provisionUserOnXui(
 
     const resolvedLineId = lineIdCandidate || await resolveLineIdByUsername(config, username);
     const alreadyAssigned = await verifyProvisionedUser(config, username, expectedAssignments, resolvedLineId);
-    if (alreadyAssigned) return 'create_line';
+    if (alreadyAssigned) {
+      // Bouquets OK — now force outputs separately
+      if (resolvedLineId) await forceOutputs(config, resolvedLineId, username, password, outputIds);
+      return 'create_line';
+    }
 
     if (!resolvedLineId) {
       throw new Error('Linha criada, mas não foi possível localizar o ID no XUI para sincronizar bouquets.');
     }
 
     const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds, password);
-    if (synced) return 'create_and_edit';
+    if (synced) {
+      // Bouquets synced — now force outputs separately
+      await forceOutputs(config, resolvedLineId, username, password, outputIds);
+      return 'create_and_edit';
+    }
 
     throw new Error('Linha criada no XUI, mas o pacote não aplicou bouquets. No XUI, deixe Trial/Standard Package em OFF e valide os bouquets do pacote.');
   };
