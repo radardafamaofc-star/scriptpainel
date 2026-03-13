@@ -23,6 +23,7 @@ interface PlanForm {
   is_test: boolean;
   price: number;
   credits: number;
+  package_id: string;
   duration_value: number;
   duration_unit: DurationUnit;
   max_connections: number;
@@ -32,7 +33,7 @@ interface PlanForm {
 
 const emptyForm: PlanForm = {
   name: "", server_id: "", order: 0, status: "active", is_test: false,
-  price: 0, credits: 1, duration_value: 1, duration_unit: "months",
+  price: 0, credits: 1, package_id: "", duration_value: 1, duration_unit: "months",
   max_connections: 2, bouquets: 0, template: "",
 };
 
