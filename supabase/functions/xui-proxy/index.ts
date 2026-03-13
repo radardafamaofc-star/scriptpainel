@@ -322,8 +322,10 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
-// Main provisioning: single POST create_line via player_api.php
-// Package handles bouquets, outputs, max_connections automatically
+const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
+const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
+
+// Main provisioning for XUIOne 1.5.x: create_line then edit_line with numeric IDs
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -332,37 +334,6 @@ async function provisionUserOnXui(
   const username = rawParams.username?.trim();
   const password = rawParams.password?.trim();
   if (!username || !password) throw new Error('username e password são obrigatórios');
-
-  const parsedPackageIds = parseIdList(rawParams.package_id || rawParams.package || '').filter(Boolean);
-  let packageId = parsedPackageIds[0] || '';
-  const rawPlanName = String(rawParams.plan_name || '').trim();
-
-  // Auto-resolve package if not provided
-  if (!packageId && rawPlanName) {
-    try {
-      const payload = await xuiRequest(config, 'get_packages');
-      const rows = (Array.isArray(payload) ? payload : Object.values(payload || {})).filter((i: any) => i && typeof i === 'object');
-      const normalize = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-      const wanted = normalize(rawPlanName);
-      const scored = rows.map((pkg: any) => {
-        const id = String(pkg.id || pkg.package_id || '').trim();
-        if (!id) return null;
-        const name = normalize(String(pkg.package_name || pkg.name || ''));
-        let score = name === wanted ? 10 : 0;
-        for (const t of wanted.split(' ').filter(t => t.length >= 2)) { if (name.includes(t)) score += 2; }
-        return { id, name, score };
-      }).filter(Boolean) as Array<{ id: string; name: string; score: number }>;
-      scored.sort((a, b) => b.score - a.score);
-      if (scored[0]?.score > 0) {
-        packageId = scored[0].id;
-        console.log(`[XUI] Auto-selected package '${scored[0].name}' id=${packageId}`);
-      }
-    } catch (e: any) {
-      console.log(`[XUI] Could not auto-resolve package: ${e.message}`);
-    }
-  }
-
-  if (!packageId) throw new Error('package_id é obrigatório para criar linha');
 
   // Format expiry date
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
@@ -376,13 +347,15 @@ async function provisionUserOnXui(
     }
   }
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId} member_id=${memberId || 'n/a'}`);
+  const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
+  const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
 
-  // Single POST create_line — package handles bouquets, outputs, connections
+  console.log(`[XUI] Provisioning ${username} member_id=${memberId || 'n/a'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+
+  // STEP 1 — create_line (without package / bouquets / outputs)
   const createData = await createLineViaPlayerApi(config, {
     username,
     password,
-    packageId,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
   });
 
@@ -393,25 +366,18 @@ async function provisionUserOnXui(
 
   // Resolve line_id
   const createdLineId = String(createData?.data?.id || createData?.id || '').trim() || await resolveLineIdByUsername(config, username);
+  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
 
-  // STEP 2: Force package application via edit_line
-  // XUI 1.5.x does not fully apply package on create_line, so we re-apply it
-  if (createdLineId) {
-    try {
-      const editPayload = `api_key=${encodeURIComponent(config.api_key)}&action=edit_line&id=${encodeURIComponent(createdLineId)}&package=${encodeURIComponent(packageId)}`;
-      console.log("edit_line payload:", editPayload.replace(config.api_key, '***'));
-
-      const baseUrl = config.url.replace(/\/+$/, '');
-      const editResponse = await tryFetch(`${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=edit_line`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `id=${encodeURIComponent(createdLineId)}&package=${encodeURIComponent(packageId)}`,
-      });
-      const editText = await editResponse.text();
-      console.log("edit_line response:", editText.substring(0, 1000));
-    } catch (e: any) {
-      console.log(`[XUI] edit_line (package reapply) failed: ${e.message}`);
-    }
+  // STEP 2 — edit_line with numeric bouquets[] and allowed_outputs[]
+  try {
+    await editLineViaPlayerApi(config, {
+      lineId: createdLineId,
+      bouquetIds,
+      allowedOutputIds,
+    });
+  } catch (e: any) {
+    console.log(`[XUI] edit_line failed: ${e.message}`);
+    throw e;
   }
 
   // Get final state
