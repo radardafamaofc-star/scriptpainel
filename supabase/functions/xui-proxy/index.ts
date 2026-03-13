@@ -139,33 +139,10 @@ function hasSameNumericIds(current: unknown, expected: string[]): boolean {
   return currentNorm.every((id, idx) => id === expectedNorm[idx]);
 }
 
-const OUTPUT_FORMAT_NAME_BY_ID: Record<string, string> = {
-  '1': 'mpegts',
-  '2': 'hls',
-  '3': 'rtmp',
-};
-
-function toOutputFormatNames(ids: string[]): string[] {
-  return Array.from(
-    new Set(
-      ids
-        .map((id) => OUTPUT_FORMAT_NAME_BY_ID[String(id).replace(/\D/g, '').trim()])
-        .filter(Boolean)
-    )
-  );
-}
-
 function appendArrayField(form: URLSearchParams, key: string, values: string[]) {
   for (const value of values) {
     const normalized = String(value || '').trim();
     if (normalized) form.append(`${key}[]`, normalized);
-  }
-}
-
-function appendRepeatedField(form: URLSearchParams, key: string, values: string[]) {
-  for (const value of values) {
-    const normalized = String(value || '').trim();
-    if (normalized) form.append(key, normalized);
   }
 }
 
@@ -334,22 +311,12 @@ async function createLinePost(
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
-  const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
 
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
-  appendRepeatedField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
+  // XUI 1.5.x é sensível a formatos mistos; manter somente JSON aqui
   form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
-  appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
-  appendRepeatedField(form, 'allowed_outputs', allowedOutputStringIds);
-  appendArrayField(form, 'allowed_outputs_selected', allowedOutputStringIds);
-
-  const outputFormatNames = toOutputFormatNames(allowedOutputStringIds);
-  if (outputFormatNames.length) {
-    appendArrayField(form, 'output_formats', outputFormatNames);
-    appendRepeatedField(form, 'output_formats', outputFormatNames);
-  }
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
@@ -426,8 +393,6 @@ async function enforceAllowedOutputsPostCreate(
   const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
   const bouquetCsv = expectedBouquetIds.join(',');
 
-  const outputFormatNames = toOutputFormatNames(targetAllowed);
-
   const buildBaseForm = () => {
     const form = new URLSearchParams();
     form.set('id', lineId);
@@ -447,16 +412,6 @@ async function enforceAllowedOutputsPostCreate(
   const attachCommonArrayFields = (form: URLSearchParams) => {
     if (expectedBouquetIds.length) {
       appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
-      appendRepeatedField(form, 'bouquets_selected', expectedBouquetIds);
-    }
-
-    appendArrayField(form, 'allowed_outputs', targetAllowed);
-    appendRepeatedField(form, 'allowed_outputs', targetAllowed);
-    appendArrayField(form, 'allowed_outputs_selected', targetAllowed);
-
-    if (outputFormatNames.length) {
-      appendArrayField(form, 'output_formats', outputFormatNames);
-      appendRepeatedField(form, 'output_formats', outputFormatNames);
     }
   };
 
@@ -555,13 +510,6 @@ async function enforceAllowedOutputsPostCreate(
 
       if (expectedBouquetIds.length) {
         getParams['bouquets_selected[]'] = expectedBouquetIds;
-        getParams.bouquets_selected = expectedBouquetIds;
-      }
-      getParams['allowed_outputs[]'] = targetAllowed;
-      getParams.allowed_outputs_selected = targetAllowed;
-      if (outputFormatNames.length) {
-        getParams['output_formats[]'] = outputFormatNames;
-        getParams.output_formats = outputFormatNames;
       }
 
       console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
