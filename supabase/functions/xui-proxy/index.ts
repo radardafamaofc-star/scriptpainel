@@ -617,6 +617,11 @@ async function provisionUserOnXui(
   const maxConnections = rawParams.max_connections || '1';
   const expDate = rawParams.exp_date || '';
 
+  // The package_id from the plan already has all bouquets/outputs configured on XUI.
+  // We just need to pass it directly — no need to extract individual bouquets.
+  const packageId = String(rawParams.bouquet || rawParams.bouquets || rawParams.package_id || '').trim();
+
+  // Build expiration variants
   const expUnix = Number(expDate);
   const nowUnix = Math.floor(Date.now() / 1000);
   const remainingHours = Number.isFinite(expUnix) && expUnix > nowUnix
@@ -624,116 +629,14 @@ async function provisionUserOnXui(
     : 24;
   const remainingDays = Math.max(1, Math.ceil(remainingHours / 24));
 
-  const inputIds = sanitizeSelectionIds(parseIdList(rawParams.bouquet || rawParams.bouquets || rawParams.package_id || ''));
-  const explicitOutputIds = sanitizeSelectionIds(parseIdList(rawParams.allowed_outputs || rawParams.output_formats || rawParams.allowed_outputs_selected || ''));
-
-  type PackageMeta = { id: string; bouquets: string[]; outputs: string[] };
-  const packageMetaById = new Map<string, PackageMeta>();
-  const packageList: PackageMeta[] = [];
-
-  try {
-    const packagesPayload = await xuiRequest(config, 'get_packages');
-    const packages = (Array.isArray(packagesPayload) ? packagesPayload : Object.values(packagesPayload || {}))
-      .filter((pkg: any) => pkg && typeof pkg === 'object');
-
-    for (const pkg of packages) {
-      const id = String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
-      if (!id) continue;
-
-      const meta: PackageMeta = {
-        id,
-        bouquets: normalizeIds(parseIdList(pkg.bouquets)),
-        outputs: normalizeIds(parseIdList(pkg.output_formats || pkg.allowed_outputs)),
-      };
-
-      packageMetaById.set(id, meta);
-      packageList.push(meta);
-    }
-  } catch (e: any) {
-    console.log(`[XUI] Could not load packages for provisioning: ${e.message}`);
-  }
-
-  let selectedPackageIds = normalizeIds(inputIds.filter((id) => packageMetaById.has(id)));
-  let directBouquetIds = normalizeIds(inputIds.filter((id) => !packageMetaById.has(id)));
-
-  if (!selectedPackageIds.length && packageList.length > 0) {
-    const picked = [...packageList].sort((a, b) => b.bouquets.length - a.bouquets.length)[0];
-    if (picked?.id) {
-      selectedPackageIds = [picked.id];
-      console.log(`[XUI] Auto-selected package: ${picked.id} with bouquets: ${JSON.stringify(picked.bouquets)}`);
-    }
-  }
-
-  if (!directBouquetIds.length && selectedPackageIds.length) {
-    directBouquetIds = normalizeIds(
-      selectedPackageIds.flatMap((id) => packageMetaById.get(id)?.bouquets || []),
-    );
-  }
-
-  let resolvedOutputIds = explicitOutputIds;
-  if (!resolvedOutputIds.length && selectedPackageIds.length) {
-    resolvedOutputIds = normalizeIds(
-      selectedPackageIds.flatMap((id) => packageMetaById.get(id)?.outputs || []),
-    );
-    if (resolvedOutputIds.length) {
-      console.log(`[XUI] Auto-selected output formats from package: ${JSON.stringify(resolvedOutputIds)}`);
-    }
-  }
-
-  const selectedPackageId = selectedPackageIds[0] || '';
-  const bouquetSelectionIds = directBouquetIds.length ? directBouquetIds : selectedPackageIds;
-  const indexedBouquetSelection: Record<string, string> = bouquetSelectionIds.reduce((acc, id, index) => {
-    acc[`bouquets_selected[${index}]`] = id;
-    return acc;
-  }, {} as Record<string, string>);
-
-  const expectedAssignments: ExpectedLineAssignments = {
-    bouquetIds: directBouquetIds,
-    packageIds: selectedPackageIds,
-    outputIds: [],
-  };
-
-  const baseParams: Record<string, string> = {
-    username,
-    password,
-    max_connections: maxConnections,
-  };
-  if (memberId) baseParams.member_id = memberId;
-
-  const outputJsonArray = resolvedOutputIds.length ? `[${resolvedOutputIds.join(',')}]` : '';
-
-  const createAssignmentVariants: Array<Record<string, string | string[]>> = [
-    {
-      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
-      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
-      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
-    },
-    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
-    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
-    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
-  ].filter((variant) => Object.keys(variant).length > 0);
-
-  const editAssignmentVariants: Array<Record<string, string | string[]>> = [
-    ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
-    ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
-    ...(bouquetSelectionIds.length ? [{ 'bouquets[]': bouquetSelectionIds }] : []),
-    ...(bouquetSelectionIds.length ? [{ 'bouquet[]': bouquetSelectionIds }] : []),
-    ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
-  ].filter((variant) => Object.keys(variant).length > 0);
-
   const rawExpDate = String(expDate || '').trim();
   const expVariants: string[] = [];
 
-  // Prefer relative duration strings - this server rejects unix timestamp with STATUS_INVALID_DATE.
   if (rawExpDate) {
     const compactRaw = rawExpDate.toLowerCase().replace(/\s+/g, '');
     if (/^\d+(hours?|days?)$/.test(compactRaw)) {
       expVariants.push(compactRaw);
     }
-
     if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(rawExpDate)) {
       expVariants.push(rawExpDate);
     }
@@ -741,7 +644,6 @@ async function provisionUserOnXui(
 
   expVariants.push(`${remainingHours}hours`, `${remainingDays}days`);
 
-  // Optional absolute-date fallback derived from unix timestamp (date only).
   if (Number.isFinite(expUnix) && expUnix > 0) {
     const expAsDate = new Date(expUnix * 1000);
     if (!Number.isNaN(expAsDate.getTime())) {
@@ -750,92 +652,48 @@ async function provisionUserOnXui(
   }
 
   const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
-  console.log(`[XUI] EXP_VARS: ${JSON.stringify(uniqueExpVariants)} raw=${rawExpDate}`);
 
-  const tryEditFallback = async (lineId: string, expValue: string) => {
-    // 1) Keep core fields stable first.
-    try {
-      const coreParams = { id: lineId, exp_date: expValue, max_connections: maxConnections };
-      console.log(`[XUI] edit_line core params: ${JSON.stringify(coreParams)}`);
-      await xuiRequest(config, 'edit_line', coreParams);
-    } catch (e: any) {
-      console.log(`[XUI] edit_line core update failed: ${e.message}`);
-    }
-
-    // 2) Apply bouquets in dedicated calls (without package_id/credentials to avoid override).
-    for (const assignment of editAssignmentVariants) {
-      try {
-        const editParams = { id: lineId, ...assignment };
-        console.log(`[XUI] edit_line fallback params: ${JSON.stringify(editParams)}`);
-
-        const edited = await xuiRequest(config, 'edit_line', editParams);
-        const editError = getXuiError(edited);
-        if (editError || !isXuiSuccess(edited)) continue;
-
-        const verifiedAfterEdit = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-        if (verifiedAfterEdit) {
-          console.log(`[XUI] ✅ Provision success via edit_line fallback for ${username}`);
-          return edited;
-        }
-      } catch (e: any) {
-        console.log(`[XUI] edit_line fallback failed: ${e.message}`);
-      }
-    }
-
-    return null;
+  const baseParams: Record<string, string> = {
+    username,
+    password,
+    max_connections: maxConnections,
   };
+  if (memberId) baseParams.member_id = memberId;
+
+  // Simple: just pass package_id. XUI assigns bouquets/outputs from the package config.
+  if (packageId) {
+    baseParams.package_id = packageId;
+  }
+
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    let createdPayload: any = null;
-    let lineId = '';
+    const params = { ...baseParams, exp_date: expValue };
+    console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
 
-    for (const assignment of createAssignmentVariants) {
-      const params = { ...baseParams, exp_date: expValue, ...assignment };
-      console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
-
+    try {
       const data = await xuiRequest(config, 'create_line', params);
       const createError = getXuiError(data);
       const status = String(data?.status || '').toUpperCase();
-      const usernameExists = status.includes('EXISTS_USERNAME');
 
-      if ((createError && !usernameExists) || !isXuiSuccess(data)) {
-        lastError = createError || 'create_line retornou status inválido';
-        console.log(`[XUI] Provision failed: ${lastError}`);
+      if (createError && !status.includes('EXISTS_USERNAME')) {
+        lastError = createError;
+        console.log(`[XUI] create_line failed: ${lastError}`);
         continue;
       }
 
-      createdPayload = data;
-      lineId = String(data?.data?.id || '').trim();
-      if (!lineId) {
-        lineId = await resolveLineIdByUsername(config, username);
-      }
-      break;
-    }
-
-    if (!createdPayload) continue;
-
-    const verifiedAfterCreate = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
-    if (verifiedAfterCreate) {
-      console.log(`[XUI] ✅ Provision success for ${username} line_id=${lineId || 'n/a'}`);
-      return { action: 'create_line', data: createdPayload };
-    }
-
-    if (lineId) {
-      const edited = await tryEditFallback(lineId, expValue);
-      if (edited) {
-        return { action: 'edit_line', data: edited };
+      if (isXuiSuccess(data) || status.includes('EXISTS_USERNAME')) {
+        console.log(`[XUI] ✅ Line created for ${username}`);
+        return { action: 'create_line', data };
       }
 
-      const warning = 'Linha criada, mas sem bouquets/outputs confirmados via API';
-      console.log(`[XUI] ⚠️ ${warning} username=${username} line_id=${lineId}`);
-      return { action: 'create_line_unverified', data: createdPayload, warning, line_id: lineId };
+      lastError = createError || 'create_line retornou status inválido';
+    } catch (e: any) {
+      lastError = e.message;
+      console.log(`[XUI] create_line error: ${lastError}`);
     }
-
-    lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
-    console.log(`[XUI] Provision uncertain: ${lastError}`);
-    break;
   }
 
   throw new Error(lastError);
