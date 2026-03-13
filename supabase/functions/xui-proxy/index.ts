@@ -813,8 +813,7 @@ async function syncLineAssignments(
           ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquets_selected: jsonBouquets,
-          allowed_outputs: jsonOutputs,
-          output_formats: jsonOutputs,
+          ...outputPayload,
         });
       },
     },
