@@ -804,6 +804,30 @@ async function syncLineAssignments(
       },
     },
     {
+      label: 'POST edit_line force outputs via restreamer toggle',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...identityParams,
+          package_id: '0',
+          'package_id[]': ['0'],
+          is_restreamer: '1',
+          'bouquets_selected[]': bouquetIds,
+          ...outputPayload,
+        });
+
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...identityParams,
+          package_id: '0',
+          'package_id[]': ['0'],
+          is_restreamer: '0',
+          'bouquets_selected[]': bouquetIds,
+          ...outputPayload,
+        });
+      },
+    },
+    {
       label: 'POST edit_line bouquets_selected[] + outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
