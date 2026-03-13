@@ -465,51 +465,80 @@ async function provisionUserOnXui(
   };
   if (memberId) baseParams.member_id = memberId;
 
-  const bouquetParams: Record<string, string | string[]> = resolvedBouquetIds.length
-    ? { 'bouquets_selected[]': resolvedBouquetIds }
-    : {};
+  const expectedAssignments = Array.from(new Set([
+    ...resolvedBouquetIds,
+    resolvedPackageId,
+  ].map((id) => String(id || '').trim()).filter(Boolean)));
 
-  // XUI One docs: everything via GET query params
-  // Format: action=create_line&username=X&password=Y&exp_date=YYYY-MM-DD&bouquets_selected[]=1&bouquets_selected[]=2
-  // Try different exp_date formats
-  const actionAttempts: Array<{ params: Record<string, string | string[]> }> = [
+  const assignmentVariants: Array<Record<string, string | string[]>> = [
     {
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParams },
+      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
+      ...(resolvedBouquetIds.length ? { 'bouquets_selected[]': resolvedBouquetIds } : {}),
     },
     {
-      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParams },
+      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
+      ...(resolvedBouquetIds.length ? { bouquets_selected: resolvedBouquetIds } : {}),
+    },
+    {
+      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
+      ...(resolvedBouquetIds.length ? { bouquet: JSON.stringify(resolvedBouquetIds) } : {}),
+    },
+    {
+      ...(resolvedPackageId ? { package_id: resolvedPackageId } : {}),
     },
   ];
 
-  // If we have a valid unix timestamp, also try that
+  const expVariants = [`${remainingHours}hours`, `${remainingDays}days`];
   if (expDate && Number.isFinite(Number(expDate)) && Number(expDate) > 0) {
-    actionAttempts.push({
-      params: { ...baseParams, exp_date: expDate, ...bouquetParams },
-    });
+    expVariants.push(expDate);
   }
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
-  for (const attempt of actionAttempts) {
-    console.log(`[XUI] create_line params: ${JSON.stringify(attempt.params)}`);
-    const data = await xuiRequest(config, 'create_line', attempt.params);
-    const error = getXuiError(data);
+  for (const expValue of expVariants) {
+    for (const assignment of assignmentVariants) {
+      const params = { ...baseParams, exp_date: expValue, ...assignment };
+      console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
 
-    if (!error && isXuiSuccess(data)) {
-      // Verify the line exists after creation
-      const verified = await verifyProvisionedUser(config, username, resolvedBouquetIds);
-      if (verified) {
-        console.log(`[XUI] ✅ Provision success for ${username}`);
+      const data = await xuiRequest(config, 'create_line', params);
+      const error = getXuiError(data);
+      if (error || !isXuiSuccess(data)) {
+        lastError = error || 'create_line retornou status inválido';
+        console.log(`[XUI] Provision failed: ${lastError}`);
+        continue;
+      }
+
+      const responseAssigned = extractAssignedIds(data?.data || data);
+      const responseMatches = expectedAssignments.length === 0 || expectedAssignments.some((id) => responseAssigned.includes(id));
+      const verified = await verifyProvisionedUser(config, username, expectedAssignments);
+      if (responseMatches || verified) {
+        console.log(`[XUI] ✅ Provision success for ${username} assignments=${JSON.stringify(responseAssigned)}`);
         return { action: 'create_line', data };
       }
 
-      // Line created but verification uncertain — still return success if XUI said ok
-      console.log(`[XUI] ⚠️ XUI returned success but verification uncertain for ${username}, accepting anyway`);
-      return { action: 'create_line', data };
-    }
+      // create_line may succeed but ignore bouquet params depending on panel mode. Force with edit_line.
+      const lineId = String(data?.data?.id || '').trim();
+      if (lineId) {
+        try {
+          const editParams = { id: lineId, ...baseParams, exp_date: expValue, ...assignment };
+          console.log(`[XUI] edit_line fallback params: ${JSON.stringify(editParams)}`);
+          const edited = await xuiRequest(config, 'edit_line', editParams);
+          const editError = getXuiError(edited);
+          if (!editError && isXuiSuccess(edited)) {
+            const verifiedAfterEdit = await verifyProvisionedUser(config, username, expectedAssignments);
+            if (verifiedAfterEdit) {
+              console.log(`[XUI] ✅ Provision success via edit_line fallback for ${username}`);
+              return { action: 'edit_line', data: edited };
+            }
+          }
+        } catch (e: any) {
+          console.log(`[XUI] edit_line fallback failed: ${e.message}`);
+        }
+      }
 
-    lastError = error || 'create_line retornou status inválido';
-    console.log(`[XUI] Provision failed: ${lastError}`);
+      lastError = 'Linha criada, mas sem bouquets/pacote aplicados';
+      console.log(`[XUI] Provision uncertain: ${lastError}`);
+    }
   }
 
   throw new Error(lastError);
