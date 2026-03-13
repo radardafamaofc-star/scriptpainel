@@ -720,14 +720,8 @@ function buildEditLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH param names (allowed_outputs + output_formats)
-  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
-  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
-  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
-  for (const fmt of outputIds) {
-    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
-    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
-  }
+  // Send every known output key variant used by different XUI builds
+  appendRawParams(parts, buildOutputPayload(outputIds));
 
   if (packageId) {
     parts.push(`package_id=${encodeURIComponent(packageId)}`);
