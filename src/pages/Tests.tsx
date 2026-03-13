@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { generateUsername, generatePassword } from "@/lib/credentials";
+import { extractGeneratedUsername } from "@/lib/xui";
 
 async function generateTestCredentials() {
   const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
