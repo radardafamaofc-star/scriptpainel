@@ -35,19 +35,19 @@ async function xuiRequest(
 ) {
   let baseUrl = config.url.replace(/\/+$/, '');
 
-  // Build query params
-  const qs = new URLSearchParams();
-  qs.set('api_key', config.api_key);
-  qs.set('action', action);
-  if (config.api_version) qs.set('api_version', config.api_version);
+  // Build query params — manually to avoid URLSearchParams encoding [] as %5B%5D
+  const parts: string[] = [];
+  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
+  parts.push(`action=${encodeURIComponent(action)}`);
+  if (config.api_version) parts.push(`api_version=${encodeURIComponent(config.api_version)}`);
   for (const [k, v] of Object.entries(params)) {
     if (Array.isArray(v)) {
-      for (const value of v) qs.append(k, value);
+      for (const value of v) parts.push(`${k}=${encodeURIComponent(value)}`);
     } else {
-      qs.set(k, v);
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
     }
   }
-  const queryString = qs.toString();
+  const queryString = parts.join('&');
 
   // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
   // The URL the user provides IS the base (including access code path).
