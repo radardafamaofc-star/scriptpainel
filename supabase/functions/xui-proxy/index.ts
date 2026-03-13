@@ -309,6 +309,37 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
+function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string | string[]> {
+  const normalized = sanitizeSelectionIds(outputIds);
+  const selected = normalized.length > 0 ? normalized : ['1', '2', '3'];
+  const asNumbers = selected
+    .map((id) => Number(id))
+    .filter((n) => Number.isFinite(n));
+  const json = JSON.stringify(asNumbers);
+
+  return {
+    allowed_outputs: json,
+    output_formats: json,
+    allowed_outputs_selected: json,
+    'allowed_outputs[]': selected,
+    'output_formats[]': selected,
+    'allowed_outputs_selected[]': selected,
+  };
+}
+
+function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
+  for (const [k, v] of Object.entries(params)) {
+    if (Array.isArray(v)) {
+      for (const value of v) {
+        parts.push(`${encodeParamKey(k)}=${encodeURIComponent(value)}`);
+      }
+      continue;
+    }
+
+    parts.push(`${encodeParamKey(k)}=${encodeURIComponent(v)}`);
+  }
+}
+
 function extractLineAssignments(payload: any): XuiLineAssignments {
   const bouquets: string[] = [];
   const packages: string[] = [];
@@ -651,23 +682,15 @@ function buildCreateLineUrl(
     `action=create_line`,
   ];
 
-  for (const [k, v] of Object.entries(params)) {
-    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
-  }
+  appendRawParams(parts, params);
 
   // bouquets_selected[] as individual params with literal brackets (NOT encoded)
   for (const id of bouquetIds) {
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH param names for compatibility
-  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
-  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
-  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
-  for (const fmt of outputIds) {
-    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
-    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
-  }
+  // Send every known output key variant used by different XUI builds
+  appendRawParams(parts, buildOutputPayload(outputIds));
 
   return `${baseUrl}/?${parts.join('&')}`;
 }
@@ -697,14 +720,8 @@ function buildEditLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH param names (allowed_outputs + output_formats)
-  const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
-  parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
-  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
-  for (const fmt of outputIds) {
-    parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
-    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
-  }
+  // Send every known output key variant used by different XUI builds
+  appendRawParams(parts, buildOutputPayload(outputIds));
 
   if (packageId) {
     parts.push(`package_id=${encodeURIComponent(packageId)}`);
@@ -737,7 +754,7 @@ async function syncLineAssignments(
   if (!hasExpected) return true;
 
   const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
-  const jsonOutputs = JSON.stringify(normalizedOutputs.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+  const outputPayload = buildOutputPayload(normalizedOutputs);
 
   // CRITICAL: Always include username+password to prevent XUI from overwriting them
   const identityParams: Record<string, string> = {};
@@ -771,10 +788,7 @@ async function syncLineAssignments(
           package_id: '0',
           'package_id[]': ['0'],
           'bouquets_selected[]': bouquetIds,
-          allowed_outputs: jsonOutputs,
-          'allowed_outputs[]': normalizedOutputs,
-          output_formats: jsonOutputs,
-          'output_formats[]': normalizedOutputs,
+          ...outputPayload,
         });
       },
     },
@@ -787,10 +801,7 @@ async function syncLineAssignments(
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
-          allowed_outputs: jsonOutputs,
-          'allowed_outputs[]': normalizedOutputs,
-          output_formats: jsonOutputs,
-          'output_formats[]': normalizedOutputs,
+          ...outputPayload,
         });
       },
     },
@@ -802,8 +813,7 @@ async function syncLineAssignments(
           ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquets_selected: jsonBouquets,
-          allowed_outputs: jsonOutputs,
-          output_formats: jsonOutputs,
+          ...outputPayload,
         });
       },
     },
@@ -815,8 +825,7 @@ async function syncLineAssignments(
           ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquet: jsonBouquets,
-          allowed_outputs: jsonOutputs,
-          output_formats: jsonOutputs,
+          ...outputPayload,
         });
       },
     },
@@ -828,8 +837,7 @@ async function syncLineAssignments(
           ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           'bouquet[]': bouquetIds,
-          'allowed_outputs[]': normalizedOutputs,
-          'output_formats[]': normalizedOutputs,
+          ...outputPayload,
         });
       },
     },
@@ -980,67 +988,128 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const lineParams: Record<string, string> = {
+    const baseLineParams: Record<string, string> = {
       username,
       password,
       max_connections: maxConnections,
       exp_date: expValue,
     };
-    if (memberId) lineParams.member_id = memberId;
-    if (packageId) lineParams.package_id = packageId;
+    if (memberId) baseLineParams.member_id = memberId;
+
+    const packageLineParams: Record<string, string> = {
+      ...baseLineParams,
+      ...(packageId ? { package_id: packageId } : {}),
+    };
 
     // Strategy 1: GET with bouquets_selected[] in query string (QPanel style)
     if (bouquetIds.length > 0) {
-      try {
-        const url = buildCreateLineUrl(config, lineParams, bouquetIds, outputIds);
-        console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
-        const response = await tryFetch(url);
-        const text = await response.text();
-        if (text && !text.includes('<html')) {
-          const json = JSON.parse(text);
-          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
-          const status = String(json?.status || '').toUpperCase();
-          if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
-            const lineId = String(json?.data?.id || '').trim();
-            const actionUsed = await ensureExpectedAssignments(lineId);
-            return { action: actionUsed, data: json };
+      const getAttempts: Array<{ label: string; params: Record<string, string> }> = [];
+
+      if (packageId) {
+        getAttempts.push({
+          label: 'GET create_line custom (package OFF)',
+          params: {
+            ...baseLineParams,
+            package_id: '0',
+            'package_id[]': '0',
+          },
+        });
+      }
+
+      getAttempts.push({
+        label: 'GET create_line (QPanel style)',
+        params: packageLineParams,
+      });
+
+      for (const attempt of getAttempts) {
+        try {
+          const url = buildCreateLineUrl(config, attempt.params, bouquetIds, outputIds);
+          console.log(`[XUI] ${attempt.label}: ${url.replace(config.api_key, '***')}`);
+          const response = await tryFetch(url);
+          const text = await response.text();
+          if (text && !text.includes('<html')) {
+            const json = JSON.parse(text);
+            console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
+            const status = String(json?.status || '').toUpperCase();
+            if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
+              const lineId = String(json?.data?.id || '').trim();
+              const actionUsed = await ensureExpectedAssignments(lineId);
+              return { action: actionUsed, data: json };
+            }
+            const err = getXuiError(json);
+            if (err) {
+              lastError = err;
+              console.log(`[XUI] ${attempt.label} failed: ${err}`);
+            }
           }
-          const err = getXuiError(json);
-          if (err) {
-            lastError = err;
-            console.log(`[XUI] create_line (GET) failed: ${err}`);
-          }
+        } catch (e: any) {
+          console.log(`[XUI] ${attempt.label} error: ${e.message}`);
+          lastError = e.message;
         }
-      } catch (e: any) {
-        console.log(`[XUI] GET create_line error: ${e.message}`);
-        lastError = e.message;
       }
     }
 
-    // Strategy 2: Standard xuiRequest (POST fallback)
-    try {
-      console.log(`[XUI] Fallback: POST create_line params: ${JSON.stringify(lineParams)}`);
-      const data = await xuiRequest(config, 'create_line', lineParams);
-      const createError = getXuiError(data);
-      const status = String(data?.status || '').toUpperCase();
+    // Strategy 2: POST fallbacks
+    const outputPayload = buildOutputPayload(outputIds);
+    const postAttempts: Array<{ label: string; params: Record<string, string | string[]> }> = [];
 
-      if (createError && !status.includes('EXISTS_USERNAME')) {
-        lastError = createError;
-        continue;
+    if (bouquetIds.length > 0) {
+      const bouquetPayload: Record<string, string | string[]> = {
+        'bouquets_selected[]': bouquetIds,
+        ...outputPayload,
+      };
+
+      if (packageId) {
+        postAttempts.push({
+          label: 'POST create_line custom (package OFF)',
+          params: {
+            ...baseLineParams,
+            package_id: '0',
+            'package_id[]': ['0'],
+            ...bouquetPayload,
+          },
+        });
       }
-      if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
-        lastError = createError || 'create_line retornou status inválido';
-        continue;
+
+      postAttempts.push({
+        label: 'POST create_line bouquets + outputs',
+        params: {
+          ...packageLineParams,
+          ...bouquetPayload,
+        },
+      });
+    }
+
+    postAttempts.push({
+      label: 'POST create_line padrão',
+      params: packageLineParams,
+    });
+
+    for (const attempt of postAttempts) {
+      try {
+        console.log(`[XUI] Fallback: ${attempt.label} params: ${JSON.stringify(attempt.params)}`);
+        const data = await xuiRequest(config, 'create_line', attempt.params);
+        const createError = getXuiError(data);
+        const status = String(data?.status || '').toUpperCase();
+
+        if (createError && !status.includes('EXISTS_USERNAME')) {
+          lastError = createError;
+          continue;
+        }
+        if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
+          lastError = createError || 'create_line retornou status inválido';
+          continue;
+        }
+
+        const lineId = String(data?.data?.id || '').trim();
+        const actionUsed = await ensureExpectedAssignments(lineId);
+
+        console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'} action=${actionUsed}`);
+        return { action: actionUsed, data };
+      } catch (e: any) {
+        lastError = e.message;
+        console.log(`[XUI] ${attempt.label} error: ${lastError}`);
       }
-
-      const lineId = String(data?.data?.id || '').trim();
-      const actionUsed = await ensureExpectedAssignments(lineId);
-
-      console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'} action=${actionUsed}`);
-      return { action: actionUsed, data };
-    } catch (e: any) {
-      lastError = e.message;
-      console.log(`[XUI] create_line POST error: ${lastError}`);
     }
   }
 
