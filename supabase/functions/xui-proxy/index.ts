@@ -142,10 +142,7 @@ function hasSameNumericIds(current: unknown, expected: string[]): boolean {
 function appendArrayField(form: URLSearchParams, key: string, values: string[]) {
   for (const value of values) {
     const normalized = String(value || '').trim();
-    if (!normalized) continue;
-    // XUI builds diverge on array parsing; send both key[] and repeated key.
-    form.append(`${key}[]`, normalized);
-    form.append(key, normalized);
+    if (normalized) form.append(`${key}[]`, normalized);
   }
 }
 
@@ -161,22 +158,6 @@ function toOutputFormatNames(outputIds: string[]): string[] {
       .map((id) => map[String(id).replace(/\D/g, '').trim()] || '')
       .filter(Boolean),
   ));
-}
-
-async function resolveAvailableBouquetIds(config: XuiServerConfig): Promise<string[]> {
-  try {
-    const bouquetsPayload = await xuiRequest(config, 'get_bouquets');
-    const rows = extractBouquetRows(bouquetsPayload);
-
-    const ids = rows
-      .map((row) => String(row?.id ?? row?.bouquet_id ?? row?.package_id ?? '').replace(/\D/g, '').trim())
-      .filter(Boolean);
-
-    return Array.from(new Set(ids));
-  } catch (e: any) {
-    console.log(`[XUI] Failed to resolve bouquets from server: ${e.message}`);
-    return [];
-  }
 }
 
 function normalizeForMatch(value: unknown): string {
