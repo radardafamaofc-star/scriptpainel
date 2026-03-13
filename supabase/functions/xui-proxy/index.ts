@@ -316,15 +316,26 @@ function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<strin
     .map((id) => Number(id))
     .filter((n) => Number.isFinite(n));
   const json = JSON.stringify(asNumbers);
+  const csv = selected.join(',');
 
-  return {
-    allowed_outputs: json,
-    output_formats: json,
-    allowed_outputs_selected: json,
+  const payload: Record<string, string | string[]> = {
+    // some XUI builds accept JSON, others CSV; send both values under the same key
+    allowed_outputs: [json, csv],
+    output_formats: [json, csv],
+    allowed_outputs_selected: [json, csv],
     'allowed_outputs[]': selected,
     'output_formats[]': selected,
     'allowed_outputs_selected[]': selected,
   };
+
+  // indexed arrays for panels that parse only key[index] notation
+  selected.forEach((fmt, idx) => {
+    payload[`allowed_outputs[${idx}]`] = fmt;
+    payload[`output_formats[${idx}]`] = fmt;
+    payload[`allowed_outputs_selected[${idx}]`] = fmt;
+  });
+
+  return payload;
 }
 
 function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
@@ -787,6 +798,30 @@ async function syncLineAssignments(
           ...identityParams,
           package_id: '0',
           'package_id[]': ['0'],
+          'bouquets_selected[]': bouquetIds,
+          ...outputPayload,
+        });
+      },
+    },
+    {
+      label: 'POST edit_line force outputs via restreamer toggle',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...identityParams,
+          package_id: '0',
+          'package_id[]': ['0'],
+          is_restreamer: '1',
+          'bouquets_selected[]': bouquetIds,
+          ...outputPayload,
+        });
+
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...identityParams,
+          package_id: '0',
+          'package_id[]': ['0'],
+          is_restreamer: '0',
           'bouquets_selected[]': bouquetIds,
           ...outputPayload,
         });
