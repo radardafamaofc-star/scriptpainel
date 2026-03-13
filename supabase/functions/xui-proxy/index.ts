@@ -548,7 +548,8 @@ Deno.serve(async (req) => {
             const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
             xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
           } else {
-            console.log('[XUI] Admin provisioning without member_id (owner line)');
+            xuiMemberId = await getOwnerMemberId(config);
+            console.log(`[XUI] Admin provisioning with owner member_id=${xuiMemberId}`);
           }
 
           await appendSystemLog(serviceClient, {
