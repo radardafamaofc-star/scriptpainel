@@ -1280,47 +1280,8 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou status inválido');
     }
 
-    // Step 2: resolve line ID using get_line by username.
-    let lineId = '';
-    try {
-      const byUsername = await xuiRequest(config, 'get_line', { username });
-      const rows = extractLineRows(byUsername);
-      const exact = rows.find((row: any) => String(row?.username || '').trim() === username) || rows[0];
-      lineId = String(exact?.id || exact?.line_id || '').trim();
-    } catch (e: any) {
-      console.log(`[XUI] get_line(username) failed: ${e.message}`);
-    }
-
-    if (!lineId) {
-      lineId = await resolveLineIdByUsername(config, username);
-    }
-
-    if (!lineId) {
-      lineId = String(createData?.data?.id || '').trim();
-    }
-
-    if (!lineId) {
-      throw new Error('Linha criada, mas não foi possível resolver o ID para aplicar pacote');
-    }
-
-    // Step 3: apply package via edit_line id + package_id.
-    if (packageId) {
-      const editParams: Record<string, string | string[]> = {
-        id: lineId,
-        package_id: packageId,
-      };
-
-      const editData = await editLinePostStrict(config, editParams);
-      const editError = getXuiError(editData);
-      if (editError) {
-        throw new Error(`Falha ao aplicar pacote no edit_line: ${editError}`);
-      }
-      if (!isXuiSuccess(editData)) {
-        throw new Error('edit_line retornou status inválido ao aplicar pacote');
-      }
-    } else {
-      console.log(`[XUI] package_id ausente para ${username}; edit_line de pacote não executado`);
-    }
+    // Line ID from create response
+    const lineId = String(createData?.data?.id || '').trim();
 
     // Optional confirmation after package apply.
     try {
