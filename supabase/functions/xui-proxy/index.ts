@@ -351,7 +351,7 @@ async function getOwnerMemberId(config: XuiServerConfig): Promise<string> {
 const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
 const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
 
-// Main provisioning for XUIOne 1.5.x: create_line then edit_line with numeric IDs
+// Main provisioning for XUIOne 1.5.x: single-step create_line
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
