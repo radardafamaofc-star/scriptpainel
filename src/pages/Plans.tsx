@@ -244,7 +244,11 @@ export default function Plans() {
                     {servers.map(s => (
                       <label key={s.id} className="flex items-center gap-2 cursor-pointer">
                         <input type="radio" name="server" className="accent-primary" checked={form.server_id === s.id}
-                          onChange={() => handleChange("server_id", s.id)} />
+                          onChange={() => {
+                            handleChange("server_id", s.id);
+                            handleChange("package_id", "");
+                            setSelectedPackageId("");
+                          }} />
                         <span className="text-sm text-foreground">{s.name}</span>
                       </label>
                     ))}
