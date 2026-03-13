@@ -311,7 +311,6 @@ async function createLinePost(
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
-  const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
 
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
