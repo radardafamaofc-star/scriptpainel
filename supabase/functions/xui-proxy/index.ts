@@ -430,6 +430,38 @@ async function getLineRowById(config: XuiServerConfig, lineId: string): Promise<
   }
 }
 
+async function waitForLinePresence(
+  config: XuiServerConfig,
+  lineId: string,
+  username: string,
+  maxAttempts = 3,
+  delayMs = 700,
+): Promise<any | null> {
+  const normalizedLineId = String(lineId || '').trim();
+  const normalizedUsername = String(username || '').trim();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (normalizedLineId) {
+      const byId = await getLineRowById(config, normalizedLineId);
+      if (byId) return byId;
+    }
+
+    if (normalizedUsername) {
+      const resolvedId = await resolveLineIdByUsername(config, normalizedUsername);
+      if (resolvedId) {
+        const byUsername = await getLineRowById(config, resolvedId);
+        if (byUsername) return byUsername;
+      }
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  return null;
+}
+
 async function restoreLineBouquets(
   config: XuiServerConfig,
   lineId: string,
@@ -469,8 +501,11 @@ async function enforceAllowedOutputsPostCreate(
   if (!lineId) return null;
 
   const targetUsername = String(params.expectedUsername || '').trim();
+  const targetPassword = String(params.expectedPassword || '').trim();
   const targetExpDate = String(params.expDate || '').trim();
   const targetMaxConnections = String(params.maxConnections || '').replace(/\D/g, '').trim() || '1';
+  const targetMemberId = String(params.expectedMemberId || '').replace(/\D/g, '').trim();
+  const targetPackageId = String(params.expectedPackageId || '').replace(/\D/g, '').trim();
 
   const expectedBouquetIds = (params.expectedBouquetIds || [])
     .map((id) => String(id).replace(/\D/g, '').trim())
@@ -490,7 +525,13 @@ async function enforceAllowedOutputsPostCreate(
     form.set('line_id', lineId);
     form.set('max_connections', targetMaxConnections);
     if (targetUsername) form.set('username', targetUsername);
+    if (targetPassword) form.set('password', targetPassword);
     if (targetExpDate) form.set('exp_date', targetExpDate);
+    if (targetMemberId) form.set('member_id', targetMemberId);
+    if (targetPackageId && targetPackageId !== '0') {
+      form.set('package_id', targetPackageId);
+      form.set('package', targetPackageId);
+    }
     return form;
   };
 
@@ -785,16 +826,32 @@ async function provisionUserOnXui(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
   );
 
-  const createData = await createLinePost(config, {
-    username,
-    password,
-    ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
-    memberId: effectiveMemberId,
-    ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
-    maxConnections: Number(maxConnections),
-    bouquetIds: bouquetIds.map(Number),
-    allowedOutputIds: allowedOutputIds.map(Number),
-  });
+  let createData: any = null;
+  try {
+    createData = await createLinePost(config, {
+      username,
+      password,
+      ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+      memberId: effectiveMemberId,
+      ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
+      maxConnections: Number(maxConnections),
+      bouquetIds: bouquetIds.map(Number),
+      allowedOutputIds: allowedOutputIds.map(Number),
+    });
+  } catch (e: any) {
+    const message = String(e?.message || '');
+    if (message.toLowerCase().includes('timeout') || message.toLowerCase().includes('expirou')) {
+      const timeoutLineId = await resolveLineIdByUsername(config, username);
+      if (timeoutLineId) {
+        createData = { status: 'STATUS_SUCCESS', data: { id: timeoutLineId, username } };
+        console.log(`[XUI] create_line timeout, but line was found by username=${username} line_id=${timeoutLineId}`);
+      } else {
+        throw e;
+      }
+    } else {
+      throw e;
+    }
+  }
 
   const createStatus = String(createData?.status || '').toUpperCase();
   const createError = getXuiError(createData);
@@ -812,7 +869,7 @@ async function provisionUserOnXui(
   let finalRow: any = null;
 
   if (createdLineId) {
-    finalRow = await getLineRowById(config, createdLineId);
+    finalRow = await waitForLinePresence(config, createdLineId, username);
     if (finalRow) {
       finalLineId = String(finalRow.id || finalRow.line_id || createdLineId).trim();
       finalUsername = String(finalRow.username || username).trim();
@@ -870,6 +927,15 @@ async function provisionUserOnXui(
       console.log(`[XUI] WARNING: XUI changed username ${username} -> ${finalUsername}`);
     }
   }
+
+  const confirmedRow = await waitForLinePresence(config, finalLineId, finalUsername || username, 2, 500);
+  if (!confirmedRow) {
+    throw new Error('XUI não confirmou a criação da linha. Operação abortada para evitar inconsistência.');
+  }
+
+  finalLineId = String(confirmedRow.id || confirmedRow.line_id || finalLineId).trim();
+  finalUsername = String(confirmedRow.username || finalUsername || username).trim();
+  active = isLineActive(confirmedRow);
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
 
