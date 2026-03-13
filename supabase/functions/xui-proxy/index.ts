@@ -272,7 +272,7 @@ async function postXuiForm(
   throw new Error(lastError);
 }
 
-// Single-step create_line focused on the fields XUI reliably accepts
+// Single-step create_line focused on explicit credentials + package fields
 async function createLinePost(
   config: XuiServerConfig,
   params: {
@@ -280,6 +280,7 @@ async function createLinePost(
     password: string;
     expDate?: string;
     memberId?: string;
+    maxConnections?: number;
     bouquetIds: number[];
     allowedOutputIds: number[];
   },
@@ -288,10 +289,10 @@ async function createLinePost(
   form.set('username', params.username);
   form.set('password', params.password);
   if (params.expDate) form.set('exp_date', params.expDate);
-  form.set('max_connections', '1');
+  form.set('max_connections', String(Math.max(1, Number(params.maxConnections ?? 1) || 1)));
 
-  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
-  if (normalizedMemberId) form.set('member_id', normalizedMemberId);
+  // XUI 1.5.12: force member_id=0 to prevent auto-generated username/profile overrides
+  form.set('member_id', '0');
 
   const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
@@ -299,11 +300,9 @@ async function createLinePost(
   const bouquetStringIds = bouquetIds.map((id) => String(id));
   const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
 
-  // Keep bouquet behavior that was working
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
-  // Apply same transport idea used for bouquets, but only with allowed_outputs keys
   form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
   appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
 
