@@ -801,10 +801,7 @@ async function syncLineAssignments(
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
-          allowed_outputs: jsonOutputs,
-          'allowed_outputs[]': normalizedOutputs,
-          output_formats: jsonOutputs,
-          'output_formats[]': normalizedOutputs,
+          ...outputPayload,
         });
       },
     },
