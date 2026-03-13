@@ -825,8 +825,7 @@ async function syncLineAssignments(
           ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquet: jsonBouquets,
-          allowed_outputs: jsonOutputs,
-          output_formats: jsonOutputs,
+          ...outputPayload,
         });
       },
     },
