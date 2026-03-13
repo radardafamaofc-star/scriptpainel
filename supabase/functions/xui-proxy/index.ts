@@ -715,18 +715,13 @@ async function provisionUserOnXui(
   ].filter((variant) => Object.keys(variant).length > 0);
 
   const editAssignmentVariants: Array<Record<string, string | string[]>> = [
-    {
-      ...(selectedPackageId ? { package_id: selectedPackageId } : {}),
-      ...(bouquetSelectionIds.length ? { 'bouquets_selected[]': bouquetSelectionIds } : {}),
-      ...(outputJsonArray ? { allowed_outputs: outputJsonArray } : {}),
-    },
     ...(bouquetSelectionIds.length ? [{ 'bouquets_selected[]': bouquetSelectionIds }] : []),
     ...(Object.keys(indexedBouquetSelection).length ? [indexedBouquetSelection] : []),
     ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ bouquets_selected: bouquetSelectionIds.join(',') }] : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquets[]': bouquetSelectionIds }] : []),
+    ...(bouquetSelectionIds.length ? [{ 'bouquet[]': bouquetSelectionIds }] : []),
     ...(directBouquetIds.length ? [{ bouquet: JSON.stringify(directBouquetIds) }] : []),
-    ...(resolvedOutputIds.length
-      ? [{ 'allowed_outputs_selected[]': resolvedOutputIds, 'output_formats[]': resolvedOutputIds }]
-      : []),
   ].filter((variant) => Object.keys(variant).length > 0);
 
   const rawExpDate = String(expDate || '').trim();
