@@ -992,14 +992,13 @@ async function provisionUserOnXui(
     }
   }
 
-  // Get bouquet IDs from the package
+  // Get bouquet IDs from package only for non-package fallback flows
   let bouquetIds: string[] = [];
-  // ALWAYS force all 3 output formats: HLS(1), MPEGTS(2), RTMP(3)
+  // Keep output variants only for non-package fallback flows
   const outputIds: string[] = ['1', '2', '3'];
   if (packageId) {
     const assignments = await getPackageAssignments(config, packageId);
     bouquetIds = assignments.bouquetIds;
-    // Do NOT use assignments.outputIds — always force all outputs active
   }
 
   // Calculate expiration variants
@@ -1026,12 +1025,10 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
-  // Don't include outputIds in verification — XUI stores outputs at the PACKAGE level,
-  // not at the line level. The line's allowed_outputs field stays [] when a package is assigned.
-  // We still SEND outputs in create/edit calls as best-effort.
-  const expectedAssignments: ExpectedLineAssignments = bouquetIds.length > 0
-    ? { bouquetIds }
-    : (packageId ? { packageIds: [packageId] } : {});
+  // When package_id exists, trust package-level config (bouquets + outputs) and verify package binding only.
+  const expectedAssignments: ExpectedLineAssignments = packageId
+    ? { packageIds: [packageId] }
+    : (bouquetIds.length > 0 ? { bouquetIds } : {});
   const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
     || (expectedAssignments.packageIds?.length || 0) > 0;
 
