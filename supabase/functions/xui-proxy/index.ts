@@ -732,8 +732,8 @@ function buildCreateLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send every known output key variant used by different XUI builds
-  appendRawParams(parts, buildOutputPayload(outputIds));
+  // allowed_outputs[] with string format names (ts, m3u8, rtmp) — like Sigma QPanel
+  appendRawParams(parts, buildOutputPayload(outputFormats));
 
   return `${baseUrl}/?${parts.join('&')}`;
 }
