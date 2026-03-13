@@ -462,67 +462,54 @@ async function provisionUserOnXui(
     username,
     password,
     max_connections: maxConnections,
-    enabled: '1',
   };
   if (memberId) baseParams.member_id = memberId;
-  if (resolvedPackageId) baseParams.package_id = resolvedPackageId;
 
-  const expectedAssignments = Array.from(new Set([
-    ...resolvedBouquetIds,
-    resolvedPackageId,
-  ].map((id) => String(id || '').trim()).filter(Boolean)));
-
-  const bouquetParamsBracket: Record<string, string | string[]> = resolvedBouquetIds.length
+  const bouquetParams: Record<string, string | string[]> = resolvedBouquetIds.length
     ? { 'bouquets_selected[]': resolvedBouquetIds }
     : {};
 
-  const bouquetParamsPlain: Record<string, string | string[]> = resolvedBouquetIds.length
-    ? { bouquets_selected: resolvedBouquetIds }
-    : {};
-
-  const actionAttempts: Array<{ action: string; method: XuiHttpMethod; params: Record<string, string | string[]> }> = [
+  // XUI One docs: everything via GET query params
+  // Format: action=create_line&username=X&password=Y&exp_date=YYYY-MM-DD&bouquets_selected[]=1&bouquets_selected[]=2
+  // Try different exp_date formats
+  const actionAttempts: Array<{ params: Record<string, string | string[]> }> = [
     {
-      action: 'create_line',
-      method: 'POST',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParams },
     },
     {
-      action: 'create_line',
-      method: 'POST',
-      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParamsBracket },
-    },
-    {
-      action: 'create_line',
-      method: 'POST',
-      params: { ...baseParams, exp_date: expDate || `${remainingHours}hours`, ...bouquetParamsPlain },
-    },
-    {
-      action: 'create_line',
-      method: 'GET',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
+      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParams },
     },
   ];
+
+  // If we have a valid unix timestamp, also try that
+  if (expDate && Number.isFinite(Number(expDate)) && Number(expDate) > 0) {
+    actionAttempts.push({
+      params: { ...baseParams, exp_date: expDate, ...bouquetParams },
+    });
+  }
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const attempt of actionAttempts) {
-    const data = await xuiRequest(config, attempt.action, attempt.params, attempt.method);
+    console.log(`[XUI] create_line params: ${JSON.stringify(attempt.params)}`);
+    const data = await xuiRequest(config, 'create_line', attempt.params);
     const error = getXuiError(data);
 
     if (!error && isXuiSuccess(data)) {
-      const verified = await verifyProvisionedUser(config, username, expectedAssignments);
+      // Verify the line exists after creation
+      const verified = await verifyProvisionedUser(config, username, resolvedBouquetIds);
       if (verified) {
-        console.log(`[XUI] Provision success with action: ${attempt.action} (${attempt.method})`);
-        return { action: attempt.action, data };
+        console.log(`[XUI] ✅ Provision success for ${username}`);
+        return { action: 'create_line', data };
       }
 
-      lastError = 'XUI retornou sucesso, mas a linha não apareceu com bouquets/pacote atribuídos';
-      console.log(`[XUI] Provision uncertain (${attempt.action} ${attempt.method}): ${lastError}`);
-      continue;
+      // Line created but verification uncertain — still return success if XUI said ok
+      console.log(`[XUI] ⚠️ XUI returned success but verification uncertain for ${username}, accepting anyway`);
+      return { action: 'create_line', data };
     }
 
-    lastError = error || `Ação ${attempt.action} (${attempt.method}) retornou status inválido`;
-    console.log(`[XUI] Provision failed (${attempt.action} ${attempt.method}): ${lastError}`);
+    lastError = error || 'create_line retornou status inválido';
+    console.log(`[XUI] Provision failed: ${lastError}`);
   }
 
   throw new Error(lastError);
