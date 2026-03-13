@@ -250,19 +250,27 @@ async function createLinePost(
   form.set('member_id', '0');
 
   // XUIOne 1.5.12 compatibility:
-  // - DB column is `bouquet`
-  // - API may parse only `bouquets_selected`
-  // Send both as JSON strings (without [] fields) to avoid empty bouquet on create_line.
-  const bouquetJson = JSON.stringify(params.bouquetIds.map(Number));
-  const allowedOutputsJson = JSON.stringify(params.allowedOutputIds.map(Number));
+  // - bouquet and allowed_outputs must be sent as JSON string (without [] fields)
+  // - some panels only parse access outputs from alternate non-array keys/encodings
+  const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
+  const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
+
+  const bouquetJson = JSON.stringify(bouquetIds);
+  const allowedOutputsJson = JSON.stringify(allowedOutputIds);
+  const allowedOutputsQuotedJson = JSON.stringify(allowedOutputIds.map((id) => String(id)));
+  const allowedOutputsCsv = allowedOutputIds.join(',');
 
   form.set('bouquet', bouquetJson);
   form.set('bouquets_selected', bouquetJson);
 
-  // XUIOne 1.5.12 compatibility for access outputs (all without [] keys)
+  // Keep primary contract exactly as requested
   form.set('allowed_outputs', allowedOutputsJson);
-  form.set('allowed_outputs_selected', allowedOutputsJson);
-  form.set('output_formats', allowedOutputsJson);
+
+  // Extra compatibility aliases (still no [] notation)
+  form.set('allowed_outputs_selected', allowedOutputsQuotedJson);
+  form.set('output_formats', allowedOutputsCsv);
+  form.set('output_formats_selected', allowedOutputsQuotedJson);
+  form.set('allowed_output_formats', allowedOutputsQuotedJson);
 
   console.log("create_line payload:", form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
