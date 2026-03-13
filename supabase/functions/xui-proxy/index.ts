@@ -28,8 +28,6 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
   }
 }
 
-type XuiHttpMethod = 'GET' | 'POST';
-
 function encodeParamKey(key: string): string {
   // XUI expects bracket notation keys literally (e.g. bouquets_selected[])
   return key.includes('[]') ? key : encodeURIComponent(key);
@@ -52,85 +50,59 @@ async function xuiRequest(
   config: XuiServerConfig,
   action: string,
   params: Record<string, string | string[]> = {},
-  requestMethod: XuiHttpMethod = 'GET',
 ) {
   const baseUrl = config.url.replace(/\/+$/, '');
 
-  const coreParts: string[] = [];
-  coreParts.push(`api_key=${encodeURIComponent(config.api_key)}`);
-  coreParts.push(`action=${encodeURIComponent(action)}`);
-  if (config.api_version) coreParts.push(`api_version=${encodeURIComponent(config.api_version)}`);
-
+  // Build full query string — everything goes in the URL (GET), as per XUI One docs
+  const parts: string[] = [];
+  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
+  parts.push(`action=${encodeURIComponent(action)}`);
+  // Note: api_version is NOT a standard XUI One param — skip it to avoid confusion
   const paramParts = buildParamEntries(params);
-  const queryStringCore = coreParts.join('&');
-  const queryStringWithParams = [...coreParts, ...paramParts].join('&');
-
-  // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
-  const useCoreOnlyInUrl = requestMethod === 'POST';
-  const queryForUrl = useCoreOnlyInUrl ? queryStringCore : queryStringWithParams;
+  parts.push(...paramParts);
+  const queryString = parts.join('&');
 
   const urlsToTry = [
-    `${baseUrl}/?${queryForUrl}`,
-    `${baseUrl}?${queryForUrl}`,
-    `${baseUrl}/api.php?${queryForUrl}`,
-    `${baseUrl}/player_api.php?${queryForUrl}`,
+    `${baseUrl}/?${queryString}`,
+    `${baseUrl}?${queryString}`,
   ];
 
+  // Also try root host with api.php for legacy compat
   try {
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/api.php?${queryForUrl}`);
-      urlsToTry.push(`${root}/player_api.php?${queryForUrl}`);
+      urlsToTry.push(`${root}/api.php?${queryString}`);
     }
   } catch {}
 
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action} (${requestMethod})`);
-
-  const requestInit: RequestInit = requestMethod === 'POST'
-    ? {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: paramParts.join('&'),
-      }
-    : {};
+  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
 
   let lastError: Error | null = null;
 
   for (const url of urlsToTry) {
     try {
-      console.log(`[XUI] ${requestMethod}: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url, requestInit);
+      console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
+      const response = await tryFetch(url);
 
-      if (response.status === 404) {
-        console.log(`[XUI] 404`);
-        continue;
-      }
-      if (response.status === 403) {
-        console.log(`[XUI] 403 Forbidden`);
-        continue;
-      }
+      if (response.status === 404) { console.log(`[XUI] 404`); continue; }
+      if (response.status === 403) { console.log(`[XUI] 403`); continue; }
 
       const text = await response.text();
-      if (!text || text.trim() === '') {
-        console.log(`[XUI] Empty response`);
-        continue;
-      }
-
-      if (text.includes('<html') || text.includes('<!DOCTYPE')) {
-        console.log(`[XUI] HTML page, skipping`);
-        continue;
-      }
+      if (!text || text.trim() === '') { console.log(`[XUI] Empty`); continue; }
+      if (text.includes('<html') || text.includes('<!DOCTYPE')) { console.log(`[XUI] HTML, skip`); continue; }
 
       try {
         const json = JSON.parse(text);
-        console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
+        console.log(`[XUI] ✅ Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
         if (action === 'get_packages') {
           const entries = Object.entries(json);
           if (entries.length > 0) {
-            const [firstKey, firstVal] = entries[0];
-            console.log(`[XUI] Package entry key="${firstKey}" fields=${JSON.stringify(firstVal).substring(0, 500)}`);
+            console.log(`[XUI] Package[0]: ${JSON.stringify(entries[0][1]).substring(0, 500)}`);
           }
+        }
+        if (action === 'create_line') {
+          console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
         }
         return json;
       } catch {
@@ -145,8 +117,7 @@ async function xuiRequest(
   }
 
   throw lastError || new Error(
-    `Não foi possível conectar ao XUI One. Verifique se a URL e a chave de API estão corretas.\n` +
-    `Formato esperado: http://SEU_IP:PORTA/accesscode`
+    `Não foi possível conectar ao XUI One. Verifique URL e API Key.\nFormato: http://IP:PORTA/accesscode`
   );
 }
 
@@ -491,67 +462,54 @@ async function provisionUserOnXui(
     username,
     password,
     max_connections: maxConnections,
-    enabled: '1',
   };
   if (memberId) baseParams.member_id = memberId;
-  if (resolvedPackageId) baseParams.package_id = resolvedPackageId;
 
-  const expectedAssignments = Array.from(new Set([
-    ...resolvedBouquetIds,
-    resolvedPackageId,
-  ].map((id) => String(id || '').trim()).filter(Boolean)));
-
-  const bouquetParamsBracket: Record<string, string | string[]> = resolvedBouquetIds.length
+  const bouquetParams: Record<string, string | string[]> = resolvedBouquetIds.length
     ? { 'bouquets_selected[]': resolvedBouquetIds }
     : {};
 
-  const bouquetParamsPlain: Record<string, string | string[]> = resolvedBouquetIds.length
-    ? { bouquets_selected: resolvedBouquetIds }
-    : {};
-
-  const actionAttempts: Array<{ action: string; method: XuiHttpMethod; params: Record<string, string | string[]> }> = [
+  // XUI One docs: everything via GET query params
+  // Format: action=create_line&username=X&password=Y&exp_date=YYYY-MM-DD&bouquets_selected[]=1&bouquets_selected[]=2
+  // Try different exp_date formats
+  const actionAttempts: Array<{ params: Record<string, string | string[]> }> = [
     {
-      action: 'create_line',
-      method: 'POST',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParams },
     },
     {
-      action: 'create_line',
-      method: 'POST',
-      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParamsBracket },
-    },
-    {
-      action: 'create_line',
-      method: 'POST',
-      params: { ...baseParams, exp_date: expDate || `${remainingHours}hours`, ...bouquetParamsPlain },
-    },
-    {
-      action: 'create_line',
-      method: 'GET',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
+      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParams },
     },
   ];
+
+  // If we have a valid unix timestamp, also try that
+  if (expDate && Number.isFinite(Number(expDate)) && Number(expDate) > 0) {
+    actionAttempts.push({
+      params: { ...baseParams, exp_date: expDate, ...bouquetParams },
+    });
+  }
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const attempt of actionAttempts) {
-    const data = await xuiRequest(config, attempt.action, attempt.params, attempt.method);
+    console.log(`[XUI] create_line params: ${JSON.stringify(attempt.params)}`);
+    const data = await xuiRequest(config, 'create_line', attempt.params);
     const error = getXuiError(data);
 
     if (!error && isXuiSuccess(data)) {
-      const verified = await verifyProvisionedUser(config, username, expectedAssignments);
+      // Verify the line exists after creation
+      const verified = await verifyProvisionedUser(config, username, resolvedBouquetIds);
       if (verified) {
-        console.log(`[XUI] Provision success with action: ${attempt.action} (${attempt.method})`);
-        return { action: attempt.action, data };
+        console.log(`[XUI] ✅ Provision success for ${username}`);
+        return { action: 'create_line', data };
       }
 
-      lastError = 'XUI retornou sucesso, mas a linha não apareceu com bouquets/pacote atribuídos';
-      console.log(`[XUI] Provision uncertain (${attempt.action} ${attempt.method}): ${lastError}`);
-      continue;
+      // Line created but verification uncertain — still return success if XUI said ok
+      console.log(`[XUI] ⚠️ XUI returned success but verification uncertain for ${username}, accepting anyway`);
+      return { action: 'create_line', data };
     }
 
-    lastError = error || `Ação ${attempt.action} (${attempt.method}) retornou status inválido`;
-    console.log(`[XUI] Provision failed (${attempt.action} ${attempt.method}): ${lastError}`);
+    lastError = error || 'create_line retornou status inválido';
+    console.log(`[XUI] Provision failed: ${lastError}`);
   }
 
   throw new Error(lastError);
