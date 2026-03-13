@@ -238,6 +238,7 @@ async function createLinePost(
     username: string;
     password: string;
     expDate?: string;
+    memberId?: string;
     bouquetIds: number[];
     allowedOutputIds: number[];
   },
@@ -247,7 +248,8 @@ async function createLinePost(
   form.set('password', params.password);
   if (params.expDate) form.set('exp_date', params.expDate);
   form.set('max_connections', '1');
-  form.set('member_id', '0');
+  const normalizedMemberId = String(params.memberId || '').replace(/\D/g, '').trim();
+  form.set('member_id', normalizedMemberId || '0');
 
   // XUIOne 1.5.12 compatibility:
   // - bouquet and allowed_outputs must be sent as JSON string (without [] fields)
