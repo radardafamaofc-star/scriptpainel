@@ -169,55 +169,38 @@ async function resolveLineIdByUsername(config: XuiServerConfig, username: string
   return '';
 }
 
-// Simple POST to player_api.php for create_line
-async function createLineViaPlayerApi(
-  config: XuiServerConfig,
-  params: { username: string; password: string; packageId: string; expDate?: string },
-): Promise<any> {
+function buildPlayerApiUrls(config: XuiServerConfig): string[] {
   const baseUrl = config.url.replace(/\/+$/, '');
+  const urls = [`${baseUrl}/player_api.php?api_key=${encodeURIComponent(config.api_key)}`];
 
-  const form = new URLSearchParams();
-  form.set('action', 'create_line');
-  form.set('username', params.username);
-  form.set('password', params.password);
-  form.set('package', params.packageId);
-  if (params.expDate) form.set('exp_date', params.expDate);
-
-  const payload = form.toString();
-  console.log("create_line payload:", payload);
-
-  // Try player_api.php first, then fall back to access-code path
-  const urlsToTry = [
-    `${baseUrl}/player_api.php`,
-  ];
-  // Also try with api_key in query for auth
   try {
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/player_api.php`);
+      urls.push(`${root}/player_api.php?api_key=${encodeURIComponent(config.api_key)}`);
     }
   } catch {}
 
-  // Also try the standard API endpoint as fallback
-  urlsToTry.push(`${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=create_line`);
+  return Array.from(new Set(urls));
+}
 
-  let lastError = 'create_line falhou';
+async function postPlayerApiForm(
+  config: XuiServerConfig,
+  form: URLSearchParams,
+  actionName: string,
+): Promise<any> {
+  const payload = form.toString();
+  let lastError = `${actionName} falhou`;
 
-  for (const url of urlsToTry) {
+  for (const url of buildPlayerApiUrls(config)) {
     try {
-      // For player_api.php, include api_key in the form body
-      const bodyToSend = url.includes('player_api.php')
-        ? `api_key=${encodeURIComponent(config.api_key)}&${payload}`
-        : `${buildParamEntries({ username: params.username, password: params.password, package: params.packageId, ...(params.expDate ? { exp_date: params.expDate } : {}) }).join('&')}`;
-
       console.log(`[XUI] POST: ${url.replace(config.api_key, '***')}`);
-      console.log(`[XUI] POST body: ${bodyToSend.replace(config.api_key, '***')}`);
+      console.log(`[XUI] POST body: ${payload}`);
 
       const response = await tryFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: bodyToSend,
+        body: payload,
       });
 
       const text = await response.text();
@@ -227,15 +210,56 @@ async function createLineViaPlayerApi(
       }
 
       const json = JSON.parse(text);
-      console.log("create_line response:", JSON.stringify(json).substring(0, 1000));
+      console.log(`${actionName} response:`, JSON.stringify(json).substring(0, 1000));
       return json;
     } catch (e: any) {
       lastError = e.message;
-      console.log(`[XUI] create_line failed at ${url.replace(config.api_key, '***')}: ${e.message}`);
+      console.log(`[XUI] ${actionName} failed at ${url.replace(config.api_key, '***')}: ${e.message}`);
     }
   }
 
   throw new Error(lastError);
+}
+
+// STEP 1 — create_line via player_api.php (POST form-urlencoded)
+async function createLineViaPlayerApi(
+  config: XuiServerConfig,
+  params: { username: string; password: string; expDate?: string },
+): Promise<any> {
+  const form = new URLSearchParams();
+  form.set('action', 'create_line');
+  form.set('username', params.username);
+  form.set('password', params.password);
+  if (params.expDate) form.set('exp_date', params.expDate);
+  form.set('max_connections', '1');
+
+  const payload = form.toString();
+  console.log("create_line payload:", payload);
+
+  return postPlayerApiForm(config, form, 'create_line');
+}
+
+// STEP 2 — edit_line via player_api.php (POST form-urlencoded)
+async function editLineViaPlayerApi(
+  config: XuiServerConfig,
+  params: { lineId: string; bouquetIds: string[]; allowedOutputIds: string[] },
+): Promise<any> {
+  const form = new URLSearchParams();
+  form.set('action', 'edit_line');
+  form.set('id', params.lineId);
+
+  for (const bouquetId of params.bouquetIds) {
+    form.append('bouquets[]', bouquetId);
+  }
+
+  for (const outputId of params.allowedOutputIds) {
+    form.append('allowed_outputs[]', outputId);
+  }
+
+  const payload = form.toString();
+  console.log('edit_line payload:', payload);
+
+  return postPlayerApiForm(config, form, 'edit_line');
 }
 
 async function getOrCreateXuiMemberId(
