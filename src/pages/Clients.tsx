@@ -159,6 +159,8 @@ export default function Clients() {
           .single();
         if (error) throw error;
 
+        let createdTestLine = data;
+
         // Provision on XUI
         if (f.server_id) {
           const expTimestamp = Math.floor(new Date(expiryISO!).getTime() / 1000);
@@ -184,9 +186,22 @@ export default function Clients() {
             await supabase.from("test_lines").delete().eq("id", data.id);
             throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
           }
+
+          const generatedUsername = extractGeneratedUsername(xuiRes);
+          if (generatedUsername && generatedUsername !== f.username) {
+            const { error: updateUsernameError } = await supabase
+              .from("test_lines")
+              .update({ username: generatedUsername })
+              .eq("id", data.id)
+              .select("*, servers(name, host, dns, template)")
+              .single();
+
+            if (updateUsernameError) throw updateUsernameError;
+            createdTestLine = { ...createdTestLine, username: generatedUsername };
+          }
         }
 
-        return { data, isTest: true };
+        return { data: createdTestLine, isTest: true };
       } else {
         // Insert into clients
         const payload = {
