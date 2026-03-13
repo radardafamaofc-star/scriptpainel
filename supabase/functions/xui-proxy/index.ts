@@ -682,17 +682,20 @@ async function provisionUserOnXui(
   const bouquetIds = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, DEFAULT_BOUQUET_IDS);
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
+  const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
-  // XUI 1.5.12 stability: always create with member_id=0 to keep explicit credentials
-  const effectiveMemberId = '0';
+  const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
 
-  console.log(`[XUI] Provisioning ${username} member_id=${effectiveMemberId} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`);
+  console.log(
+    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
+  );
 
   const createData = await createLinePost(config, {
     username,
     password,
     ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
     memberId: effectiveMemberId,
+    ...(packageId ? { packageId } : {}),
     maxConnections: Number(maxConnections),
     bouquetIds: bouquetIds.map(Number),
     allowedOutputIds: allowedOutputIds.map(Number),
@@ -722,13 +725,15 @@ async function provisionUserOnXui(
       console.log(`[XUI] After create_line: username=${finalRow.username || '?'} bouquet=${finalRow.bouquet || '?'} allowed_outputs=${finalRow.allowed_outputs || '?'}`);
     }
 
+    const currentPackageId = String(finalRow?.package_id || '').replace(/\D/g, '').trim();
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
     const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
+    const needsPackageSync = !!packageId && currentPackageId !== packageId;
 
-    if (needsBouquetSync || needsOutputSync || needsUsernameSync) {
+    if (needsBouquetSync || needsOutputSync || needsUsernameSync || needsPackageSync) {
       console.log(
-        `[XUI] Sync required for line_id=${createdLineId} bouquet=${needsBouquetSync} outputs=${needsOutputSync} username=${needsUsernameSync}`,
+        `[XUI] Sync required for line_id=${createdLineId} bouquet=${needsBouquetSync} outputs=${needsOutputSync} username=${needsUsernameSync} package=${needsPackageSync}`,
       );
 
       const fallbackRow = await enforceAllowedOutputsPostCreate(config, {
@@ -737,6 +742,8 @@ async function provisionUserOnXui(
         expectedBouquetIds: bouquetIds,
         expectedUsername: username,
         expectedPassword: password,
+        expectedMemberId: effectiveMemberId,
+        expectedPackageId: packageId,
         expDate: expDateFormatted,
         maxConnections,
       });
