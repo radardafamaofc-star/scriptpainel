@@ -822,6 +822,10 @@ async function provisionUserOnXui(
       if (edited) {
         return { action: 'edit_line', data: edited };
       }
+
+      const warning = 'Linha criada, mas sem bouquets/outputs confirmados via API';
+      console.log(`[XUI] ⚠️ ${warning} username=${username} line_id=${lineId}`);
+      return { action: 'create_line_unverified', data: createdPayload, warning, line_id: lineId };
     }
 
     lastError = 'Linha criada, mas sem bouquets/outputs aplicados';
