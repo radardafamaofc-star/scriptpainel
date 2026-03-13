@@ -870,11 +870,12 @@ async function provisionUserOnXui(
 
   // Get bouquet IDs from the package
   let bouquetIds: string[] = [];
-  let outputIds: string[] = ['1', '2', '3'];
+  // ALWAYS force all 3 output formats: HLS(1), MPEGTS(2), RTMP(3)
+  const outputIds: string[] = ['1', '2', '3'];
   if (packageId) {
     const assignments = await getPackageAssignments(config, packageId);
     bouquetIds = assignments.bouquetIds;
-    outputIds = assignments.outputIds;
+    // Do NOT use assignments.outputIds — always force all outputs active
   }
 
   // Calculate expiration variants
