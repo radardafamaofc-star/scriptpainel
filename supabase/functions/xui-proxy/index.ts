@@ -709,21 +709,33 @@ async function provisionUserOnXui(
     },
   ];
 
-  const expVariantCandidates: string[] = [];
-  if (expDate && Number.isFinite(Number(expDate)) && Number(expDate) > 0) {
-    const unixTs = Number(expDate);
-    const expAsDate = new Date(unixTs * 1000);
-    if (!Number.isNaN(expAsDate.getTime())) {
-      expVariantCandidates.push(expAsDate.toISOString().slice(0, 10));
-      expVariantCandidates.push(expAsDate.toISOString().slice(0, 19).replace('T', ' '));
+  const rawExpDate = String(expDate || '').trim();
+  const expVariants: string[] = [];
+
+  // Prefer relative duration strings - this server rejects unix timestamp with STATUS_INVALID_DATE.
+  if (rawExpDate) {
+    const compactRaw = rawExpDate.toLowerCase().replace(/\s+/g, '');
+    if (/^\d+(hours?|days?)$/.test(compactRaw)) {
+      expVariants.push(compactRaw);
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$/.test(rawExpDate)) {
+      expVariants.push(rawExpDate);
     }
   }
 
-  expVariantCandidates.push(`${remainingHours}hours`, `${remainingDays}days`);
-  if (expDate) expVariantCandidates.push(expDate);
+  expVariants.push(`${remainingHours}hours`, `${remainingDays}days`);
 
-  const expVariants = Array.from(new Set(expVariantCandidates.map((v) => String(v).trim()).filter(Boolean)));
-  console.log(`[XUI] exp_date variants: ${JSON.stringify(expVariants)}`);
+  // Optional absolute-date fallback derived from unix timestamp (date only).
+  if (Number.isFinite(expUnix) && expUnix > 0) {
+    const expAsDate = new Date(expUnix * 1000);
+    if (!Number.isNaN(expAsDate.getTime())) {
+      expVariants.push(expAsDate.toISOString().slice(0, 10));
+    }
+  }
+
+  const uniqueExpVariants = Array.from(new Set(expVariants.map((v) => String(v).trim()).filter(Boolean)));
+  console.log(`[XUI] EXP_VARS: ${JSON.stringify(uniqueExpVariants)} raw=${rawExpDate}`);
 
   const tryEditFallback = async (lineId: string, expValue: string) => {
     for (const assignment of editAssignmentVariants) {
@@ -750,7 +762,7 @@ async function provisionUserOnXui(
 
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
-  for (const expValue of expVariants) {
+  for (const expValue of uniqueExpVariants) {
     for (const assignment of createAssignmentVariants) {
       const params = { ...baseParams, exp_date: expValue, ...assignment };
       console.log(`[XUI] create_line params: ${JSON.stringify(params)}`);
