@@ -1281,17 +1281,19 @@ async function provisionUserOnXui(
     }
   }
 
-  // Step 1: create_line with correct XUI param names (user/pass, not username/password)
+  // STEP 1: create_line with minimal fields only (username/password/max_connections)
+  // Do NOT send package here — many XUI builds ignore it during create_line.
   const createParams: Record<string, string | string[]> = {
     user: username,
     pass: password,
-    ...(packageId ? { package: packageId } : {}),
-    ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
+    max_connections: maxConnections,
     ...(memberId ? { member_id: memberId } : {}),
   };
 
   try {
     const createData = await createLinePostStrict(config, createParams);
+    console.log("create_line response:", JSON.stringify(createData).substring(0, 1200));
+
     const createStatus = String(createData?.status || '').toUpperCase();
     const createError = getXuiError(createData);
 
@@ -1305,12 +1307,27 @@ async function provisionUserOnXui(
       throw new Error('create_line retornou status inválido');
     }
 
-    // Step 2/3: validate by line id and read authoritative username directly from XUI
+    // Extract line_id from create response
     const createdLineId = String(createData?.data?.id || '').trim();
     if (!createdLineId) {
       throw new Error('create_line retornou sem line_id');
     }
 
+    // STEP 2: apply package via edit_line (this triggers bouquets + outputs + connections inheritance)
+    if (packageId) {
+      const editParams: Record<string, string | string[]> = {
+        id: createdLineId,
+        package_id: packageId,
+      };
+      try {
+        const editData = await editLinePostStrict(config, editParams);
+        console.log("edit_line response:", JSON.stringify(editData).substring(0, 1200));
+      } catch (editErr: any) {
+        console.log(`[XUI] edit_line package apply warning: ${editErr.message}`);
+      }
+    }
+
+    // STEP 3: read final state from XUI (authoritative username, bouquets, outputs)
     const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
     const finalRows = extractLineRows(finalLine);
     const finalRow = finalRows.find((row: any) => String(row?.id || row?.line_id || '').trim() === createdLineId) || finalRows[0] || {};
