@@ -409,8 +409,9 @@ async function createLinePost(
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
 
-  // XUI 1.5.x é sensível a formatos mistos; manter somente JSON aqui
-  form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
+  const allowedOutputsJson = JSON.stringify(allowedOutputIds);
+  form.set('allowed_outputs', allowedOutputsJson);
+  form.set('output_formats', allowedOutputsJson);
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
