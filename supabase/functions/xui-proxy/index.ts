@@ -142,7 +142,40 @@ function hasSameNumericIds(current: unknown, expected: string[]): boolean {
 function appendArrayField(form: URLSearchParams, key: string, values: string[]) {
   for (const value of values) {
     const normalized = String(value || '').trim();
-    if (normalized) form.append(`${key}[]`, normalized);
+    if (!normalized) continue;
+    // XUI builds diverge on array parsing; send both key[] and repeated key.
+    form.append(`${key}[]`, normalized);
+    form.append(key, normalized);
+  }
+}
+
+function toOutputFormatNames(outputIds: string[]): string[] {
+  const map: Record<string, string> = {
+    '1': 'mpegts',
+    '2': 'hls',
+    '3': 'rtmp',
+  };
+
+  return Array.from(new Set(
+    outputIds
+      .map((id) => map[String(id).replace(/\D/g, '').trim()] || '')
+      .filter(Boolean),
+  ));
+}
+
+async function resolveAvailableBouquetIds(config: XuiServerConfig): Promise<string[]> {
+  try {
+    const bouquetsPayload = await xuiRequest(config, 'get_bouquets');
+    const rows = extractBouquetRows(bouquetsPayload);
+
+    const ids = rows
+      .map((row) => String(row?.id ?? row?.bouquet_id ?? row?.package_id ?? '').replace(/\D/g, '').trim())
+      .filter(Boolean);
+
+    return Array.from(new Set(ids));
+  } catch (e: any) {
+    console.log(`[XUI] Failed to resolve bouquets from server: ${e.message}`);
+    return [];
   }
 }
 
@@ -405,13 +438,22 @@ async function createLinePost(
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
-
   appendArrayField(form, 'bouquets_selected', bouquetStringIds);
   form.set('bouquet', JSON.stringify(bouquetIds));
+  form.set('bouquets', JSON.stringify(bouquetIds));
+  form.set('bouquets_selected', JSON.stringify(bouquetIds));
 
+  const allowedOutputStringIds = allowedOutputIds.map((id) => String(id));
+  const allowedOutputNames = toOutputFormatNames(allowedOutputStringIds);
   const allowedOutputsJson = JSON.stringify(allowedOutputIds);
+
   form.set('allowed_outputs', allowedOutputsJson);
   form.set('output_formats', allowedOutputsJson);
+  appendArrayField(form, 'allowed_outputs', allowedOutputStringIds);
+  appendArrayField(form, 'output_formats', allowedOutputStringIds);
+  if (allowedOutputNames.length) {
+    appendArrayField(form, 'output_formats', allowedOutputNames);
+  }
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
@@ -474,6 +516,7 @@ async function enforceAllowedOutputsPostCreate(
 
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
+  const targetOutputNames = toOutputFormatNames(targetAllowed);
 
   const expectedBouquetIds = (params.expectedBouquetIds || [])
     .map((id) => String(id).replace(/\D/g, '').trim())
@@ -483,6 +526,8 @@ async function enforceAllowedOutputsPostCreate(
   const allowedJson = JSON.stringify(allowedNumeric);
   const allowedQuotedJson = JSON.stringify(targetAllowed);
   const allowedCsv = allowedNumeric.join(',');
+  const outputNameJson = JSON.stringify(targetOutputNames);
+  const outputNameCsv = targetOutputNames.join(',');
 
   const bouquetJson = JSON.stringify(expectedBouquetNumeric);
   const bouquetQuotedJson = JSON.stringify(expectedBouquetIds);
@@ -507,6 +552,16 @@ async function enforceAllowedOutputsPostCreate(
   const attachCommonArrayFields = (form: URLSearchParams) => {
     if (expectedBouquetIds.length) {
       appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+      form.set('bouquets_selected', bouquetJson);
+      form.set('bouquets', bouquetJson);
+    }
+
+    if (targetAllowed.length) {
+      appendArrayField(form, 'allowed_outputs', targetAllowed);
+      appendArrayField(form, 'output_formats', targetAllowed);
+      if (targetOutputNames.length) {
+        appendArrayField(form, 'output_formats', targetOutputNames);
+      }
     }
   };
 
@@ -535,6 +590,19 @@ async function enforceAllowedOutputsPostCreate(
         if (expectedBouquetIds.length) form.set('bouquet', bouquetQuotedJson);
         form.set('allowed_outputs', allowedQuotedJson);
         form.set('output_formats', allowedQuotedJson);
+        attachCommonArrayFields(form);
+      },
+    },
+    {
+      label: 'output_names',
+      fill: (form) => {
+        if (expectedBouquetIds.length) form.set('bouquet', bouquetJson);
+        form.set('allowed_outputs', allowedJson);
+        if (targetOutputNames.length) {
+          form.set('output_formats', outputNameJson);
+        } else {
+          form.set('output_formats', allowedJson);
+        }
         attachCommonArrayFields(form);
       },
     },
@@ -603,14 +671,32 @@ async function enforceAllowedOutputsPostCreate(
         if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
         getParams.allowed_outputs = allowedCsv;
         getParams.output_formats = allowedCsv;
-      } else {
+      } else if (attempt.label === 'quoted_json_primary') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetQuotedJson;
         getParams.allowed_outputs = allowedQuotedJson;
         getParams.output_formats = allowedQuotedJson;
+      } else {
+        if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
+        getParams.allowed_outputs = allowedJson;
+        getParams.output_formats = targetOutputNames.length ? outputNameJson : allowedJson;
       }
 
       if (expectedBouquetIds.length) {
         getParams['bouquets_selected[]'] = expectedBouquetIds;
+        getParams.bouquets_selected = expectedBouquetIds;
+        getParams.bouquets = bouquetJson;
+      }
+
+      if (targetAllowed.length) {
+        getParams['allowed_outputs[]'] = targetAllowed;
+        getParams['output_formats[]'] = targetAllowed;
+      }
+
+      if (targetOutputNames.length) {
+        getParams['output_formats[]'] = [...targetAllowed, ...targetOutputNames];
+        if (attempt.label === 'output_names') {
+          getParams.output_formats = outputNameCsv || outputNameJson;
+        }
       }
 
       console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
@@ -779,16 +865,34 @@ async function provisionUserOnXui(
   const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
   const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
 
+  const availableBouquetIds = explicitBouquets.length
+    ? []
+    : await resolveAvailableBouquetIds(config);
+
   const bouquetIds = explicitBouquets.length
     ? explicitBouquets
-    : requestedPackageId
-      ? [requestedPackageId]
-      : DEFAULT_BOUQUET_IDS;
+    : availableBouquetIds.length
+      ? availableBouquetIds
+      : requestedPackageId
+        ? [requestedPackageId]
+        : DEFAULT_BOUQUET_IDS;
 
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
   const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
-  const effectivePackageId = requestedPackageId;
+
+  let effectivePackageId = requestedPackageId;
+  if (!effectivePackageId) {
+    effectivePackageId = await resolvePackageIdFromBouquets(config, {
+      requestedPackageId,
+      planName: String(rawParams.plan_name || rawParams.plan || ''),
+      bouquetIds,
+    });
+  }
+
+  if (!effectivePackageId && bouquetIds.length) {
+    effectivePackageId = bouquetIds[0];
+  }
 
   console.log(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
