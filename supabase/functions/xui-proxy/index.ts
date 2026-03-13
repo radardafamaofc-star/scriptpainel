@@ -340,7 +340,20 @@ Deno.serve(async (req) => {
       };
 
       try {
+        if (xui_action === 'user_create') {
+          const provisionResult = await provisionUserOnXui(config, xui_params || {});
+          return new Response(JSON.stringify({
+            success: true,
+            data: provisionResult.data,
+            action_used: provisionResult.action,
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
         const data = await xuiRequest(config, xui_action, xui_params || {});
+        const commandError = getXuiError(data);
+        if (commandError) throw new Error(commandError);
 
         if (xui_action === 'get_server_stats' || xui_action === 'user_info') {
           await serviceClient.from('servers').update({ status: 'online' }).eq('id', server_id);
@@ -350,7 +363,9 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       } catch (e) {
-        await serviceClient.from('servers').update({ status: 'offline' }).eq('id', server_id);
+        if (xui_action === 'get_server_stats' || xui_action === 'user_info') {
+          await serviceClient.from('servers').update({ status: 'offline' }).eq('id', server_id);
+        }
 
         return new Response(JSON.stringify({ success: false, error: e.message }), {
           status: 200,
