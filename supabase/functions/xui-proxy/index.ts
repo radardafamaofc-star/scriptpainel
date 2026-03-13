@@ -314,7 +314,6 @@ const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
 
 // Map between numeric IDs and format names
 const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
-const OUTPUT_NAME_TO_ID: Record<string, string> = { 'm3u8': '1', 'ts': '2', 'rtmp': '3', 'hls': '1', 'mpegts': '2' };
 
 function normalizeOutputFormats(raw: string[]): string[] {
   if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
@@ -330,10 +329,11 @@ function normalizeOutputFormats(raw: string[]): string[] {
 
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
-  const payload: Record<string, string | string[]> = {
+  return {
+    // Keep array syntax only (no JSON/csv/object), as required by XUI
     'allowed_outputs[]': formats,
+    'output_formats[]': formats,
   };
-  return payload;
 }
 
 function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
@@ -347,6 +347,55 @@ function appendRawParams(parts: string[], params: Record<string, string | string
 
     parts.push(`${encodeParamKey(k)}=${encodeURIComponent(v)}`);
   }
+}
+
+async function createLinePostStrict(
+  config: XuiServerConfig,
+  params: Record<string, string | string[]>,
+): Promise<any> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const actionQuery = `api_key=${encodeURIComponent(config.api_key)}&action=create_line`;
+
+  const bodyParts: string[] = [];
+  appendRawParams(bodyParts, params);
+  const body = bodyParts.join('&');
+
+  const urlsToTry = [`${baseUrl}/?${actionQuery}`, `${baseUrl}?${actionQuery}`];
+
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.pathname && parsed.pathname !== '/') {
+      const root = `${parsed.protocol}//${parsed.host}`;
+      urlsToTry.push(`${root}/api.php?${actionQuery}`);
+    }
+  } catch {}
+
+  let lastError = 'create_line POST falhou';
+
+  for (const url of urlsToTry) {
+    try {
+      console.log(`[XUI] POST(strict): ${url.replace(config.api_key, '***')}`);
+      console.log(`[XUI] POST(strict) body: ${body.substring(0, 1500)}`);
+
+      const response = await tryFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body,
+      });
+
+      const text = await response.text();
+      if (!text || text.includes('<html')) continue;
+
+      const json = JSON.parse(text);
+      console.log(`[XUI] create_line POST(strict) response: ${JSON.stringify(json).substring(0, 1000)}`);
+      return json;
+    } catch (e: any) {
+      lastError = e.message;
+      console.log(`[XUI] create_line POST(strict) failed: ${e.message}`);
+    }
+  }
+
+  throw new Error(lastError);
 }
 
 function extractLineAssignments(payload: any): XuiLineAssignments {
@@ -387,7 +436,8 @@ function extractLineAssignments(payload: any): XuiLineAssignments {
 function matchesExpectedAssignments(actual: XuiLineAssignments, expected: ExpectedLineAssignments): boolean {
   const expectedBouquets = normalizeIds(expected.bouquetIds || []);
   const expectedPackages = normalizeIds(expected.packageIds || []);
-  const expectedOutputs = normalizeIds(expected.outputIds || []);
+  const expectedOutputNames = normalizeOutputFormats(expected.outputIds || []);
+  const actualOutputNames = normalizeOutputFormats(actual.outputIds || []);
 
   const bouquetOk = expectedBouquets.length === 0
     || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
@@ -395,8 +445,8 @@ function matchesExpectedAssignments(actual: XuiLineAssignments, expected: Expect
   const packageOk = expectedPackages.length === 0
     || expectedPackages.some((id) => actual.packageIds.includes(id) || actual.bouquetIds.includes(id));
 
-  const outputsOk = expectedOutputs.length === 0
-    || expectedOutputs.every((id) => actual.outputIds.includes(id));
+  const outputsOk = expectedOutputNames.length === 0
+    || expectedOutputNames.every((fmt) => actualOutputNames.includes(fmt));
 
   return bouquetOk && packageOk && outputsOk;
 }
@@ -1134,60 +1184,57 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${JSON.stringify(bouquetIds)} outputs=${JSON.stringify(outputFormats)} exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
+  const expectedAssignments: ExpectedLineAssignments = {
+    ...(packageId ? { packageIds: [packageId] } : {}),
+    ...(bouquetIds.length > 0 ? { bouquetIds } : {}),
+    ...(outputFormats.length > 0 ? { outputIds: outputFormats } : {}),
+  };
+
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const baseLineParams: Record<string, string> = {
+    const createParams: Record<string, string | string[]> = {
       username,
       password,
       max_connections: maxConnections,
       exp_date: expValue,
+      ...(memberId ? { member_id: memberId } : {}),
+      ...(packageId ? { package_id: packageId } : {}),
+      ...(packageId ? { 'package_id[]': [packageId] } : {}),
+      ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
+      // Strict array params only, as required by XUI
+      ...buildOutputPayload(outputFormats),
     };
-    if (memberId) baseLineParams.member_id = memberId;
 
-    // ===== ALWAYS include bouquets_selected[] and allowed_outputs[] =====
-    // This is exactly how Sigma QPanel does it — never rely on XUI inheritance
-
-    // Strategy 1: GET create_line with explicit bouquets + outputs (QPanel style)
     try {
-      const url = buildCreateLineUrl(config, baseLineParams, bouquetIds, outputFormats);
-      console.log(`[XUI] GET create_line (QPanel style): ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
-      const text = await response.text();
-      if (text && !text.includes('<html')) {
-        const json = JSON.parse(text);
-        console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
-        const status = String(json?.status || '').toUpperCase();
-        if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
-          const lineId = String(json?.data?.id || '').trim();
-          return { action: 'create_line' as const, data: json };
-        }
-        const err = getXuiError(json);
-        if (err) { lastError = err; console.log(`[XUI] GET create_line failed: ${err}`); }
-      }
-    } catch (e: any) {
-      console.log(`[XUI] GET create_line error: ${e.message}`);
-      lastError = e.message;
-    }
-
-    // Strategy 2: POST create_line with explicit bouquets + outputs
-    try {
-      const postParams: Record<string, string | string[]> = {
-        ...baseLineParams,
-        'bouquets_selected[]': bouquetIds,
-        ...buildOutputPayload(outputFormats),
-      };
-      console.log(`[XUI] POST create_line (QPanel style) params: ${JSON.stringify(postParams)}`);
-      const data = await xuiRequest(config, 'create_line', postParams);
+      const data = await createLinePostStrict(config, createParams);
       const status = String(data?.status || '').toUpperCase();
-      if (isXuiSuccess(data) || status.includes('EXISTS_USERNAME')) {
-        return { action: 'create_line' as const, data };
+      const createError = getXuiError(data);
+
+      if (createError && !status.includes('EXISTS_USERNAME')) {
+        lastError = createError;
+        continue;
       }
-      const err = getXuiError(data);
-      if (err) { lastError = err; console.log(`[XUI] POST create_line failed: ${err}`); }
+      if (!isXuiSuccess(data) && !status.includes('EXISTS_USERNAME')) {
+        lastError = createError || 'create_line retornou status inválido';
+        continue;
+      }
+
+      const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
+
+      // Validate final state; if missing assignments, force a POST edit sync.
+      const verified = await verifyProvisionedUser(config, username, expectedAssignments, lineId);
+      if (!verified && lineId) {
+        const synced = await syncLineAssignments(config, lineId, username, expectedAssignments, outputFormats, password);
+        if (!synced) {
+          throw new Error('Linha criada, mas bouquets/outputs não foram aplicados pelo XUI');
+        }
+      }
+
+      return { action: 'create_line' as const, data };
     } catch (e: any) {
-      console.log(`[XUI] POST create_line error: ${e.message}`);
       lastError = e.message;
+      console.log(`[XUI] POST create_line strict error: ${lastError}`);
     }
   }
 
