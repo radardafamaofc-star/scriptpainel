@@ -901,6 +901,29 @@ async function provisionUserOnXui(
 
   console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} bouquets=${bouquetIds.length} plan_name='${rawPlanName || 'n/a'}' exp_variants=${JSON.stringify(uniqueExpVariants)}`);
 
+  const expectedAssignments: ExpectedLineAssignments = bouquetIds.length > 0
+    ? { bouquetIds }
+    : (packageId ? { packageIds: [packageId] } : {});
+  const hasExpectedAssignments = (expectedAssignments.bouquetIds?.length || 0) > 0
+    || (expectedAssignments.packageIds?.length || 0) > 0;
+
+  const ensureExpectedAssignments = async (lineIdCandidate: string): Promise<'create_line' | 'create_and_edit'> => {
+    if (!hasExpectedAssignments) return 'create_line';
+
+    const resolvedLineId = lineIdCandidate || await resolveLineIdByUsername(config, username);
+    const alreadyAssigned = await verifyProvisionedUser(config, username, expectedAssignments, resolvedLineId);
+    if (alreadyAssigned) return 'create_line';
+
+    if (!resolvedLineId) {
+      throw new Error('Linha criada, mas não foi possível localizar o ID no XUI para sincronizar bouquets.');
+    }
+
+    const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds);
+    if (synced) return 'create_and_edit';
+
+    throw new Error('Linha criada no XUI, mas o pacote não aplicou bouquets. No XUI, deixe Trial/Standard Package em OFF e valide os bouquets do pacote.');
+  };
+
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
@@ -923,30 +946,11 @@ async function provisionUserOnXui(
         if (text && !text.includes('<html')) {
           const json = JSON.parse(text);
           console.log(`[XUI] create_line response: ${JSON.stringify(json).substring(0, 800)}`);
-          if (isXuiSuccess(json) || String(json?.status || '').toUpperCase().includes('EXISTS_USERNAME')) {
+          const status = String(json?.status || '').toUpperCase();
+          if (isXuiSuccess(json) || status.includes('EXISTS_USERNAME')) {
             const lineId = String(json?.data?.id || '').trim();
-            const currentBouquets = parseIdList(json?.data?.bouquet);
-            console.log(`[XUI] ✅ Line created id=${lineId} bouquets=${JSON.stringify(currentBouquets)}`);
-
-            // If bouquets still empty, try edit_line via GET
-            if (currentBouquets.length === 0 && lineId) {
-              console.log(`[XUI] Bouquets empty, trying edit_line via GET...`);
-              const editUrl = buildEditLineUrl(config, lineId, bouquetIds);
-              console.log(`[XUI] GET edit_line: ${editUrl.replace(config.api_key, '***')}`);
-              const editResp = await tryFetch(editUrl);
-              const editText = await editResp.text();
-              if (editText && !editText.includes('<html')) {
-                const editJson = JSON.parse(editText);
-                console.log(`[XUI] edit_line response: ${JSON.stringify(editJson).substring(0, 800)}`);
-                const editBouquets = parseIdList(editJson?.data?.bouquet);
-                if (editBouquets.length > 0) {
-                  console.log(`[XUI] ✅ Bouquets applied via edit_line: ${JSON.stringify(editBouquets)}`);
-                  return { action: 'create_and_edit', data: json };
-                }
-              }
-            }
-
-            return { action: 'create_line', data: json };
+            const actionUsed = await ensureExpectedAssignments(lineId);
+            return { action: actionUsed, data: json };
           }
           const err = getXuiError(json);
           if (err) {
@@ -976,30 +980,11 @@ async function provisionUserOnXui(
         continue;
       }
 
-      const lineId = String(data?.data?.id || '').trim() || await resolveLineIdByUsername(config, username);
+      const lineId = String(data?.data?.id || '').trim();
+      const actionUsed = await ensureExpectedAssignments(lineId);
 
-      // Try edit_line via GET to apply bouquets
-      if (bouquetIds.length > 0 && lineId) {
-        try {
-          const editUrl = buildEditLineUrl(config, lineId, bouquetIds);
-          console.log(`[XUI] GET edit_line post-create: ${editUrl.replace(config.api_key, '***')}`);
-          const editResp = await tryFetch(editUrl);
-          const editText = await editResp.text();
-          if (editText && !editText.includes('<html')) {
-            const editJson = JSON.parse(editText);
-            const editBouquets = parseIdList(editJson?.data?.bouquet);
-            if (editBouquets.length > 0) {
-              console.log(`[XUI] ✅ Bouquets applied via edit_line after POST create: ${JSON.stringify(editBouquets)}`);
-              return { action: 'create_and_edit', data };
-            }
-          }
-        } catch (e: any) {
-          console.log(`[XUI] edit_line GET fallback error: ${e.message}`);
-        }
-      }
-
-      console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'}`);
-      return { action: 'create_line', data };
+      console.log(`[XUI] ✅ Line created for ${username} package_id=${packageId || 'none'} action=${actionUsed}`);
+      return { action: actionUsed, data };
     } catch (e: any) {
       lastError = e.message;
       console.log(`[XUI] create_line POST error: ${lastError}`);
