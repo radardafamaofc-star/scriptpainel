@@ -794,6 +794,19 @@ async function syncLineAssignments(
         });
       },
     },
+    {
+      label: 'POST edit_line custom outputs (package_id=0)',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          package_id: '0',
+          'package_id[]': ['0'],
+          'bouquets_selected[]': bouquetIds,
+          allowed_outputs: jsonOutputs,
+          'allowed_outputs[]': normalizedOutputs,
+        });
+      },
+    },
   ];
 
   for (const attempt of attempts) {
