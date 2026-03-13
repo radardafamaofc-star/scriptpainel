@@ -309,33 +309,15 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string | string[]> {
+function buildOutputPayload(outputIds: string[] = ['1', '2', '3']): Record<string, string> {
   const normalized = sanitizeSelectionIds(outputIds);
   const selected = normalized.length > 0 ? normalized : ['1', '2', '3'];
   const asNumbers = selected
     .map((id) => Number(id))
     .filter((n) => Number.isFinite(n));
+  // Per XUI OpenAPI spec: allowed_outputs is a JSON array string e.g. "[1,2,3]"
   const json = JSON.stringify(asNumbers);
-  const csv = selected.join(',');
-
-  const payload: Record<string, string | string[]> = {
-    // some XUI builds accept JSON, others CSV; send both values under the same key
-    allowed_outputs: [json, csv],
-    output_formats: [json, csv],
-    allowed_outputs_selected: [json, csv],
-    'allowed_outputs[]': selected,
-    'output_formats[]': selected,
-    'allowed_outputs_selected[]': selected,
-  };
-
-  // indexed arrays for panels that parse only key[index] notation
-  selected.forEach((fmt, idx) => {
-    payload[`allowed_outputs[${idx}]`] = fmt;
-    payload[`output_formats[${idx}]`] = fmt;
-    payload[`allowed_outputs_selected[${idx}]`] = fmt;
-  });
-
-  return payload;
+  return { allowed_outputs: json };
 }
 
 function appendRawParams(parts: string[], params: Record<string, string | string[]>): void {
@@ -896,6 +878,74 @@ async function syncLineAssignments(
   return false;
 }
 
+// Dedicated function to force Access Output (allowed_outputs) on a line.
+// XUI ignores allowed_outputs when sent alongside bouquets/package changes,
+// so we send a minimal edit_line with ONLY identity + allowed_outputs.
+async function forceOutputs(
+  config: XuiServerConfig,
+  lineId: string,
+  username: string,
+  password: string,
+  outputIds: string[] = ['1', '2', '3'],
+): Promise<void> {
+  const outputJson = JSON.stringify(
+    outputIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)),
+  );
+
+  const strategies = [
+    {
+      label: 'POST edit_line allowed_outputs only',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          username,
+          password,
+          allowed_outputs: outputJson,
+        });
+      },
+    },
+    {
+      label: 'GET edit_line allowed_outputs only',
+      run: async () => {
+        const baseUrl = config.url.replace(/\/+$/, '');
+        const url = `${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=edit_line&id=${encodeURIComponent(lineId)}&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}&allowed_outputs=${encodeURIComponent(outputJson)}`;
+        console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
+        await tryFetch(url);
+      },
+    },
+    {
+      label: 'POST edit_line output_formats only',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          username,
+          password,
+          output_formats: outputJson,
+        });
+      },
+    },
+  ];
+
+  for (const strategy of strategies) {
+    try {
+      console.log(`[XUI] Output sync: ${strategy.label} line_id=${lineId}`);
+      await strategy.run();
+
+      const lineData = await xuiRequest(config, 'get_line', { id: lineId });
+      const actual = extractLineAssignments(lineData);
+      if (actual.outputIds.length > 0) {
+        console.log(`[XUI] ✅ Outputs confirmed via ${strategy.label}: ${JSON.stringify(actual.outputIds)}`);
+        return;
+      }
+      console.log(`[XUI] Output still empty after ${strategy.label}`);
+    } catch (e: any) {
+      console.log(`[XUI] Output sync failed (${strategy.label}): ${e.message}`);
+    }
+  }
+
+  console.log(`[XUI] ⚠️ Could not force outputs on line ${lineId} — XUI may manage outputs at package level`);
+}
+
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -1008,14 +1058,22 @@ async function provisionUserOnXui(
 
     const resolvedLineId = lineIdCandidate || await resolveLineIdByUsername(config, username);
     const alreadyAssigned = await verifyProvisionedUser(config, username, expectedAssignments, resolvedLineId);
-    if (alreadyAssigned) return 'create_line';
+    if (alreadyAssigned) {
+      // Bouquets OK — now force outputs separately
+      if (resolvedLineId) await forceOutputs(config, resolvedLineId, username, password, outputIds);
+      return 'create_line';
+    }
 
     if (!resolvedLineId) {
       throw new Error('Linha criada, mas não foi possível localizar o ID no XUI para sincronizar bouquets.');
     }
 
     const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds, password);
-    if (synced) return 'create_and_edit';
+    if (synced) {
+      // Bouquets synced — now force outputs separately
+      await forceOutputs(config, resolvedLineId, username, password, outputIds);
+      return 'create_and_edit';
+    }
 
     throw new Error('Linha criada no XUI, mas o pacote não aplicou bouquets. No XUI, deixe Trial/Standard Package em OFF e valide os bouquets do pacote.');
   };
