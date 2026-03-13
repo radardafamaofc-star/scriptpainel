@@ -1204,6 +1204,89 @@ async function forceOutputs(
   console.log(`[XUI] ⚠️ Could not force outputs on line ${lineId} — XUI may manage outputs at package level`);
 }
 
+function extractPhpSessionCookie(setCookieHeader: string | null): string | null {
+  if (!setCookieHeader) return null;
+  const match = setCookieHeader.match(/PHPSESSID=([^;,\s]+)/i);
+  if (!match?.[1]) return null;
+  return `PHPSESSID=${match[1]}`;
+}
+
+async function getXuiPhpSessionCookie(config: XuiServerConfig): Promise<string> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const probeUrls = [
+    `${baseUrl}/`,
+    `${baseUrl}/index.php`,
+    `${baseUrl}/?api_key=${encodeURIComponent(config.api_key)}&action=user_info`,
+  ];
+
+  let lastError = '';
+
+  for (const url of probeUrls) {
+    try {
+      const response = await tryFetch(url);
+      const sessionCookie = extractPhpSessionCookie(response.headers.get('set-cookie'));
+      if (sessionCookie) {
+        console.log(`[XUI] Session cookie acquired from ${url.replace(config.api_key, '***')}`);
+        return sessionCookie;
+      }
+    } catch (e: any) {
+      lastError = e.message;
+      console.log(`[XUI] Session probe failed ${url.replace(config.api_key, '***')}: ${e.message}`);
+    }
+  }
+
+  throw new Error(lastError || 'Não foi possível obter PHPSESSID para post.php');
+}
+
+async function addLineViaPostPhp(
+  config: XuiServerConfig,
+  params: { username: string; password: string; packageId: string; expDate?: string },
+): Promise<any> {
+  const baseUrl = config.url.replace(/\/+$/, '');
+  const postUrl = `${baseUrl}/post.php`;
+  const sessionCookie = await getXuiPhpSessionCookie(config);
+
+  const form = new URLSearchParams();
+  form.set('username', params.username);
+  form.set('password', params.password);
+  form.set('package', params.packageId);
+  if (params.expDate) form.set('exp_date', params.expDate);
+  form.set('max_connections', '1');
+  form.set('action', 'add_line');
+
+  const payload = form.toString();
+  console.log('XUI POST payload:', payload);
+
+  const response = await tryFetch(postUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Cookie: sessionCookie,
+    },
+    body: payload,
+  });
+
+  const text = await response.text();
+  if (!text || !text.trim()) {
+    if (!response.ok) {
+      throw new Error(`post.php retornou status ${response.status}`);
+    }
+    return { status: 'STATUS_SUCCESS' };
+  }
+
+  try {
+    const json = JSON.parse(text);
+    console.log(`[XUI] post.php response: ${JSON.stringify(json).substring(0, 1000)}`);
+    return json;
+  } catch {
+    console.log(`[XUI] post.php non-json response: ${text.substring(0, 300)}`);
+    if (!response.ok) {
+      throw new Error(`post.php retornou status ${response.status}`);
+    }
+    return { status: 'STATUS_SUCCESS', raw: text };
+  }
+}
+
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
@@ -1260,7 +1343,10 @@ async function provisionUserOnXui(
     }
   }
 
-  // Compute exp_date if provided
+  if (!packageId) {
+    throw new Error('package_id é obrigatório para criar linha via post.php');
+  }
+
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
   let expDateFormatted = '';
   if (rawExpDate) {
@@ -1272,65 +1358,56 @@ async function provisionUserOnXui(
     }
   }
 
-  console.log(`[XUI] Provisioning ${username} package_id=${packageId || 'n/a'} member_id=${memberId || 'n/a'}`);
-
-  // Single POST create_line — package handles bouquets, outputs, max_connections
-  const createParams: Record<string, string | string[]> = {
-    username,
-    password,
-    ...(packageId ? { package_id: packageId } : {}),
-    ...(expDateFormatted ? { exp_date: expDateFormatted } : {}),
-    ...(memberId ? { member_id: memberId } : {}),
-  };
+  console.log(`[XUI] Provisioning ${username} package_id=${packageId} member_id=${memberId || 'n/a'}`);
 
   try {
-    const createData = await createLinePostStrict(config, createParams);
+    const createData = await addLineViaPostPhp(config, {
+      username,
+      password,
+      packageId,
+      ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
+    });
 
     const createStatus = String(createData?.status || '').toUpperCase();
     const createError = getXuiError(createData);
-
     if (createStatus.includes('EXISTS_USERNAME')) {
       throw new Error(`Username já existe no XUI: ${username}`);
     }
-    if (createError) {
+    if (createError && !createStatus.includes('SUCCESS')) {
       throw new Error(createError);
     }
-    if (!isXuiSuccess(createData)) {
-      throw new Error('create_line retornou status inválido');
-    }
 
-    const createdLineId = String(createData?.data?.id || '').trim();
+    const createdLineId = String(createData?.data?.id || createData?.id || '').trim() || await resolveLineIdByUsername(config, username);
     if (!createdLineId) {
-      throw new Error('create_line retornou sem line_id');
+      throw new Error('Não foi possível localizar line_id após post.php add_line');
     }
 
-    // Read final state
     const finalLine = await xuiRequest(config, 'get_line', { id: createdLineId });
     const finalRows = extractLineRows(finalLine);
-    const finalRow = finalRows.find((row: any) => String(row?.id || '').trim() === createdLineId) || finalRows[0] || {};
+    const finalRow = finalRows.find((row: any) => String(row?.id || row?.line_id || '').trim() === createdLineId) || finalRows[0] || {};
 
-    const finalLineId = String(finalRow?.id || createdLineId).trim();
-    const finalUsername = String(finalRow?.username || createData?.data?.username || '').trim();
+    const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
+    const finalUsername = String(finalRow?.username || username).trim();
     const active = isLineActive(finalRow);
 
-    console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
-
-    if (!finalUsername) {
-      throw new Error('Não foi possível confirmar username da linha criada no XUI');
+    if (finalUsername && finalUsername !== username) {
+      throw new Error(`XUI alterou o username (${username} -> ${finalUsername})`);
     }
 
+    console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername || username} active=${active}`);
+
     return {
-      action: 'create_line' as const,
+      action: 'post_add_line' as const,
       data: {
         ...createData,
         data: {
           ...(typeof createData?.data === 'object' && createData?.data ? createData.data : {}),
           id: finalLineId,
-          username: finalUsername,
+          username: finalUsername || username,
         },
       },
       line_id: finalLineId,
-      username: finalUsername,
+      username: finalUsername || username,
       account_active: active,
     };
   } catch (e: any) {
