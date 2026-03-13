@@ -385,7 +385,7 @@ async function provisionUserOnXui(
         finalLineId = String(row.id || row.line_id || createdLineId).trim();
         finalUsername = String(row.username || username).trim();
         active = isLineActive(row);
-        console.log(`[XUI] After edit_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
+        console.log(`[XUI] After create_line: bouquet=${row.bouquet || '?'} allowed_outputs=${row.allowed_outputs || '?'}`);
       }
     } catch {}
   }
