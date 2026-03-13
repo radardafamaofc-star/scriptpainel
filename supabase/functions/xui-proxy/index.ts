@@ -28,58 +28,79 @@ async function tryFetch(url: string, options: RequestInit = {}, timeoutMs = 1500
   }
 }
 
+type XuiHttpMethod = 'GET' | 'POST';
+
+function encodeParamKey(key: string): string {
+  // XUI expects bracket notation keys literally (e.g. bouquets_selected[])
+  return key.includes('[]') ? key : encodeURIComponent(key);
+}
+
+function buildParamEntries(params: Record<string, string | string[]> = {}): string[] {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    const encodedKey = encodeParamKey(k);
+    if (Array.isArray(v)) {
+      for (const value of v) parts.push(`${encodedKey}=${encodeURIComponent(value)}`);
+    } else {
+      parts.push(`${encodedKey}=${encodeURIComponent(v)}`);
+    }
+  }
+  return parts;
+}
+
 async function xuiRequest(
   config: XuiServerConfig,
   action: string,
-  params: Record<string, string | string[]> = {}
+  params: Record<string, string | string[]> = {},
+  requestMethod: XuiHttpMethod = 'GET',
 ) {
-  let baseUrl = config.url.replace(/\/+$/, '');
+  const baseUrl = config.url.replace(/\/+$/, '');
 
-  // Build query params — manually to avoid URLSearchParams encoding [] as %5B%5D
-  const parts: string[] = [];
-  parts.push(`api_key=${encodeURIComponent(config.api_key)}`);
-  parts.push(`action=${encodeURIComponent(action)}`);
-  if (config.api_version) parts.push(`api_version=${encodeURIComponent(config.api_version)}`);
-  for (const [k, v] of Object.entries(params)) {
-    if (Array.isArray(v)) {
-      for (const value of v) parts.push(`${k}=${encodeURIComponent(value)}`);
-    } else {
-      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
-    }
-  }
-  const queryString = parts.join('&');
+  const coreParts: string[] = [];
+  coreParts.push(`api_key=${encodeURIComponent(config.api_key)}`);
+  coreParts.push(`action=${encodeURIComponent(action)}`);
+  if (config.api_version) coreParts.push(`api_version=${encodeURIComponent(config.api_version)}`);
+
+  const paramParts = buildParamEntries(params);
+  const queryStringCore = coreParts.join('&');
+  const queryStringWithParams = [...coreParts, ...paramParts].join('&');
 
   // XUI One API format: http://IP:PORT/accesscode/?api_key=KEY&action=...
-  // The URL the user provides IS the base (including access code path).
-  // We just append query params directly to it.
+  const useCoreOnlyInUrl = requestMethod === 'POST';
+  const queryForUrl = useCoreOnlyInUrl ? queryStringCore : queryStringWithParams;
+
   const urlsToTry = [
-    // Primary: URL as-is with query params (access code style)
-    `${baseUrl}/?${queryString}`,
-    // Without trailing slash
-    `${baseUrl}?${queryString}`,
-    // Legacy: api.php style
-    `${baseUrl}/api.php?${queryString}`,
-    `${baseUrl}/player_api.php?${queryString}`,
+    `${baseUrl}/?${queryForUrl}`,
+    `${baseUrl}?${queryForUrl}`,
+    `${baseUrl}/api.php?${queryForUrl}`,
+    `${baseUrl}/player_api.php?${queryForUrl}`,
   ];
 
-  // Also try root host with api.php
   try {
     const parsed = new URL(baseUrl);
     if (parsed.pathname && parsed.pathname !== '/') {
       const root = `${parsed.protocol}//${parsed.host}`;
-      urlsToTry.push(`${root}/api.php?${queryString}`);
-      urlsToTry.push(`${root}/player_api.php?${queryString}`);
+      urlsToTry.push(`${root}/api.php?${queryForUrl}`);
+      urlsToTry.push(`${root}/player_api.php?${queryForUrl}`);
     }
   } catch {}
 
-  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action}`);
+  console.log(`[XUI] Trying ${urlsToTry.length} URL patterns for action: ${action} (${requestMethod})`);
+
+  const requestInit: RequestInit = requestMethod === 'POST'
+    ? {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: paramParts.join('&'),
+      }
+    : {};
 
   let lastError: Error | null = null;
 
   for (const url of urlsToTry) {
     try {
-      console.log(`[XUI] GET: ${url.replace(config.api_key, '***')}`);
-      const response = await tryFetch(url);
+      console.log(`[XUI] ${requestMethod}: ${url.replace(config.api_key, '***')}`);
+      const response = await tryFetch(url, requestInit);
 
       if (response.status === 404) {
         console.log(`[XUI] 404`);
@@ -96,7 +117,6 @@ async function xuiRequest(
         continue;
       }
 
-      // Skip HTML pages (login pages, etc.)
       if (text.includes('<html') || text.includes('<!DOCTYPE')) {
         console.log(`[XUI] HTML page, skipping`);
         continue;
@@ -106,7 +126,6 @@ async function xuiRequest(
         const json = JSON.parse(text);
         console.log(`[XUI] ✅ Success! Keys: ${Object.keys(json).slice(0, 10).join(', ')}`);
         if (action === 'get_packages') {
-          // Log full first entry to understand structure
           const entries = Object.entries(json);
           if (entries.length > 0) {
             const [firstKey, firstVal] = entries[0];
@@ -118,8 +137,8 @@ async function xuiRequest(
         console.log(`[XUI] Non-JSON: ${text.substring(0, 100)}`);
         continue;
       }
-    } catch (e) {
-      if (e.message.includes('timeout') || e.message.includes('expirou')) throw e;
+    } catch (e: any) {
+      if (e.message?.includes('timeout') || e.message?.includes('expirou')) throw e;
       lastError = e;
       console.log(`[XUI] Error: ${e.message}`);
     }
@@ -185,23 +204,80 @@ function payloadContainsUsername(payload: any, username: string): boolean {
   return false;
 }
 
-async function verifyProvisionedUser(config: XuiServerConfig, username: string): Promise<boolean> {
+function parseIdList(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+
+  const raw = String(value).trim();
+  if (!raw || raw === 'null' || raw === '[]') return [];
+
+  if (raw.startsWith('[') && raw.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v).trim()).filter(Boolean);
+    } catch {
+      // fallback to comma split below
+    }
+  }
+
+  return raw
+    .split(',')
+    .map((v) => v.replace(/[\[\]\s]/g, '').trim())
+    .filter(Boolean);
+}
+
+function extractAssignedIds(payload: any): string[] {
+  const collected: string[] = [];
+
+  const visit = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    const candidates = [node.bouquet, node.bouquets, node.bouquets_selected, node.package_id];
+    for (const candidate of candidates) collected.push(...parseIdList(candidate));
+
+    Object.values(node).forEach(visit);
+  };
+
+  visit(payload);
+  return Array.from(new Set(collected));
+}
+
+async function verifyProvisionedUser(
+  config: XuiServerConfig,
+  username: string,
+  expectedAssignments: string[] = [],
+): Promise<boolean> {
+  const expected = Array.from(new Set(expectedAssignments.map((id) => String(id).trim()).filter(Boolean)));
+
   const checks: Array<{ action: string; params?: Record<string, string | string[]> }> = [
     { action: 'get_line', params: { username } },
-    { action: 'get_user', params: { username } },
     { action: 'get_lines', params: { search: username } },
-    { action: 'get_users', params: { search: username } },
     { action: 'get_lines' },
-    { action: 'get_users' },
   ];
 
   for (const check of checks) {
     try {
       const data = await xuiRequest(config, check.action, check.params || {});
-      if (payloadContainsUsername(data, username)) {
+      if (!payloadContainsUsername(data, username)) continue;
+
+      const assignedIds = extractAssignedIds(data);
+      if (!expected.length) {
         console.log(`[XUI] Verification success via ${check.action} for ${username}`);
         return true;
       }
+
+      const overlap = expected.some((id) => assignedIds.includes(id));
+      if (assignedIds.length > 0 && overlap) {
+        console.log(`[XUI] Verification success via ${check.action} for ${username} with assignments=${JSON.stringify(assignedIds)}`);
+        return true;
+      }
+
+      console.log(`[XUI] Verification found user but assignments mismatch via ${check.action}. expected=${JSON.stringify(expected)} got=${JSON.stringify(assignedIds)}`);
     } catch {
       // ignore verification endpoint mismatch
     }
@@ -373,7 +449,9 @@ async function provisionUserOnXui(
     .map((id) => id.trim())
     .filter(Boolean);
 
+  let resolvedPackageId = bouquetIds.length === 1 ? bouquetIds[0] : '';
   let resolvedBouquetIds = [...bouquetIds];
+
   if (!resolvedBouquetIds.length) {
     try {
       const packages = await xuiRequest(config, 'get_packages');
@@ -381,36 +459,21 @@ async function provisionUserOnXui(
         .filter((pkg: any) => pkg && typeof pkg === 'object');
 
       const getPackageId = (pkg: any): string => String(pkg.id || pkg.package_id || pkg.packageId || '').trim();
-      const isTrialPackage = (pkg: any): boolean => {
-        const flags = [pkg.is_trial, pkg.trial, pkg.trial_package];
-        return flags.some((value) => {
-          const n = String(value ?? '').toLowerCase();
-          return value === true || value === 1 || n === '1' || n === 'true';
-        });
-      };
 
       const allWithId = packageList.filter((pkg: any) => !!getPackageId(pkg));
-      // Pick package with most bouquets for maximum content coverage
       const sorted = [...allWithId].sort((a: any, b: any) => {
-        const bqA = Array.isArray(a.bouquets) ? a.bouquets : (typeof a.bouquets === 'string' ? JSON.parse(a.bouquets || '[]') : []);
-        const bqB = Array.isArray(b.bouquets) ? b.bouquets : (typeof b.bouquets === 'string' ? JSON.parse(b.bouquets || '[]') : []);
+        const bqA = parseIdList(a.bouquets);
+        const bqB = parseIdList(b.bouquets);
         return bqB.length - bqA.length;
       });
+
       const picked = sorted[0];
       const pickedId = picked ? getPackageId(picked) : '';
 
       if (pickedId && picked) {
-        // Extract bouquet IDs from the package's bouquets field
-        let packageBouquets: string[] = [];
-        try {
-          const rawBouquets = picked.bouquets;
-          if (typeof rawBouquets === 'string') {
-            packageBouquets = JSON.parse(rawBouquets).map(String);
-          } else if (Array.isArray(rawBouquets)) {
-            packageBouquets = rawBouquets.map(String);
-          }
-        } catch {}
+        resolvedPackageId = pickedId;
 
+        const packageBouquets = parseIdList(picked.bouquets);
         if (packageBouquets.length > 0) {
           resolvedBouquetIds = packageBouquets;
           console.log(`[XUI] Auto-selected package: ${pickedId} with bouquets: ${JSON.stringify(packageBouquets)}`);
@@ -419,62 +482,76 @@ async function provisionUserOnXui(
           console.log(`[XUI] Auto-selected package: ${pickedId} (no bouquets field, using package id)`);
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.log(`[XUI] Could not auto-select package: ${e.message}`);
     }
   }
 
-  const bouquetsSelected = resolvedBouquetIds.length ? JSON.stringify(resolvedBouquetIds) : '[]';
-
-  // Based on real XUI One docs: action=create_line with bouquets_selected and exp_date
-  // DO NOT send is_trial — it makes the line show as "Trial" in XUI
-  // Pass member_id to assign correct owner
   const baseParams: Record<string, string> = {
     username,
     password,
     max_connections: maxConnections,
+    enabled: '1',
   };
   if (memberId) baseParams.member_id = memberId;
+  if (resolvedPackageId) baseParams.package_id = resolvedPackageId;
 
-  const actionAttempts: Array<{ action: string; params: Record<string, string | string[]> }> = [
+  const expectedAssignments = Array.from(new Set([
+    ...resolvedBouquetIds,
+    resolvedPackageId,
+  ].map((id) => String(id || '').trim()).filter(Boolean)));
+
+  const bouquetParamsBracket: Record<string, string | string[]> = resolvedBouquetIds.length
+    ? { 'bouquets_selected[]': resolvedBouquetIds }
+    : {};
+
+  const bouquetParamsPlain: Record<string, string | string[]> = resolvedBouquetIds.length
+    ? { bouquets_selected: resolvedBouquetIds }
+    : {};
+
+  const actionAttempts: Array<{ action: string; method: XuiHttpMethod; params: Record<string, string | string[]> }> = [
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
+      method: 'POST',
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
     },
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: `${remainingDays}days`, 'bouquets_selected[]': resolvedBouquetIds },
+      method: 'POST',
+      params: { ...baseParams, exp_date: `${remainingDays}days`, ...bouquetParamsBracket },
     },
     {
       action: 'create_line',
-      params: { ...baseParams, exp_date: expDate, 'bouquets_selected[]': resolvedBouquetIds },
+      method: 'POST',
+      params: { ...baseParams, exp_date: expDate || `${remainingHours}hours`, ...bouquetParamsPlain },
     },
     {
-      action: 'create_user',
-      params: { ...baseParams, exp_date: `${remainingHours}hours`, 'bouquets_selected[]': resolvedBouquetIds },
+      action: 'create_line',
+      method: 'GET',
+      params: { ...baseParams, exp_date: `${remainingHours}hours`, ...bouquetParamsBracket },
     },
   ];
 
-  let lastError = 'A API do XUI rejeitou a criação do usuário';
+  let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const attempt of actionAttempts) {
-    const data = await xuiRequest(config, attempt.action, attempt.params);
+    const data = await xuiRequest(config, attempt.action, attempt.params, attempt.method);
     const error = getXuiError(data);
 
     if (!error && isXuiSuccess(data)) {
-      const verified = await verifyProvisionedUser(config, username);
+      const verified = await verifyProvisionedUser(config, username, expectedAssignments);
       if (verified) {
-        console.log(`[XUI] Provision success with action: ${attempt.action}`);
+        console.log(`[XUI] Provision success with action: ${attempt.action} (${attempt.method})`);
         return { action: attempt.action, data };
       }
 
-      lastError = 'XUI retornou sucesso, mas o usuário não foi encontrado após criação';
-      console.log(`[XUI] Provision uncertain (${attempt.action}): ${lastError}`);
+      lastError = 'XUI retornou sucesso, mas a linha não apareceu com bouquets/pacote atribuídos';
+      console.log(`[XUI] Provision uncertain (${attempt.action} ${attempt.method}): ${lastError}`);
       continue;
     }
 
-    lastError = error || `Ação ${attempt.action} retornou status inválido`;
-    console.log(`[XUI] Provision failed (${attempt.action}): ${lastError}`);
+    lastError = error || `Ação ${attempt.action} (${attempt.method}) retornou status inválido`;
+    console.log(`[XUI] Provision failed (${attempt.action} ${attempt.method}): ${lastError}`);
   }
 
   throw new Error(lastError);
