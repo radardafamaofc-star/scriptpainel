@@ -338,6 +338,16 @@ async function getOrCreateXuiMemberId(
   return '';
 }
 
+async function getOwnerMemberId(config: XuiServerConfig): Promise<string> {
+  try {
+    const info = await xuiRequest(config, 'user_info');
+    const data = info?.data || info?.user_info || info || {};
+    const ownerId = String(data?.id || data?.member_id || '').replace(/\D/g, '').trim();
+    if (ownerId) return ownerId;
+  } catch {}
+  return '1';
+}
+
 const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
 const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
 
