@@ -660,13 +660,13 @@ function buildCreateLineUrl(
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH formats to maximize compatibility
-  // 1) allowed_outputs as JSON string (per XUI API spec)
+  // Send outputs in BOTH param names for compatibility
   const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
   parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
-  // 2) allowed_outputs[] as individual params (alternative format)
+  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
   for (const fmt of outputIds) {
     parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
+    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
   }
 
   return `${baseUrl}/?${parts.join('&')}`;
@@ -679,6 +679,8 @@ function buildEditLineUrl(
   bouquetIds: string[],
   outputIds: string[] = ['1', '2', '3'],
   packageId: string = '',
+  username: string = '',
+  password: string = '',
 ): string {
   const baseUrl = config.url.replace(/\/+$/, '');
   const parts: string[] = [
@@ -687,15 +689,21 @@ function buildEditLineUrl(
     `id=${encodeURIComponent(lineId)}`,
   ];
 
+  // CRITICAL: preserve username/password so XUI doesn't overwrite them
+  if (username) parts.push(`username=${encodeURIComponent(username)}`);
+  if (password) parts.push(`password=${encodeURIComponent(password)}`);
+
   for (const id of bouquetIds) {
     parts.push(`bouquets_selected[]=${encodeURIComponent(id)}`);
   }
 
-  // Send outputs in BOTH formats
+  // Send outputs in BOTH param names (allowed_outputs + output_formats)
   const outputJson = JSON.stringify(outputIds.map(Number).filter(n => Number.isFinite(n)));
   parts.push(`allowed_outputs=${encodeURIComponent(outputJson)}`);
+  parts.push(`output_formats=${encodeURIComponent(outputJson)}`);
   for (const fmt of outputIds) {
     parts.push(`allowed_outputs[]=${encodeURIComponent(fmt)}`);
+    parts.push(`output_formats[]=${encodeURIComponent(fmt)}`);
   }
 
   if (packageId) {
@@ -712,6 +720,7 @@ async function syncLineAssignments(
   username: string,
   expected: ExpectedLineAssignments,
   outputIds: string[] = ['1', '2', '3'],
+  password: string = '',
 ): Promise<boolean> {
   const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
   const packageIds = sanitizeSelectionIds(expected.packageIds || []);
@@ -730,11 +739,16 @@ async function syncLineAssignments(
   const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
   const jsonOutputs = JSON.stringify(normalizedOutputs.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
 
+  // CRITICAL: Always include username+password to prevent XUI from overwriting them
+  const identityParams: Record<string, string> = {};
+  if (username) identityParams.username = username;
+  if (password) identityParams.password = password;
+
   const attempts: Array<{ label: string; run: () => Promise<void> }> = [
     {
       label: 'GET edit_line bouquets_selected[]',
       run: async () => {
-        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, packageIds[0] || '');
+        const url = buildEditLineUrl(config, lineId, bouquetIds, normalizedOutputs, packageIds[0] || '', username, password);
         console.log(`[XUI] ${url.replace(config.api_key, '***')}`);
         const response = await tryFetch(url);
         const text = await response.text();
@@ -753,24 +767,30 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           package_id: '0',
           'package_id[]': ['0'],
           'bouquets_selected[]': bouquetIds,
           allowed_outputs: jsonOutputs,
           'allowed_outputs[]': normalizedOutputs,
+          output_formats: jsonOutputs,
+          'output_formats[]': normalizedOutputs,
         });
       },
     },
     {
-      label: 'POST edit_line bouquets_selected[] + allowed_outputs',
+      label: 'POST edit_line bouquets_selected[] + outputs',
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
           'bouquets_selected[]': bouquetIds,
           allowed_outputs: jsonOutputs,
           'allowed_outputs[]': normalizedOutputs,
+          output_formats: jsonOutputs,
+          'output_formats[]': normalizedOutputs,
         });
       },
     },
@@ -779,9 +799,11 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquets_selected: jsonBouquets,
           allowed_outputs: jsonOutputs,
+          output_formats: jsonOutputs,
         });
       },
     },
@@ -790,9 +812,11 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           bouquet: jsonBouquets,
           allowed_outputs: jsonOutputs,
+          output_formats: jsonOutputs,
         });
       },
     },
@@ -801,22 +825,11 @@ async function syncLineAssignments(
       run: async () => {
         await xuiRequest(config, 'edit_line', {
           id: lineId,
+          ...identityParams,
           ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
           'bouquet[]': bouquetIds,
           'allowed_outputs[]': normalizedOutputs,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line custom outputs (package_id=0)',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          package_id: '0',
-          'package_id[]': ['0'],
-          'bouquets_selected[]': bouquetIds,
-          allowed_outputs: jsonOutputs,
-          'allowed_outputs[]': normalizedOutputs,
+          'output_formats[]': normalizedOutputs,
         });
       },
     },
@@ -958,7 +971,7 @@ async function provisionUserOnXui(
       throw new Error('Linha criada, mas não foi possível localizar o ID no XUI para sincronizar bouquets.');
     }
 
-    const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds);
+    const synced = await syncLineAssignments(config, resolvedLineId, username, expectedAssignments, outputIds, password);
     if (synced) return 'create_and_edit';
 
     throw new Error('Linha criada no XUI, mas o pacote não aplicou bouquets. No XUI, deixe Trial/Standard Package em OFF e valide os bouquets do pacote.');
