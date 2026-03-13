@@ -529,7 +529,18 @@ Deno.serve(async (req) => {
 
       try {
         if (xui_action === 'user_create') {
-          const provisionResult = await provisionUserOnXui(config, xui_params || {});
+          // Resolve XUI member_id for the calling user
+          const { data: profile } = await serviceClient
+            .from('profiles')
+            .select('display_name')
+            .eq('user_id', user.id)
+            .single();
+          const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
+
+          const xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
+          console.log(`[XUI] Provisioning line with member_id=${xuiMemberId} for ${displayName}`);
+
+          const provisionResult = await provisionUserOnXui(config, xui_params || {}, xuiMemberId);
           return new Response(JSON.stringify({
             success: true,
             data: provisionResult.data,
