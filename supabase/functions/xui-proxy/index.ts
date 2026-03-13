@@ -753,9 +753,19 @@ async function provisionUserOnXui(
   console.log(`[XUI] EXP_VARS: ${JSON.stringify(uniqueExpVariants)} raw=${rawExpDate}`);
 
   const tryEditFallback = async (lineId: string, expValue: string) => {
+    // 1) Keep core fields stable first.
+    try {
+      const coreParams = { id: lineId, exp_date: expValue, max_connections: maxConnections };
+      console.log(`[XUI] edit_line core params: ${JSON.stringify(coreParams)}`);
+      await xuiRequest(config, 'edit_line', coreParams);
+    } catch (e: any) {
+      console.log(`[XUI] edit_line core update failed: ${e.message}`);
+    }
+
+    // 2) Apply bouquets in dedicated calls (without package_id/credentials to avoid override).
     for (const assignment of editAssignmentVariants) {
       try {
-        const editParams = { id: lineId, ...baseParams, exp_date: expValue, ...assignment };
+        const editParams = { id: lineId, ...assignment };
         console.log(`[XUI] edit_line fallback params: ${JSON.stringify(editParams)}`);
 
         const edited = await xuiRequest(config, 'edit_line', editParams);
