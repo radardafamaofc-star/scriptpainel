@@ -226,6 +226,28 @@ async function provisionUserOnXui(config: XuiServerConfig, rawParams: Record<str
       },
     },
     {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expDate,
+        is_trial: isTrial,
+        'bouquets_selected[]': resolvedBouquetIds,
+      },
+    },
+    {
+      action: 'create_line',
+      params: {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expDate,
+        is_trial: isTrial,
+        package: primaryBouquet,
+      },
+    },
+    {
       action: 'create_user',
       params: {
         username,
