@@ -1142,7 +1142,7 @@ async function provisionUserOnXui(
   // 2. Extract bouquets + allowed_outputs
   // 3. Pass BOTH explicitly on create_line
   let bouquetIds: string[] = [];
-  let outputFormats: string[] = OUTPUT_FORMAT_NAMES; // default: all 3 (ts, m3u8, rtmp)
+  let outputFormats: string[] = OUTPUT_ALL_IDS; // default: all 3 (1=HLS, 2=MPEGTS, 3=RTMP)
   if (packageId) {
     const assignments = await getPackageAssignments(config, packageId);
     bouquetIds = assignments.bouquetIds;
