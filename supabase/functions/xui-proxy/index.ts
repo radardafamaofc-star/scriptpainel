@@ -277,7 +277,7 @@ async function provisionUserOnXui(
     }
   }
 
-  // Build create_line payload with correct XUI field names: bouquets, output_formats
+  // Build create_line payload — XUI expects "bouquet" and "allowed_outputs"
   const createParams: Record<string, string | string[]> = {
     username,
     password,
@@ -285,8 +285,8 @@ async function provisionUserOnXui(
     max_connections: maxConnections,
   };
   if (expDateFormatted) createParams.exp_date = expDateFormatted;
-  if (bouquets.length > 0) createParams.bouquets = JSON.stringify(bouquets.map(Number));
-  if (outputs.length > 0) createParams.output_formats = JSON.stringify(outputs.map(Number));
+  if (bouquets.length > 0) createParams.bouquet = JSON.stringify(bouquets.map(Number));
+  if (outputs.length > 0) createParams.allowed_outputs = JSON.stringify(outputs.map(Number));
 
   console.log('CREATE_LINE PAYLOAD:', JSON.stringify(createParams));
 
