@@ -18,6 +18,7 @@ import Reports from "./pages/Reports";
 import Logs from "./pages/Logs";
 import SettingsPage from "./pages/SettingsPage";
 import Estilo from "./pages/Estilo";
+import Notices from "./pages/Notices";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
