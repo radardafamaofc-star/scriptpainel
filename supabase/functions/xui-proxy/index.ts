@@ -251,12 +251,20 @@ async function provisionUserOnXui(
     }
   }
 
-  // Step 1: create_line (without package — XUI ignores it here)
+  // Build create_line payload — include package if numeric XUI ID provided
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
   form.set('member_id', '0');
   if (expDateFormatted) form.set('exp_date', expDateFormatted);
+
+  // Only send package if it's a valid numeric XUI package ID
+  if (packageId && /^\d+$/.test(packageId)) {
+    form.set('package', packageId);
+    console.log(`[XUI] Including package=${packageId} in create_line`);
+  } else if (packageId) {
+    console.log(`[XUI] WARNING: package_id "${packageId}" is not a numeric XUI ID — skipping package param`);
+  }
 
   const payload = form.toString();
   console.log('CREATE LINE PAYLOAD:', payload);
@@ -266,7 +274,6 @@ async function provisionUserOnXui(
   const url = `${baseUrl}/?api_key=${apiKey}&action=create_line`;
 
   console.log(`[XUI] POST: ${url.replace(config.api_key, '***')}`);
-  console.log(`[XUI] POST body: ${payload}`);
 
   const response = await tryFetch(url, {
     method: 'POST',
@@ -291,38 +298,11 @@ async function provisionUserOnXui(
     || await resolveLineIdByUsername(config, username);
   if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
 
-  // Step 2: Fetch package details and apply bouquets/outputs via edit_line
-  if (packageId) {
-    let bouquet = '';
-    let allowedOutputs = '';
-    let maxConnections = '';
-
-    try {
-      const pkgData = await xuiRequest(config, 'get_packages');
-      const packages = pkgData?.data || pkgData;
-      const pkgList = Array.isArray(packages) ? packages : (packages && typeof packages === 'object' ? Object.values(packages) : []);
-      const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
-
-      if (pkg) {
-        // XUI stores bouquet/allowed_outputs as JSON arrays in DB: [1,2,3]
-        const toBouquetIds = parseIdList(pkg.bouquet);
-        bouquet = `[${toBouquetIds.join(',')}]`;
-        const toOutputIds = parseIdList(pkg.allowed_outputs);
-        allowedOutputs = `[${toOutputIds.join(',')}]`;
-        maxConnections = String(pkg.max_connections || '').trim();
-        console.log(`[XUI] Package ${packageId} found: bouquet=${bouquet} allowed_outputs=${allowedOutputs} max_connections=${maxConnections}`);
-      } else {
-        console.log(`[XUI] WARNING: Package ${packageId} not found in get_packages response`);
-      }
-    } catch (e: any) {
-      console.log(`[XUI] WARNING: Failed to fetch packages: ${e.message}`);
-    }
-
+  // Step 2: Apply package via edit_line to ensure bouquets are inherited
+  if (packageId && /^\d+$/.test(packageId)) {
     const editForm = new URLSearchParams();
     editForm.set('line_id', createdLineId);
-    if (bouquet) editForm.set('bouquet', bouquet);
-    if (allowedOutputs) editForm.set('allowed_outputs', allowedOutputs);
-    if (maxConnections) editForm.set('max_connections', maxConnections);
+    editForm.set('package', packageId);
     const editPayload = editForm.toString();
     console.log('EDIT LINE PAYLOAD:', editPayload);
 
