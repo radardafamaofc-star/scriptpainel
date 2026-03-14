@@ -208,26 +208,52 @@ async function waitForLinePresence(
   return null;
 }
 
-// ============================================================
-// Provision IPTV line via POST /post.php (XUI panel form endpoint)
-// Fields: action=line, referer=lines, username, password, member_id,
-//         exp_date, max_connections, bouquets_selected, access_output[]
-// ============================================================
+// Resolve package for create_line:
+// - If value is numeric, treat as direct XUI package id
+// - Otherwise, treat as internal plan id and fetch plans.package_id
+async function resolveXuiPackageId(serviceClient: any, packageOrPlanId: string): Promise<string> {
+  const raw = String(packageOrPlanId || '').trim();
+  if (!raw) return '';
+
+  if (/^\d+$/.test(raw)) return raw;
+
+  const { data: plan, error } = await serviceClient
+    .from('plans')
+    .select('package_id')
+    .eq('id', raw)
+    .maybeSingle();
+
+  if (error) {
+    console.log(`[XUI] WARNING: failed to resolve plan package_id for plan id ${raw}: ${error.message}`);
+    return '';
+  }
+
+  const resolved = String(plan?.package_id || '').trim();
+  if (!resolved) {
+    console.log(`[XUI] WARNING: plan ${raw} has empty package_id`);
+    return '';
+  }
+
+  return resolved;
+}
+
 async function provisionUserOnXui(
   config: XuiServerConfig,
   rawParams: Record<string, string> = {},
   _memberId: string = '',
+  serviceClient?: any,
 ) {
   const username = rawParams.username?.trim();
   const password = rawParams.password?.trim();
   if (!username || !password) throw new Error('username e password são obrigatórios');
 
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
-  const packageId = String(rawParams.package_id || rawParams.package || '').trim();
+  const inputPackage = String(rawParams.package_id || rawParams.package || '').trim();
+  const packageId = serviceClient ? await resolveXuiPackageId(serviceClient, inputPackage) : inputPackage;
+  const maxConnections = String(rawParams.max_connections || '1').trim() || '1';
   console.log('PACKAGE ID:', packageId);
 
   // Format exp_date as "YYYY-MM-DD HH:MM"
-  let expDateFormatted = '';
   if (rawExpDate) {
     const raw = String(rawExpDate).trim();
     let d: Date | null = null;
