@@ -1026,31 +1026,6 @@ async function forceOutputs(
         });
       },
     },
-    // Strategy 4: output_formats[] array
-    {
-      label: 'POST edit_line output_formats[] array',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          username,
-          password,
-          'output_formats[]': outputIds,
-        });
-      },
-    },
-    // Strategy 5: Both keys together as arrays
-    {
-      label: 'POST edit_line both output keys as arrays',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          username,
-          password,
-          'allowed_outputs[]': outputIds,
-          'output_formats[]': outputIds,
-        });
-      },
-    },
   ];
 
   for (const strategy of strategies) {
