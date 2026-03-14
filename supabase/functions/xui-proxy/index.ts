@@ -223,7 +223,8 @@ async function provisionUserOnXui(
   if (!username || !password) throw new Error('username e password são obrigatórios');
 
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
-  const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
+  const packageId = String(rawParams.package_id || rawParams.package || '').trim();
+  console.log('PACKAGE ID:', packageId);
 
   // Format exp_date as "YYYY-MM-DD HH:MM"
   let expDateFormatted = '';
@@ -249,44 +250,16 @@ async function provisionUserOnXui(
     }
   }
 
-  // Fetch package data from XUI
-  let bouquets: string[] = [];
-  let outputs: string[] = [];
-  let maxConnections = rawParams.max_connections || '1';
-
-  if (packageId && /^\d+$/.test(packageId)) {
-    try {
-      const pkgData = await xuiRequest(config, 'get_packages');
-      const packages = Array.isArray(pkgData) ? pkgData : (pkgData?.data || pkgData);
-      const pkgList = Array.isArray(packages) ? packages : Object.values(packages || {}).filter(i => i && typeof i === 'object');
-      const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
-      
-      console.log('PACKAGE DATA:', JSON.stringify(pkg));
-      
-      if (pkg) {
-        // Fields are "bouquets" and "output_formats" (string JSON arrays)
-        bouquets = parseIdList(pkg.bouquets);
-        outputs = parseIdList(pkg.output_formats);
-        if (pkg.max_connections) maxConnections = String(pkg.max_connections);
-        console.log(`[XUI] Package ${packageId}: bouquets=${JSON.stringify(bouquets)} outputs=${JSON.stringify(outputs)} max_conn=${maxConnections}`);
-      } else {
-        console.log(`[XUI] WARNING: Package ${packageId} not found in get_packages`);
-      }
-    } catch (e: any) {
-      console.log(`[XUI] WARNING: Failed to fetch packages: ${e.message}`);
-    }
-  }
-
-  // Build create_line payload — XUI expects "bouquet" and "allowed_outputs"
+  // Build create_line payload — send package directly, let XUI apply bouquets/outputs
   const createParams: Record<string, string | string[]> = {
     username,
     password,
     member_id: '1',
-    max_connections: maxConnections,
   };
   if (expDateFormatted) createParams.exp_date = expDateFormatted;
-  if (bouquets.length > 0) createParams.bouquet = JSON.stringify(bouquets.map(Number));
-  if (outputs.length > 0) createParams.allowed_outputs = JSON.stringify(outputs.map(Number));
+  if (packageId && /^\d+$/.test(packageId)) {
+    createParams.package = packageId;
+  }
 
   console.log('CREATE_LINE PAYLOAD:', JSON.stringify(createParams));
 
