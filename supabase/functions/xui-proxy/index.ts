@@ -343,6 +343,7 @@ async function provisionUserOnXui(
   const formParts: string[] = [
     'action=line',
     'referer=lines',
+    `api_key=${encodeURIComponent(apiKey)}`,
     `username=${encodeURIComponent(username)}`,
     `password=${encodeURIComponent(password)}`,
     'member_id=1',
