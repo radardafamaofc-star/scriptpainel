@@ -448,8 +448,8 @@ function extractLineAssignments(payload: any): XuiLineAssignments {
 function matchesExpectedAssignments(actual: XuiLineAssignments, expected: ExpectedLineAssignments): boolean {
   const expectedBouquets = normalizeIds(expected.bouquetIds || []);
   const expectedPackages = normalizeIds(expected.packageIds || []);
-  const expectedOutputNames = normalizeOutputFormats(expected.outputIds || []);
-  const actualOutputNames = normalizeOutputFormats(actual.outputIds || []);
+  const expectedOutputIds = normalizeOutputIds(expected.outputIds || []);
+  const actualOutputIds = normalizeOutputIds(actual.outputIds || []);
 
   const bouquetOk = expectedBouquets.length === 0
     || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
@@ -457,8 +457,8 @@ function matchesExpectedAssignments(actual: XuiLineAssignments, expected: Expect
   const packageOk = expectedPackages.length === 0
     || expectedPackages.some((id) => actual.packageIds.includes(id) || actual.bouquetIds.includes(id));
 
-  const outputsOk = expectedOutputNames.length === 0
-    || expectedOutputNames.every((fmt) => actualOutputNames.includes(fmt));
+  const outputsOk = expectedOutputIds.length === 0
+    || expectedOutputIds.every((id) => actualOutputIds.includes(id));
 
   return bouquetOk && packageOk && outputsOk;
 }
