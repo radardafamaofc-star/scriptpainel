@@ -223,15 +223,30 @@ async function provisionUserOnXui(
   if (!username || !password) throw new Error('username e password são obrigatórios');
 
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
-  const expDateUnix = normalizeUnixTimestamp(rawExpDate);
   const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
+
+  // XUI create_line expects exp_date as YYYY-MM-DD, not Unix timestamp
+  let expDateFormatted = '';
+  if (rawExpDate) {
+    const raw = String(rawExpDate).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      expDateFormatted = raw;
+    } else if (/^\d+$/.test(raw)) {
+      const ts = Number(raw);
+      const d = new Date(ts > 1e12 ? ts : ts * 1000);
+      expDateFormatted = d.toISOString().slice(0, 10);
+    } else {
+      const parsed = Date.parse(raw);
+      if (!Number.isNaN(parsed)) expDateFormatted = new Date(parsed).toISOString().slice(0, 10);
+    }
+  }
 
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
   if (packageId) form.set('package', packageId);
   form.set('member_id', '0');
-  if (expDateUnix) form.set('exp_date', expDateUnix);
+  if (expDateFormatted) form.set('exp_date', expDateFormatted);
 
   const payload = form.toString();
   console.log('CREATE LINE PAYLOAD:', payload);
