@@ -365,6 +365,64 @@ async function xuiRequestGetOnly(
   return JSON.parse(text);
 }
 
+function normalizeUniqueNumericIds(values: string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((v) => String(v).replace(/\D/g, '').trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => Number(a) - Number(b));
+}
+
+function applyLineAccessFields(form: URLSearchParams, bouquetIds: string[], allowedOutputIds: string[]): void {
+  const normalizedBouquets = normalizeUniqueNumericIds(bouquetIds);
+  if (normalizedBouquets.length) {
+    const bouquetJson = JSON.stringify(normalizedBouquets.map(Number));
+
+    // Send both keys for compatibility across XUI 1.5.x builds
+    for (const bid of normalizedBouquets) {
+      form.append('bouquets_selected[]', bid);
+      form.append('bouquets_selected', bid);
+    }
+    form.set('bouquet', bouquetJson);
+  }
+
+  const normalizedOutputs = normalizeUniqueNumericIds(allowedOutputIds);
+  if (normalizedOutputs.length) {
+    const outputNumbers = normalizedOutputs.map(Number).filter((id) => Number.isFinite(id));
+    const outputJson = JSON.stringify(outputNumbers);
+    const outputCsv = outputNumbers.join(',');
+
+    // Multiple aliases used by different XUI 1.5.x builds
+    form.set('allowed_outputs', outputJson);
+    form.set('output_formats', outputJson);
+    form.set('allowed_output', outputCsv);
+  }
+}
+
+function applyLineAccessQueryParams(
+  params: Record<string, string | string[]>,
+  bouquetIds: string[],
+  allowedOutputIds: string[],
+): void {
+  const normalizedBouquets = normalizeUniqueNumericIds(bouquetIds);
+  if (normalizedBouquets.length) {
+    params['bouquets_selected[]'] = normalizedBouquets;
+    params.bouquets_selected = normalizedBouquets;
+    params.bouquet = JSON.stringify(normalizedBouquets.map(Number));
+  }
+
+  const normalizedOutputs = normalizeUniqueNumericIds(allowedOutputIds);
+  if (normalizedOutputs.length) {
+    const outputNumbers = normalizedOutputs.map(Number).filter((id) => Number.isFinite(id));
+    const outputJson = JSON.stringify(outputNumbers);
+    params.allowed_outputs = outputJson;
+    params.output_formats = outputJson;
+    params.allowed_output = outputNumbers.join(',');
+  }
+}
+
 // Single-step create_line focused on explicit credentials + package fields
 async function createLinePost(
   config: XuiServerConfig,
@@ -392,19 +450,10 @@ async function createLinePost(
   // XUI 1.5.12 with disabled packages overrides bouquet/allowed_outputs to []
   // when package_id is present. We set it AFTER bouquets are confirmed.
 
-  const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
-  const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
+  const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id)).map(String);
+  const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id)).map(String);
 
-  const bouquetStringIds = bouquetIds.map((id) => String(id));
-  if (bouquetStringIds.length) {
-    // XUI API spec: bouquets_selected[]
-    for (const bid of bouquetStringIds) form.append('bouquets_selected[]', bid);
-  }
-
-  if (allowedOutputIds.length) {
-    // XUI API spec: allowed_outputs as JSON array string
-    form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
-  }
+  applyLineAccessFields(form, bouquetIds, allowedOutputIds);
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
@@ -502,7 +551,6 @@ async function enforceAllowedOutputsPostCreate(
 
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
-  const allowedJson = JSON.stringify(allowedNumeric);
 
   const checkSynced = async (label: string) => {
     const refreshed = await getLineRowById(config, lineId);
@@ -531,8 +579,7 @@ async function enforceAllowedOutputsPostCreate(
       if (targetExpDate) form.set('exp_date', targetExpDate);
       if (includeMemberId && targetMemberId) form.set('member_id', targetMemberId);
 
-      for (const bid of expectedBouquetIds) form.append('bouquets_selected[]', bid);
-      if (allowedNumeric.length) form.set('allowed_outputs', allowedJson);
+      applyLineAccessFields(form, expectedBouquetIds, targetAllowed);
 
       const label = includeMemberId ? 'spec_with_member' : 'spec_without_member';
       console.log(`[XUI] edit_line sync (${label}) payload: ${form.toString()}`);
@@ -548,17 +595,17 @@ async function enforceAllowedOutputsPostCreate(
       const synced = await checkSynced(`edit_line(${label})`);
       if (synced) return synced;
 
-      // GET fallback with exactly same API-spec fields
+      // GET fallback with exactly same credentials + access fields
       const getParams: Record<string, string | string[]> = {
         id: lineId,
         line_id: lineId,
         max_connections: targetMaxConnections,
       };
       if (targetUsername) getParams.username = targetUsername;
+      if (targetPassword) getParams.password = targetPassword;
       if (targetExpDate) getParams.exp_date = targetExpDate;
       if (includeMemberId && targetMemberId) getParams.member_id = targetMemberId;
-      if (expectedBouquetIds.length) getParams['bouquets_selected[]'] = expectedBouquetIds;
-      if (allowedNumeric.length) getParams.allowed_outputs = allowedJson;
+      applyLineAccessQueryParams(getParams, expectedBouquetIds, targetAllowed);
 
       console.log(`[XUI] edit_line GET sync (${label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
       const editGetData = await xuiRequestGetOnly(config, 'edit_line', getParams);
@@ -926,8 +973,8 @@ async function provisionUserOnXui(
   finalUsername = String(confirmedRow.username || finalUsername || username).trim();
   active = isLineActive(confirmedRow);
 
-  const finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
-  const finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
+  let finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
+  let finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
 
   if (!finalBouquetOk || !finalOutputsOk) {
     console.log(
@@ -935,30 +982,41 @@ async function provisionUserOnXui(
     );
   }
 
-  // Set package_id only when bouquet/output are already confirmed
-  // (prevents XUI from clearing fields when package inheritance is broken)
-  if (packageIdForPayload && finalBouquetOk && finalOutputsOk) {
+  if (packageIdForPayload) {
     try {
       const pkgForm = new URLSearchParams();
       pkgForm.set('id', finalLineId);
       pkgForm.set('line_id', finalLineId);
       pkgForm.set('package_id', packageIdForPayload);
       pkgForm.set('package', packageIdForPayload);
-
-      for (const bid of bouquetIds) pkgForm.append('bouquets_selected[]', bid);
-      if (allowedOutputIds.length) pkgForm.set('allowed_outputs', JSON.stringify(allowedOutputIds.map(Number)));
       if (finalUsername) pkgForm.set('username', finalUsername);
       if (password) pkgForm.set('password', password);
       if (expDateFormatted) pkgForm.set('exp_date', expDateFormatted);
       pkgForm.set('max_connections', maxConnections);
 
+      applyLineAccessFields(pkgForm, bouquetIds, allowedOutputIds);
+
       await postXuiForm(config, 'edit_line', pkgForm, 'edit_line(set_package)');
       console.log(`[XUI] Package ${packageIdForPayload} associated to line ${finalLineId}`);
+
+      const afterPackageRow = await waitForLinePresence(config, finalLineId, finalUsername || username, 2, 500);
+      if (afterPackageRow) {
+        finalLineId = String(afterPackageRow.id || afterPackageRow.line_id || finalLineId).trim();
+        finalUsername = String(afterPackageRow.username || finalUsername || username).trim();
+        active = isLineActive(afterPackageRow);
+        finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(afterPackageRow?.bouquet, bouquetIds);
+        finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(afterPackageRow?.allowed_outputs ?? afterPackageRow?.output_formats, allowedOutputIds);
+        console.log(`[XUI] After set_package: username=${afterPackageRow?.username || '?'} bouquet=${afterPackageRow?.bouquet || '?'} allowed_outputs=${afterPackageRow?.allowed_outputs || '?'}`);
+      }
     } catch (e: any) {
       console.log(`[XUI] WARNING: Failed to set package_id: ${e.message}`);
     }
-  } else if (packageIdForPayload) {
-    console.log('[XUI] Skipping set_package because bouquet/output are not confirmed yet.');
+  }
+
+  if (!finalBouquetOk || !finalOutputsOk) {
+    throw new Error(
+      `XUI não persistiu bouquets/access outputs (esperado bouquets=[${bouquetIds.join(',')}] outputs=[${allowedOutputIds.join(',')}]). Verifique permissões do member_id e mapeamento do package no servidor.`
+    );
   }
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
