@@ -277,20 +277,18 @@ async function provisionUserOnXui(
     }
   }
 
-  // Build create_line payload
-  const params: Record<string, string | string[]> = {
+  // Step 1: create_line (basic, without bouquets — XUI ignores them here)
+  const createParams: Record<string, string | string[]> = {
     username,
     password,
     member_id: '1',
     max_connections: maxConnections,
   };
-  if (expDateFormatted) params.exp_date = expDateFormatted;
-  if (bouquets.length > 0) params.bouquet = JSON.stringify(bouquets.map(Number));
-  if (outputs.length > 0) params.allowed_outputs = JSON.stringify(outputs.map(Number));
+  if (expDateFormatted) createParams.exp_date = expDateFormatted;
 
-  console.log('CREATE LINE PAYLOAD:', JSON.stringify(params));
+  console.log('CREATE LINE PAYLOAD:', JSON.stringify(createParams));
 
-  const result = await xuiRequest(config, 'create_line', params);
+  const result = await xuiRequest(config, 'create_line', createParams);
   const err = getXuiError(result);
   if (err) throw new Error(err);
 
@@ -301,6 +299,34 @@ async function provisionUserOnXui(
     createdLineId = await resolveLineIdByUsername(config, username);
   }
   if (!createdLineId) throw new Error('Não foi possível resolver o line_id após criação');
+
+  // Step 2: edit_line to apply bouquets + allowed_outputs
+  if (bouquets.length > 0 || outputs.length > 0) {
+    const editParams: Record<string, string | string[]> = {
+      id: createdLineId,
+      username,
+      password,
+      member_id: '1',
+      max_connections: maxConnections,
+    };
+    if (expDateFormatted) editParams.exp_date = expDateFormatted;
+    if (bouquets.length > 0) editParams.bouquet = JSON.stringify(bouquets.map(Number));
+    if (outputs.length > 0) editParams.allowed_outputs = JSON.stringify(outputs.map(Number));
+
+    console.log('EDIT LINE PAYLOAD (bouquets):', JSON.stringify(editParams));
+
+    try {
+      const editResult = await xuiRequest(config, 'edit_line', editParams);
+      const editErr = getXuiError(editResult);
+      if (editErr) {
+        console.log(`[XUI] WARNING: edit_line failed: ${editErr}`);
+      } else {
+        console.log(`[XUI] ✅ edit_line applied bouquets+outputs for line_id=${createdLineId}`);
+      }
+    } catch (e: any) {
+      console.log(`[XUI] WARNING: edit_line exception: ${e.message}`);
+    }
+  }
 
   // Verify final state
   const finalRow = await waitForLinePresence(config, createdLineId, username, 2, 500);
