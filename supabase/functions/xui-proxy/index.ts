@@ -939,7 +939,7 @@ async function syncLineAssignments(
             package_id: '0',
             'package_id[]': ['0'],
             is_restreamer: '1',
-            'bouquets_selected[]': bouquetIds,
+            ...bouquetPayload,
             ...outputPayload,
           });
 
@@ -949,7 +949,7 @@ async function syncLineAssignments(
             package_id: '0',
             'package_id[]': ['0'],
             is_restreamer: '0',
-            'bouquets_selected[]': bouquetIds,
+            ...bouquetPayload,
             ...outputPayload,
           });
         },
@@ -962,7 +962,7 @@ async function syncLineAssignments(
             ...identityParams,
             package_id: '0',
             'package_id[]': ['0'],
-            'bouquets_selected[]': bouquetIds,
+            ...bouquetPayload,
             ...outputPayload,
           });
         },
