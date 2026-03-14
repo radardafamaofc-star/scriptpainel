@@ -285,7 +285,10 @@ async function provisionUserOnXui(
     max_connections: maxConnections,
   };
   if (expDateFormatted) createParams.exp_date = expDateFormatted;
-  if (packageId) createParams.package = packageId;
+  if (packageId) {
+    createParams.package = packageId;
+    createParams.package_id = packageId;
+  }
 
   console.log('CREATE_LINE PAYLOAD:', JSON.stringify(createParams));
 
