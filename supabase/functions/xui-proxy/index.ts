@@ -309,30 +309,54 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-// XUI allowed_outputs use string format names, not numeric IDs
+// XUI outputs can appear as numeric IDs (1,2,3) or names (m3u8,ts,rtmp)
 const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
-
-// Map between numeric IDs and format names
 const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
+const OUTPUT_NAME_TO_ID: Record<string, string> = { m3u8: '1', ts: '2', rtmp: '3' };
 
 function normalizeOutputFormats(raw: string[]): string[] {
   if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
   const result: string[] = [];
   for (const v of raw) {
     const trimmed = String(v).trim().toLowerCase();
-    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) { result.push(trimmed); continue; }
+    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) {
+      result.push(trimmed);
+      continue;
+    }
     const mapped = OUTPUT_ID_TO_NAME[trimmed];
     if (mapped) result.push(mapped);
   }
   return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_FORMAT_NAMES;
 }
 
+function normalizeOutputIds(raw: string[] = []): string[] {
+  return Array.from(new Set(
+    normalizeOutputFormats(raw)
+      .map((name) => OUTPUT_NAME_TO_ID[name])
+      .filter(Boolean),
+  ));
+}
+
+function buildBouquetPayload(bouquetIds: string[] = []): Record<string, string | string[]> {
+  const ids = sanitizeSelectionIds(bouquetIds);
+  const numericJson = JSON.stringify(ids.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+  return {
+    ...(ids.length > 0 ? { 'bouquets_selected[]': ids } : {}),
+    ...(ids.length > 0 ? { 'bouquet[]': ids } : {}),
+    ...(ids.length > 0 ? { bouquets_selected: numericJson } : {}),
+    ...(ids.length > 0 ? { bouquet: numericJson } : {}),
+  };
+}
+
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
+  const outputIds = normalizeOutputIds(formats);
+  const numericJson = JSON.stringify(outputIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
   return {
-    // Keep array syntax only (no JSON/csv/object), as required by XUI
+    // Send both array-style (QPanel-like) and canonical JSON field used by some XUI builds
     'allowed_outputs[]': formats,
     'output_formats[]': formats,
+    ...(outputIds.length > 0 ? { allowed_outputs: numericJson } : {}),
   };
 }
 
@@ -848,8 +872,8 @@ async function syncLineAssignments(
   const hasExpected = (expectedCheck.bouquetIds?.length || 0) > 0 || (expectedCheck.packageIds?.length || 0) > 0;
   if (!hasExpected) return true;
 
-  const jsonBouquets = JSON.stringify(bouquetIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
   const outputPayload = buildOutputPayload(normalizedOutputs);
+  const bouquetPayload = buildBouquetPayload(bouquetIds);
 
   // CRITICAL: Always include username+password to prevent XUI from overwriting them
   const identityParams: Record<string, string> = {};
@@ -857,6 +881,32 @@ async function syncLineAssignments(
   if (password) identityParams.password = password;
 
   const attempts: Array<{ label: string; run: () => Promise<void> }> = [
+    {
+      // XUI 1.5.12 commonly expects username-based edit payloads.
+      label: 'POST edit_line username + bouquet json + outputs',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          ...identityParams,
+          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
+          ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
+          ...bouquetPayload,
+          ...outputPayload,
+        });
+      },
+    },
+    {
+      label: 'POST edit_line id + bouquet json + outputs',
+      run: async () => {
+        await xuiRequest(config, 'edit_line', {
+          id: lineId,
+          ...identityParams,
+          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
+          ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
+          ...bouquetPayload,
+          ...outputPayload,
+        });
+      },
+    },
     {
       label: 'GET edit_line bouquets_selected[]',
       run: async () => {
@@ -874,55 +924,6 @@ async function syncLineAssignments(
         }
       },
     },
-    {
-      label: 'POST edit_line bouquets_selected[] + outputs',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
-          ...(packageIds[0] ? { 'package_id[]': [packageIds[0]] } : {}),
-          'bouquets_selected[]': bouquetIds,
-          ...outputPayload,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line bouquets_selected json',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
-          bouquets_selected: jsonBouquets,
-          ...outputPayload,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line bouquet json',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
-          bouquet: jsonBouquets,
-          ...outputPayload,
-        });
-      },
-    },
-    {
-      label: 'POST edit_line bouquet[]',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          ...identityParams,
-          ...(packageIds[0] ? { package_id: packageIds[0] } : {}),
-          'bouquet[]': bouquetIds,
-          ...outputPayload,
-        });
-      },
-    },
   ];
 
   // Legacy fallback for servers that don't accept package-based sync
@@ -938,7 +939,7 @@ async function syncLineAssignments(
             package_id: '0',
             'package_id[]': ['0'],
             is_restreamer: '1',
-            'bouquets_selected[]': bouquetIds,
+            ...bouquetPayload,
             ...outputPayload,
           });
 
@@ -948,7 +949,7 @@ async function syncLineAssignments(
             package_id: '0',
             'package_id[]': ['0'],
             is_restreamer: '0',
-            'bouquets_selected[]': bouquetIds,
+            ...bouquetPayload,
             ...outputPayload,
           });
         },
@@ -961,7 +962,7 @@ async function syncLineAssignments(
             ...identityParams,
             package_id: '0',
             'package_id[]': ['0'],
-            'bouquets_selected[]': bouquetIds,
+            ...bouquetPayload,
             ...outputPayload,
           });
         },
@@ -1193,18 +1194,17 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const createParams: Record<string, string | string[]> = {
-      username,
-      password,
-      max_connections: maxConnections,
-      exp_date: expValue,
-      ...(memberId ? { member_id: memberId } : {}),
-      ...(packageId ? { package_id: packageId } : {}),
-      ...(packageId ? { 'package_id[]': [packageId] } : {}),
-      ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
-      // Strict array params only, as required by XUI
-      ...buildOutputPayload(outputFormats),
-    };
+      const createParams: Record<string, string | string[]> = {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expValue,
+        ...(memberId ? { member_id: memberId } : {}),
+        ...(packageId ? { package_id: packageId } : {}),
+        ...(packageId ? { 'package_id[]': [packageId] } : {}),
+        ...buildBouquetPayload(bouquetIds),
+        ...buildOutputPayload(outputFormats),
+      };
 
     try {
       const data = await createLinePostStrict(config, createParams);
