@@ -1,5 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { NoticeAlertModal } from "@/components/NoticeAlertModal";
 import { Bell } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
