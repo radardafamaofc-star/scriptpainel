@@ -662,11 +662,17 @@ async function enforceAllowedOutputsPostCreate(
       if (targetUsername) getParams.username = targetUsername;
       if (targetExpDate) getParams.exp_date = targetExpDate;
 
-      if (attempt.label === 'arrays_json') {
+      if (attempt.label === 'arrays_json_dual') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
         if (allowedNumeric.length) {
           getParams.allowed_outputs = allowedJson;
           getParams.output_formats = allowedJson;
+        }
+      } else if (attempt.label === 'arrays_names') {
+        if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
+        if (allowedNumeric.length) {
+          getParams.allowed_outputs = allowedJson;
+          if (allowedNamesJson) getParams.output_formats = allowedNamesJson;
         }
       } else if (attempt.label === 'arrays_csv') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
@@ -677,6 +683,11 @@ async function enforceAllowedOutputsPostCreate(
 
       if (expectedBouquetIds.length) {
         getParams['bouquets_selected[]'] = expectedBouquetIds;
+        getParams.bouquets_selected = expectedBouquetIds;
+      }
+
+      if (targetAllowed.length && (attempt.label === 'arrays_json_dual' || attempt.label === 'arrays_names')) {
+        getParams['allowed_outputs[]'] = targetAllowed;
       }
 
       console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
