@@ -973,8 +973,8 @@ async function provisionUserOnXui(
   finalUsername = String(confirmedRow.username || finalUsername || username).trim();
   active = isLineActive(confirmedRow);
 
-  const finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
-  const finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
+  let finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
+  let finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
 
   if (!finalBouquetOk || !finalOutputsOk) {
     console.log(
@@ -982,30 +982,41 @@ async function provisionUserOnXui(
     );
   }
 
-  // Set package_id only when bouquet/output are already confirmed
-  // (prevents XUI from clearing fields when package inheritance is broken)
-  if (packageIdForPayload && finalBouquetOk && finalOutputsOk) {
+  if (packageIdForPayload) {
     try {
       const pkgForm = new URLSearchParams();
       pkgForm.set('id', finalLineId);
       pkgForm.set('line_id', finalLineId);
       pkgForm.set('package_id', packageIdForPayload);
       pkgForm.set('package', packageIdForPayload);
-
-      for (const bid of bouquetIds) pkgForm.append('bouquets_selected[]', bid);
-      if (allowedOutputIds.length) pkgForm.set('allowed_outputs', JSON.stringify(allowedOutputIds.map(Number)));
       if (finalUsername) pkgForm.set('username', finalUsername);
       if (password) pkgForm.set('password', password);
       if (expDateFormatted) pkgForm.set('exp_date', expDateFormatted);
       pkgForm.set('max_connections', maxConnections);
 
+      applyLineAccessFields(pkgForm, bouquetIds, allowedOutputIds);
+
       await postXuiForm(config, 'edit_line', pkgForm, 'edit_line(set_package)');
       console.log(`[XUI] Package ${packageIdForPayload} associated to line ${finalLineId}`);
+
+      const afterPackageRow = await waitForLinePresence(config, finalLineId, finalUsername || username, 2, 500);
+      if (afterPackageRow) {
+        finalLineId = String(afterPackageRow.id || afterPackageRow.line_id || finalLineId).trim();
+        finalUsername = String(afterPackageRow.username || finalUsername || username).trim();
+        active = isLineActive(afterPackageRow);
+        finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(afterPackageRow?.bouquet, bouquetIds);
+        finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(afterPackageRow?.allowed_outputs ?? afterPackageRow?.output_formats, allowedOutputIds);
+        console.log(`[XUI] After set_package: username=${afterPackageRow?.username || '?'} bouquet=${afterPackageRow?.bouquet || '?'} allowed_outputs=${afterPackageRow?.allowed_outputs || '?'}`);
+      }
     } catch (e: any) {
       console.log(`[XUI] WARNING: Failed to set package_id: ${e.message}`);
     }
-  } else if (packageIdForPayload) {
-    console.log('[XUI] Skipping set_package because bouquet/output are not confirmed yet.');
+  }
+
+  if (!finalBouquetOk || !finalOutputsOk) {
+    throw new Error(
+      `XUI não persistiu bouquets/access outputs (esperado bouquets=[${bouquetIds.join(',')}] outputs=[${allowedOutputIds.join(',')}]). Verifique permissões do member_id e mapeamento do package no servidor.`
+    );
   }
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
