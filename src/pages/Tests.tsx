@@ -128,6 +128,7 @@ export default function Tests() {
       queryClient.invalidateQueries({ queryKey: ["test-lines"] });
       toast({ title: "Teste criado!", description: `Usuário: ${creds.username}` });
       setOpen(false);
+      setPlanId("");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
