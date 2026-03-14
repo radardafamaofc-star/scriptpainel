@@ -610,7 +610,7 @@ Deno.serve(async (req) => {
             user_id: user.id,
           });
 
-          const result = await provisionUserOnXui(config, xui_params || {}, '', serviceClient);
+          const result = await provisionUserOnXui(server, xui_params || {}, serviceClient);
 
           const finalUsername = String(result.username || xui_params?.username || '').trim();
           const finalLineId = String(result.line_id || '').trim();
