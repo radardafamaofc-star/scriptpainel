@@ -880,8 +880,9 @@ async function provisionUserOnXui(
   const requestedMemberId = String(memberId || rawParams.member_id || '').replace(/\D/g, '').trim();
   const effectiveMemberId = requestedMemberId || await getOwnerMemberId(config);
 
-  // Só envia package_id quando veio explícito; para planos sem package_id usamos bouquets explícitos
-  const packageIdForPayload = requestedPackageId;
+  // Para XUI 1.5.x precisamos enviar package_id também quando ele foi resolvido pelo nome do plano
+  // (senão alguns servidores ignoram bouquets/outputs explícitos e salvam a linha sem acesso).
+  const packageIdForPayload = requestedPackageId || resolvedPackageFromPlan;
 
   console.log(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageIdForPayload || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
