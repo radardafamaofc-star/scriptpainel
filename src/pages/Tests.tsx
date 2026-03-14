@@ -188,6 +188,21 @@ export default function Tests() {
                 </Select>
               </div>
               <div className="space-y-1.5">
+                <Label className="text-muted-foreground text-xs">Plano (com package)</Label>
+                <Select value={planId} onValueChange={setPlanId} disabled={!serverId}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue placeholder={serverId ? "Selecione um plano" : "Selecione o servidor primeiro"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredPlans.map(p => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} {p.package_id ? `(pkg: ${p.package_id})` : "(sem package)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-muted-foreground text-xs">Duração (horas)</Label>
                 <Select value={duration} onValueChange={setDuration}>
                   <SelectTrigger className="bg-secondary border-border">
