@@ -39,6 +39,7 @@ export function Layout({ children }: LayoutProps) {
           <main className="flex-1 p-3 sm:p-6 overflow-auto">
             {children}
           </main>
+          <NoticeAlertModal />
         </div>
       </div>
     </SidebarProvider>);
