@@ -309,32 +309,24 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-// XUI outputs can appear as numeric IDs (1,2,3) or names (m3u8,ts,rtmp)
-const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
-const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
-const OUTPUT_NAME_TO_ID: Record<string, string> = { m3u8: '1', ts: '2', rtmp: '3' };
+// XUI outputs use numeric IDs from the output_formats table:
+// 1 = HLS, 2 = MPEGTS, 3 = RTMP
+const OUTPUT_ALL_IDS = ['1', '2', '3'];
+const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'HLS', '2': 'MPEGTS', '3': 'RTMP' };
+const OUTPUT_NAME_TO_ID: Record<string, string> = { hls: '1', m3u8: '1', mpegts: '2', ts: '2', rtmp: '3' };
 
-function normalizeOutputFormats(raw: string[]): string[] {
-  if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
+function normalizeOutputIds(raw: string[] = []): string[] {
+  if (!raw || raw.length === 0) return OUTPUT_ALL_IDS;
   const result: string[] = [];
   for (const v of raw) {
     const trimmed = String(v).trim().toLowerCase();
-    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) {
-      result.push(trimmed);
-      continue;
-    }
-    const mapped = OUTPUT_ID_TO_NAME[trimmed];
+    // Already a numeric ID
+    if (OUTPUT_ID_TO_NAME[trimmed]) { result.push(trimmed); continue; }
+    // Map name to ID
+    const mapped = OUTPUT_NAME_TO_ID[trimmed];
     if (mapped) result.push(mapped);
   }
-  return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_FORMAT_NAMES;
-}
-
-function normalizeOutputIds(raw: string[] = []): string[] {
-  return Array.from(new Set(
-    normalizeOutputFormats(raw)
-      .map((name) => OUTPUT_NAME_TO_ID[name])
-      .filter(Boolean),
-  ));
+  return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_ALL_IDS;
 }
 
 function buildBouquetPayload(bouquetIds: string[] = []): Record<string, string | string[]> {
@@ -348,15 +340,11 @@ function buildBouquetPayload(bouquetIds: string[] = []): Record<string, string |
   };
 }
 
-function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
-  const formats = normalizeOutputFormats(outputFormats);
-  const outputIds = normalizeOutputIds(formats);
-  const numericJson = JSON.stringify(outputIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+function buildOutputPayload(outputFormats: string[] = OUTPUT_ALL_IDS): Record<string, string | string[]> {
+  // Always send numeric IDs only — XUI uses access_output_id (1,2,3)
+  const ids = normalizeOutputIds(outputFormats);
   return {
-    // Send both array-style (QPanel-like) and canonical JSON field used by some XUI builds
-    'allowed_outputs[]': formats,
-    'output_formats[]': formats,
-    ...(outputIds.length > 0 ? { allowed_outputs: numericJson } : {}),
+    'allowed_outputs[]': ids,
   };
 }
 
@@ -460,8 +448,8 @@ function extractLineAssignments(payload: any): XuiLineAssignments {
 function matchesExpectedAssignments(actual: XuiLineAssignments, expected: ExpectedLineAssignments): boolean {
   const expectedBouquets = normalizeIds(expected.bouquetIds || []);
   const expectedPackages = normalizeIds(expected.packageIds || []);
-  const expectedOutputNames = normalizeOutputFormats(expected.outputIds || []);
-  const actualOutputNames = normalizeOutputFormats(actual.outputIds || []);
+  const expectedOutputIds = normalizeOutputIds(expected.outputIds || []);
+  const actualOutputIds = normalizeOutputIds(actual.outputIds || []);
 
   const bouquetOk = expectedBouquets.length === 0
     || expectedBouquets.every((id) => actual.bouquetIds.includes(id));
@@ -469,8 +457,8 @@ function matchesExpectedAssignments(actual: XuiLineAssignments, expected: Expect
   const packageOk = expectedPackages.length === 0
     || expectedPackages.some((id) => actual.packageIds.includes(id) || actual.bouquetIds.includes(id));
 
-  const outputsOk = expectedOutputNames.length === 0
-    || expectedOutputNames.every((fmt) => actualOutputNames.includes(fmt));
+  const outputsOk = expectedOutputIds.length === 0
+    || expectedOutputIds.every((id) => actualOutputIds.includes(id));
 
   return bouquetOk && packageOk && outputsOk;
 }
@@ -754,19 +742,19 @@ async function getPackageAssignments(config: XuiServerConfig, packageId: string)
 
     if (!pkg) {
       console.log(`[XUI] Package ${packageId} not found`);
-      return { bouquetIds: [], outputIds: OUTPUT_FORMAT_NAMES };
+      return { bouquetIds: [], outputIds: OUTPUT_ALL_IDS };
     }
 
     const bouquetIds = sanitizeSelectionIds(parseIdList((pkg as any).bouquets));
     const rawOutputs = parseIdList((pkg as any).allowed_outputs || (pkg as any).output_formats || '');
-    const outputIds = normalizeOutputFormats(rawOutputs);
+    const outputIds = normalizeOutputIds(rawOutputs);
 
     console.log(`[XUI] Package ${packageId} bouquets=${JSON.stringify(bouquetIds)} allowed_outputs=${JSON.stringify(outputIds)}`);
 
     return { bouquetIds, outputIds };
   } catch (e: any) {
     console.log(`[XUI] Failed to get package assignments: ${e.message}`);
-    return { bouquetIds: [], outputIds: OUTPUT_FORMAT_NAMES };
+    return { bouquetIds: [], outputIds: OUTPUT_ALL_IDS };
   }
 }
 
@@ -791,7 +779,7 @@ function buildCreateLineUrl(
   config: XuiServerConfig,
   params: Record<string, string>,
   bouquetIds: string[],
-  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  outputFormats: string[] = OUTPUT_ALL_IDS,
 ): string {
   const baseUrl = config.url.replace(/\/+$/, '');
   const parts: string[] = [
@@ -817,7 +805,7 @@ function buildEditLineUrl(
   config: XuiServerConfig,
   lineId: string,
   bouquetIds: string[],
-  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  outputFormats: string[] = OUTPUT_ALL_IDS,
   packageId: string = '',
   username: string = '',
   password: string = '',
@@ -853,12 +841,12 @@ async function syncLineAssignments(
   lineId: string,
   username: string,
   expected: ExpectedLineAssignments,
-  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  outputFormats: string[] = OUTPUT_ALL_IDS,
   password: string = '',
 ): Promise<boolean> {
   const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
   const packageIds = sanitizeSelectionIds(expected.packageIds || []);
-  const normalizedOutputs = normalizeOutputFormats(outputFormats);
+  const normalizedOutputs = normalizeOutputIds(outputFormats);
 
   if (!lineId) return false;
 
@@ -1038,31 +1026,6 @@ async function forceOutputs(
         });
       },
     },
-    // Strategy 4: output_formats[] array
-    {
-      label: 'POST edit_line output_formats[] array',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          username,
-          password,
-          'output_formats[]': outputIds,
-        });
-      },
-    },
-    // Strategy 5: Both keys together as arrays
-    {
-      label: 'POST edit_line both output keys as arrays',
-      run: async () => {
-        await xuiRequest(config, 'edit_line', {
-          id: lineId,
-          username,
-          password,
-          'allowed_outputs[]': outputIds,
-          'output_formats[]': outputIds,
-        });
-      },
-    },
   ];
 
   for (const strategy of strategies) {
@@ -1154,7 +1117,7 @@ async function provisionUserOnXui(
   // 2. Extract bouquets + allowed_outputs
   // 3. Pass BOTH explicitly on create_line
   let bouquetIds: string[] = [];
-  let outputFormats: string[] = OUTPUT_FORMAT_NAMES; // default: all 3 (ts, m3u8, rtmp)
+  let outputFormats: string[] = OUTPUT_ALL_IDS; // default: all 3 (1=HLS, 2=MPEGTS, 3=RTMP)
   if (packageId) {
     const assignments = await getPackageAssignments(config, packageId);
     bouquetIds = assignments.bouquetIds;
