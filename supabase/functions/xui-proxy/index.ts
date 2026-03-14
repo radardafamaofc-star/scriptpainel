@@ -810,7 +810,8 @@ async function provisionUserOnXui(
 
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-  const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
+  // XUI 1.5.12: member_id must be explicit 0 to guarantee deterministic line creation/persistence
+  const effectiveMemberId = '0';
 
   const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
   let effectivePackageId = requestedPackageId;
@@ -1057,16 +1058,9 @@ Deno.serve(async (req) => {
 
       try {
         if (xui_action === 'user_create') {
-          let xuiMemberId = '';
-          if (roleData.role !== 'admin') {
-            const { data: profile } = await serviceClient
-              .from('profiles').select('display_name').eq('user_id', user.id).single();
-            const displayName = profile?.display_name || user.email || `panel_${user.id.substring(0, 8)}`;
-            xuiMemberId = await getOrCreateXuiMemberId(config, user.id, displayName, serviceClient);
-          } else {
-            xuiMemberId = await getOwnerMemberId(config);
-            console.log(`[XUI] Admin provisioning with owner member_id=${xuiMemberId}`);
-          }
+          // XUI 1.5.12 requirement: force member_id=0 for create/edit line flows
+          const xuiMemberId = '0';
+          console.log('[XUI] Provisioning with forced member_id=0');
 
           await appendSystemLog(serviceClient, {
             type: 'info', action: 'XUI provisioning iniciado',
