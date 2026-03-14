@@ -241,10 +241,10 @@ async function provisionUserOnXui(
     }
   }
 
+  // Step 1: create_line (without package — XUI ignores it here)
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
-  if (packageId) form.set('package', packageId);
   form.set('member_id', '0');
   if (expDateFormatted) form.set('exp_date', expDateFormatted);
 
@@ -281,7 +281,27 @@ async function provisionUserOnXui(
     || await resolveLineIdByUsername(config, username);
   if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
 
-  // Verify final state via get_line
+  // Step 2: edit_line to apply package (bouquets, allowed_outputs, max_connections)
+  if (packageId) {
+    const editForm = new URLSearchParams();
+    editForm.set('line_id', createdLineId);
+    editForm.set('package', packageId);
+    const editPayload = editForm.toString();
+    console.log('EDIT LINE PAYLOAD:', editPayload);
+
+    const editUrl = `${baseUrl}/?api_key=${apiKey}&action=edit_line`;
+    console.log(`[XUI] POST edit_line: ${editUrl.replace(config.api_key, '***')}`);
+
+    const editResponse = await tryFetch(editUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: editPayload,
+    });
+    const editText = await editResponse.text();
+    console.log('edit_line response:', editText.substring(0, 1000));
+  }
+
+  // Step 3: Verify final state via get_line
   const finalRow = await waitForLinePresence(config, createdLineId, username, 2, 500);
   const finalUsername = String(finalRow?.username || username).trim();
   const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
