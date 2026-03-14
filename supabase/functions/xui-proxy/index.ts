@@ -139,29 +139,6 @@ function hasSameNumericIds(current: unknown, expected: string[]): boolean {
   return currentNorm.every((id, idx) => id === expectedNorm[idx]);
 }
 
-const OUTPUT_NAME_BY_ID: Record<string, string> = {
-  '1': 'mpegts',
-  '2': 'hls',
-  '3': 'rtmp',
-};
-
-function toOutputFormatNames(values: string[]): string[] {
-  return Array.from(new Set(
-    values
-      .map((value) => OUTPUT_NAME_BY_ID[String(value).replace(/\D/g, '').trim()])
-      .filter(Boolean)
-  ));
-}
-
-function appendArrayField(form: URLSearchParams, key: string, values: string[], includePlainKey = true) {
-  for (const value of values) {
-    const normalized = String(value || '').trim();
-    if (!normalized) continue;
-    form.append(`${key}[]`, normalized);
-    if (includePlainKey) form.append(key, normalized);
-  }
-}
-
 function normalizeForMatch(value: unknown): string {
   return String(value || '')
     .normalize('NFD')
