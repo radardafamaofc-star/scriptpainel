@@ -841,7 +841,7 @@ async function syncLineAssignments(
   lineId: string,
   username: string,
   expected: ExpectedLineAssignments,
-  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  outputFormats: string[] = OUTPUT_ALL_IDS,
   password: string = '',
 ): Promise<boolean> {
   const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
