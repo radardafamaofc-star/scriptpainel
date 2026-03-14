@@ -1194,18 +1194,17 @@ async function provisionUserOnXui(
   let lastError = 'A API do XUI rejeitou a criação da linha';
 
   for (const expValue of uniqueExpVariants) {
-    const createParams: Record<string, string | string[]> = {
-      username,
-      password,
-      max_connections: maxConnections,
-      exp_date: expValue,
-      ...(memberId ? { member_id: memberId } : {}),
-      ...(packageId ? { package_id: packageId } : {}),
-      ...(packageId ? { 'package_id[]': [packageId] } : {}),
-      ...(bouquetIds.length > 0 ? { 'bouquets_selected[]': bouquetIds } : {}),
-      // Strict array params only, as required by XUI
-      ...buildOutputPayload(outputFormats),
-    };
+      const createParams: Record<string, string | string[]> = {
+        username,
+        password,
+        max_connections: maxConnections,
+        exp_date: expValue,
+        ...(memberId ? { member_id: memberId } : {}),
+        ...(packageId ? { package_id: packageId } : {}),
+        ...(packageId ? { 'package_id[]': [packageId] } : {}),
+        ...buildBouquetPayload(bouquetIds),
+        ...buildOutputPayload(outputFormats),
+      };
 
     try {
       const data = await createLinePostStrict(config, createParams);
