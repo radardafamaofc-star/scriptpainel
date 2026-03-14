@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  DollarSign, BarChart3, Tag, Palette, Sun, Moon } from
+  DollarSign, BarChart3, Tag, Palette, Sun, Moon, Megaphone } from
 "lucide-react";
 import { useTheme } from "next-themes";
 import { NavLink } from "@/components/NavLink";
