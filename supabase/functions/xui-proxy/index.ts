@@ -350,26 +350,18 @@ async function provisionUserOnXui(
   // 5. STEP 2: Apply bouquets and outputs via edit_line
   if (bouquets.length || outputs.length) {
     const editParams: Record<string, string | string[]> = {
-      id: createdLineId,
       username,
-      password,
-      member_id: '1',
-      max_connections: maxConnections,
     };
-    if (expDateFormatted) editParams.exp_date = expDateFormatted;
     if (bouquets.length) {
-      editParams['bouquet'] = JSON.stringify(bouquets);
-      // Also send as bouquets_selected for compatibility
-      editParams['bouquets_selected[]'] = bouquets;
+      editParams['bouquets_selected'] = JSON.stringify(bouquets);
     }
     if (outputs.length) {
-      editParams['allowed_outputs'] = JSON.stringify(outputs);
-      editParams['allowed_output_ids[]'] = outputs;
+      editParams['access_output[]'] = outputs;
     }
 
-    console.log('EDIT_LINE PAYLOAD:', JSON.stringify(editParams));
+    console.log('EDIT_LINE_PAYLOAD:', JSON.stringify(editParams));
     const editResult = await xuiRequest(config, 'edit_line', editParams);
-    console.log('EDIT_LINE RESPONSE:', JSON.stringify(editResult));
+    console.log('EDIT_LINE_RESPONSE:', JSON.stringify(editResult));
 
     const editErr = getXuiError(editResult);
     if (editErr) {
