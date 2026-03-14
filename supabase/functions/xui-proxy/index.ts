@@ -232,7 +232,7 @@ async function provisionUserOnXui(
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
-  if (packageId) form.set('package_id', packageId);
+  if (packageId) form.set('package', packageId);
   form.set('member_id', '0');
   if (expDateFormatted) form.set('exp_date', expDateFormatted);
 
