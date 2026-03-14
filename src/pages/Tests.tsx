@@ -22,6 +22,7 @@ async function generateTestCredentials() {
 export default function Tests() {
   const [open, setOpen] = useState(false);
   const [serverId, setServerId] = useState("");
+  const [planId, setPlanId] = useState("");
   const [duration, setDuration] = useState("4");
   const { toast } = useToast();
   const { user } = useAuth();
@@ -48,6 +49,17 @@ export default function Tests() {
     },
   });
 
+  const { data: plans = [] } = useQuery({
+    queryKey: ["plans"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("plans").select("id, name, package_id, server_id, is_test").order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const filteredPlans = plans.filter(p => p.server_id === serverId && p.is_test);
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const creds = await generateTestCredentials();
@@ -71,17 +83,24 @@ export default function Tests() {
       // 2. Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
+        const selectedPlan = plans.find(p => p.id === planId);
+        const xuiParams: Record<string, string> = {
+          username: creds.username,
+          password: creds.password,
+          max_connections: "1",
+          exp_date: String(expTimestamp),
+        };
+        if (selectedPlan?.package_id) {
+          xuiParams.package_id = selectedPlan.package_id;
+        }
+        console.log("TEST CREATE XUI PARAMS:", xuiParams);
+
         const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
           body: {
             action: "xui_command",
             server_id: serverId,
             xui_action: "user_create",
-            xui_params: {
-              username: creds.username,
-              password: creds.password,
-              max_connections: "1",
-              exp_date: String(expTimestamp),
-            },
+            xui_params: xuiParams,
           },
         });
 
@@ -109,6 +128,7 @@ export default function Tests() {
       queryClient.invalidateQueries({ queryKey: ["test-lines"] });
       toast({ title: "Teste criado!", description: `Usuário: ${creds.username}` });
       setOpen(false);
+      setPlanId("");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -163,6 +183,21 @@ export default function Tests() {
                   <SelectContent>
                     {servers.filter(s => s.status === "online").map(s => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground text-xs">Plano (com package)</Label>
+                <Select value={planId} onValueChange={setPlanId} disabled={!serverId}>
+                  <SelectTrigger className="bg-secondary border-border">
+                    <SelectValue placeholder={serverId ? "Selecione um plano" : "Selecione o servidor primeiro"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredPlans.map(p => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} {p.package_id ? `(pkg: ${p.package_id})` : "(sem package)"}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
