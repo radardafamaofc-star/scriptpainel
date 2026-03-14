@@ -249,22 +249,26 @@ async function provisionUserOnXui(
     }
   }
 
-  // Fetch bouquets and outputs from the XUI package
-  let bouquetsSelected: string[] = [];
-  let accessOutputs: string[] = [];
+  // Fetch package data from XUI
+  let bouquets: string[] = [];
+  let outputs: string[] = [];
   let maxConnections = rawParams.max_connections || '1';
 
   if (packageId && /^\d+$/.test(packageId)) {
     try {
       const pkgData = await xuiRequest(config, 'get_packages');
-      const packages = pkgData?.data || pkgData;
+      const packages = Array.isArray(pkgData) ? pkgData : (pkgData?.data || pkgData);
       const pkgList = Array.isArray(packages) ? packages : Object.values(packages || {}).filter(i => i && typeof i === 'object');
       const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
+      
+      console.log('PACKAGE DATA:', JSON.stringify(pkg));
+      
       if (pkg) {
-        bouquetsSelected = parseIdList(pkg.bouquet).filter(Boolean);
-        accessOutputs = parseIdList(pkg.allowed_outputs).filter(Boolean);
+        // Fields are "bouquets" and "output_formats" (string JSON arrays)
+        bouquets = parseIdList(pkg.bouquets);
+        outputs = parseIdList(pkg.output_formats);
         if (pkg.max_connections) maxConnections = String(pkg.max_connections);
-        console.log(`[XUI] Package ${packageId}: bouquets=${JSON.stringify(bouquetsSelected)} outputs=${JSON.stringify(accessOutputs)} max_conn=${maxConnections}`);
+        console.log(`[XUI] Package ${packageId}: bouquets=${JSON.stringify(bouquets)} outputs=${JSON.stringify(outputs)} max_conn=${maxConnections}`);
       } else {
         console.log(`[XUI] WARNING: Package ${packageId} not found in get_packages`);
       }
@@ -273,64 +277,26 @@ async function provisionUserOnXui(
     }
   }
 
-  // Build POST /post.php payload
-  const baseUrl = config.url.replace(/\/+$/, '');
-  const form = new URLSearchParams();
-  form.set('action', 'line');
-  form.set('referer', 'lines');
-  form.set('username', username);
-  form.set('password', password);
-  form.set('member_id', '1');
-  form.set('max_connections', maxConnections);
-  if (expDateFormatted) form.set('exp_date', expDateFormatted);
+  // Build create_line payload
+  const params: Record<string, string | string[]> = {
+    username,
+    password,
+    member_id: '1',
+    max_connections: maxConnections,
+  };
+  if (expDateFormatted) params.exp_date = expDateFormatted;
+  if (bouquets.length > 0) params.bouquet = JSON.stringify(bouquets.map(Number));
+  if (outputs.length > 0) params.allowed_outputs = JSON.stringify(outputs.map(Number));
 
-  // bouquets_selected as JSON array string
-  if (bouquetsSelected.length > 0) {
-    form.set('bouquets_selected', JSON.stringify(bouquetsSelected.map(String)));
-  }
+  console.log('CREATE LINE PAYLOAD:', JSON.stringify(params));
 
-  // access_output[] as multiple fields
-  for (const output of accessOutputs) {
-    form.append('access_output[]', String(output));
-  }
+  const result = await xuiRequest(config, 'create_line', params);
+  const err = getXuiError(result);
+  if (err) throw new Error(err);
 
-  const payload = form.toString();
-  console.log('POST LINE PAYLOAD:', payload);
+  // Extract line_id
+  let createdLineId = String(result?.data?.id || result?.id || result?.line_id || '').trim();
 
-  const postUrl = `${baseUrl}/post.php`;
-  console.log(`[XUI] POST: ${postUrl}`);
-
-  const response = await tryFetch(postUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Cookie': `api_key=${config.api_key}`,
-    },
-    body: payload,
-  });
-
-  const text = await response.text();
-  console.log('post.php response:', text.substring(0, 1000));
-
-  // post.php may return HTML or JSON — try to extract useful info
-  let createdLineId = '';
-  let responseData: any = {};
-
-  // Try JSON parse first
-  try {
-    responseData = JSON.parse(text);
-    createdLineId = String(responseData?.data?.id || responseData?.id || '').trim();
-    const status = String(responseData?.status || '').toUpperCase();
-    if (status.includes('EXISTS_USERNAME')) throw new Error(`Username já existe no XUI: ${username}`);
-    const err = getXuiError(responseData);
-    if (err && !status.includes('SUCCESS')) throw new Error(err);
-  } catch (e: any) {
-    if (e.message?.includes('já existe')) throw e;
-    // Not JSON — likely HTML redirect (success). Resolve via get_line.
-    console.log('[XUI] post.php returned non-JSON, resolving line via API...');
-  }
-
-  // Resolve line_id if not found in response
   if (!createdLineId) {
     createdLineId = await resolveLineIdByUsername(config, username);
   }
@@ -347,11 +313,11 @@ async function provisionUserOnXui(
   );
 
   return {
-    action: 'post_line' as const,
+    action: 'create_line' as const,
     data: {
-      ...responseData,
+      ...result,
       data: {
-        ...(typeof responseData?.data === 'object' && responseData?.data ? responseData.data : {}),
+        ...(typeof result?.data === 'object' && result?.data ? result.data : {}),
         id: finalLineId,
         username: finalUsername,
       },
