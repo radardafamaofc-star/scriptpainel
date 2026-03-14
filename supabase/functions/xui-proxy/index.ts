@@ -232,17 +232,17 @@ async function provisionUserOnXui(
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
-  if (packageId) form.set('package', packageId);
+  if (packageId) form.set('package_id', packageId);
   form.set('member_id', '0');
   if (expDateFormatted) form.set('exp_date', expDateFormatted);
 
   const payload = form.toString();
-  console.log('CREATE LINE PAYLOAD:', payload);
+  console.log('CREATE USER PAYLOAD:', payload);
 
-  // POST create_line
+  // POST create_user (applies bouquets + outputs from package automatically)
   const baseUrl = config.url.replace(/\/+$/, '');
   const apiKey = encodeURIComponent(config.api_key);
-  const url = `${baseUrl}/?api_key=${apiKey}&action=create_line`;
+  const url = `${baseUrl}/?api_key=${apiKey}&action=create_user`;
 
   console.log(`[XUI] POST: ${url.replace(config.api_key, '***')}`);
   console.log(`[XUI] POST body: ${payload}`);
@@ -259,7 +259,7 @@ async function provisionUserOnXui(
   }
 
   const createData = JSON.parse(text);
-  console.log('create_line response:', JSON.stringify(createData).substring(0, 1000));
+  console.log('create_user response:', JSON.stringify(createData).substring(0, 1000));
 
   const createStatus = String(createData?.status || '').toUpperCase();
   const createError = getXuiError(createData);
@@ -269,20 +269,20 @@ async function provisionUserOnXui(
   // Resolve line_id
   const createdLineId = String(createData?.data?.id || createData?.id || '').trim()
     || await resolveLineIdByUsername(config, username);
-  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
+  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_user');
 
-  // Verify final state
+  // Verify final state via get_line
   const finalRow = await waitForLinePresence(config, createdLineId, username, 2, 500);
   const finalUsername = String(finalRow?.username || username).trim();
   const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
   const active = finalRow ? isLineActive(finalRow) : true;
 
   console.log(
-    `[XUI] Final state: line_id=${finalLineId} username=${finalUsername} bouquet=${finalRow?.bouquet || '?'} allowed_outputs=${finalRow?.allowed_outputs || '?'} active=${active}`,
+    `[XUI] Final state: line_id=${finalLineId} username=${finalUsername} bouquet=${finalRow?.bouquet || '?'} allowed_outputs=${finalRow?.allowed_outputs || '?'} package_id=${finalRow?.package_id || '?'} active=${active}`,
   );
 
   return {
-    action: 'create_line' as const,
+    action: 'create_user' as const,
     data: {
       ...createData,
       data: {
