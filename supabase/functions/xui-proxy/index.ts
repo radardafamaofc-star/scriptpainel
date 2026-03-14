@@ -353,10 +353,10 @@ async function provisionUserOnXui(
       username,
     };
     if (bouquets.length) {
-      editParams['bouquets_selected'] = JSON.stringify(bouquets);
+      editParams['bouquets'] = JSON.stringify(bouquets);
     }
     if (outputs.length) {
-      editParams['access_output[]'] = outputs;
+      editParams['output_formats'] = JSON.stringify(outputs);
     }
 
     console.log('EDIT_LINE_PAYLOAD:', JSON.stringify(editParams));
