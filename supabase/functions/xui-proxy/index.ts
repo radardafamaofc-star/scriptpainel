@@ -254,6 +254,7 @@ async function provisionUserOnXui(
   console.log('PACKAGE ID:', packageId);
 
   // Format exp_date as "YYYY-MM-DD HH:MM"
+  let expDateFormatted = '';
   if (rawExpDate) {
     const raw = String(rawExpDate).trim();
     let d: Date | null = null;
