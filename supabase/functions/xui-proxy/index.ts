@@ -237,19 +237,6 @@ async function resolveXuiPackageId(serviceClient: any, packageOrPlanId: string):
   return resolved;
 }
 
-// Login to XUI panel using API key to get a session cookie
-async function xuiPanelLogin(baseUrl: string, apiKey: string): Promise<string> {
-  // Try authenticating via the API key - XUI may set a session
-  const resp = await tryFetch(`${baseUrl}/?api_key=${encodeURIComponent(apiKey)}&action=user_info`, {
-    method: 'GET',
-    redirect: 'manual',
-  });
-  const raw = resp.headers.get('set-cookie') || '';
-  const cookies = raw.split(/,(?=\s*\w+=)/).map(c => c.split(';')[0].trim()).filter(Boolean);
-  console.log(`[XUI] Panel auth via API key: status=${resp.status} cookies=${cookies.length > 0 ? 'YES' : 'NO'}`);
-  return cookies.join('; ');
-}
-
 async function fetchPackageBouquets(
   config: XuiServerConfig,
   packageId: string,
@@ -312,14 +299,14 @@ async function provisionUserOnXui(
     outputs = pkgInfo.outputs;
   }
 
-  // 3. Format exp_date as "YYYY-MM-DD"
+  // 3. Format exp_date as "YYYY-MM-DD HH:MM"
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
   let expDateFormatted = '';
   if (rawExpDate) {
     const raw = String(rawExpDate).trim();
     let d: Date | null = null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      expDateFormatted = raw;
+      expDateFormatted = `${raw} 23:59`;
     } else if (/^\d+$/.test(raw)) {
       const ts = Number(raw);
       d = new Date(ts > 1e12 ? ts : ts * 1000);
@@ -331,73 +318,67 @@ async function provisionUserOnXui(
       expDateFormatted =
         d.getFullYear() + '-' +
         String(d.getMonth() + 1).padStart(2, '0') + '-' +
-        String(d.getDate()).padStart(2, '0');
+        String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0');
     }
   }
 
-  // 4. Authenticate with XUI panel via API key
-  const sessionCookie = await xuiPanelLogin(baseUrl, apiKey);
+  // 4. STEP 1: Create line via API
+  const createParams: Record<string, string | string[]> = {
+    username,
+    password,
+    member_id: '1',
+    max_connections: maxConnections,
+  };
+  if (expDateFormatted) createParams.exp_date = expDateFormatted;
 
-  // 5. Build form data for POST /post.php (replicating browser behavior)
-  // Include api_key in form data as fallback auth
-  const formParts: string[] = [
-    'action=line',
-    'referer=lines',
-    `api_key=${encodeURIComponent(apiKey)}`,
-    `username=${encodeURIComponent(username)}`,
-    `password=${encodeURIComponent(password)}`,
-    'member_id=1',
-    `max_connections=${encodeURIComponent(maxConnections)}`,
-  ];
-  if (expDateFormatted) {
-    formParts.push(`exp_date=${encodeURIComponent(expDateFormatted)}`);
-  }
-  if (bouquets.length) {
-    formParts.push(`bouquets_selected=${encodeURIComponent(JSON.stringify(bouquets))}`);
-  }
-  for (const o of outputs) {
-    formParts.push(`access_output[]=${encodeURIComponent(o)}`);
-  }
+  console.log('CREATE_LINE PAYLOAD:', JSON.stringify(createParams));
+  const createResult = await xuiRequest(config, 'create_line', createParams);
+  console.log('CREATE_LINE RESPONSE:', JSON.stringify(createResult));
 
-  const postBody = formParts.join('&');
-  const postUrl = `${baseUrl}/post.php`;
+  const createErr = getXuiError(createResult);
+  if (createErr) throw new Error(createErr);
 
-  console.log(`[XUI] POST_URL: ${postUrl}`);
-  console.log(`[XUI] POST_PAYLOAD: ${postBody}`);
-
-  // 6. Send POST request
-  const response = await tryFetch(postUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Cookie': sessionCookie,
-    },
-    body: postBody,
-  });
-
-  const responseText = await response.text();
-  console.log(`[XUI] POST_RESPONSE: ${responseText}`);
-
-  let result: any = {};
-  try {
-    result = JSON.parse(responseText);
-  } catch {
-    if (responseText.includes('<html') || responseText.includes('<!DOCTYPE')) {
-      throw new Error('Resposta HTML recebida - sessão pode ter expirado');
-    }
-  }
-
-  const err = getXuiError(result);
-  if (err) throw new Error(err);
-
-  // 7. Resolve line_id
-  let createdLineId = String(result?.data?.id || result?.id || result?.line_id || '').trim();
+  // Extract line_id
+  let createdLineId = String(createResult?.data?.id || createResult?.id || createResult?.line_id || '').trim();
   if (!createdLineId) {
     createdLineId = await resolveLineIdByUsername(config, username);
   }
+  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após criação');
 
-  // 8. Verify final state
-  const finalRow = createdLineId ? await waitForLinePresence(config, createdLineId, username, 2, 500) : null;
+  // 5. STEP 2: Apply bouquets and outputs via edit_line
+  if (bouquets.length || outputs.length) {
+    const editParams: Record<string, string | string[]> = {
+      id: createdLineId,
+      username,
+      password,
+      member_id: '1',
+      max_connections: maxConnections,
+    };
+    if (expDateFormatted) editParams.exp_date = expDateFormatted;
+    if (bouquets.length) {
+      editParams['bouquet'] = JSON.stringify(bouquets);
+      // Also send as bouquets_selected for compatibility
+      editParams['bouquets_selected[]'] = bouquets;
+    }
+    if (outputs.length) {
+      editParams['allowed_outputs'] = JSON.stringify(outputs);
+      editParams['allowed_output_ids[]'] = outputs;
+    }
+
+    console.log('EDIT_LINE PAYLOAD:', JSON.stringify(editParams));
+    const editResult = await xuiRequest(config, 'edit_line', editParams);
+    console.log('EDIT_LINE RESPONSE:', JSON.stringify(editResult));
+
+    const editErr = getXuiError(editResult);
+    if (editErr) {
+      console.log(`[XUI] WARNING: edit_line failed: ${editErr} — line created but bouquets not applied`);
+    }
+  }
+
+  // 6. Verify final state
+  const finalRow = await waitForLinePresence(config, createdLineId, username, 2, 500);
   const finalUsername = String(finalRow?.username || username).trim();
   const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
   const active = finalRow ? isLineActive(finalRow) : true;
@@ -407,11 +388,11 @@ async function provisionUserOnXui(
   );
 
   return {
-    action: 'post_php' as const,
+    action: 'create_and_edit' as const,
     data: {
-      ...result,
+      ...createResult,
       data: {
-        ...(typeof result?.data === 'object' && result?.data ? result.data : {}),
+        ...(typeof createResult?.data === 'object' && createResult?.data ? createResult.data : {}),
         id: finalLineId,
         username: finalUsername,
       },
