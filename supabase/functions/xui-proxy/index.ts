@@ -199,61 +199,12 @@ async function waitForLinePresence(
   return null;
 }
 
-// Resolve bouquets and allowed_outputs from a package on the XUI server
-async function resolvePackageContents(
-  config: XuiServerConfig,
-  packageId: string,
-): Promise<{ bouquetIds: string[]; allowedOutputIds: string[]; maxConnections: string; rawPackage: any }> {
-  const result = { bouquetIds: [] as string[], allowedOutputIds: [] as string[], maxConnections: '1', rawPackage: null as any };
-  const pid = String(packageId || '').replace(/\D/g, '').trim();
-  if (!pid || pid === '0') return result;
-
-  try {
-    const packagesPayload = await xuiRequest(config, 'get_packages');
-    const data = packagesPayload?.data ?? packagesPayload;
-    let packages: any[] = [];
-    if (Array.isArray(data)) {
-      packages = data;
-    } else if (data && typeof data === 'object') {
-      packages = Object.values(data).filter((p) => p && typeof p === 'object');
-    }
-
-    const pkg = packages.find((p: any) => String(p?.id || p?.package_id || '').replace(/\D/g, '') === pid);
-    if (!pkg) {
-      console.log(`[XUI] Package ${pid} not found in get_packages response`);
-      return result;
-    }
-
-    result.rawPackage = pkg;
-    console.log('PACKAGE DATA:', JSON.stringify(pkg).substring(0, 2000));
-
-    // Extract bouquets
-    const rawBouquets = pkg.bouquets ?? pkg.bouquet ?? pkg.bouquet_ids ?? pkg.bouquets_selected ?? '';
-    result.bouquetIds = parseIdList(rawBouquets).map((v) => v.replace(/\D/g, '').trim()).filter(Boolean);
-
-    // Extract allowed_outputs / output_formats
-    const rawOutputs = pkg.allowed_outputs ?? pkg.output_formats ?? pkg.allowed_output ?? '';
-    result.allowedOutputIds = parseIdList(rawOutputs).map((v) => v.replace(/\D/g, '').trim()).filter(Boolean);
-
-    // Extract max_connections from package
-    const pkgMaxConn = String(pkg.max_connections || pkg.max_connection || '').trim();
-    if (pkgMaxConn && Number(pkgMaxConn) > 0) result.maxConnections = pkgMaxConn;
-
-    console.log(`[XUI] Package ${pid} resolved: bouquets=[${result.bouquetIds.join(',')}] outputs=[${result.allowedOutputIds.join(',')}] max_connections=${result.maxConnections}`);
-  } catch (e: any) {
-    console.log(`[XUI] Failed to resolve package contents: ${e.message}`);
-  }
-
-  return result;
-}
-
 // ============================================================
 // SIMPLIFIED create_line for XUIOne 1.5.12
+// XUI applies bouquets/outputs automatically from package_id
 // - POST application/x-www-form-urlencoded
-// - bouquet and allowed_outputs as JSON strings from package
-// - NO hardcoded defaults - everything comes from the package
-// - NO edit_line
-// - member_id=0 (admin context)
+// - Only: username, password, package_id, member_id, exp_date
+// - NO bouquet, NO allowed_outputs, NO edit_line
 // ============================================================
 async function provisionUserOnXui(
   config: XuiServerConfig,
@@ -276,47 +227,17 @@ async function provisionUserOnXui(
     }
   }
 
-  const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
-
-  // Fetch package data from XUI server
-  let bouquetIds: string[] = [];
-  let allowedOutputIds: string[] = [];
-  let maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-
-  if (requestedPackageId) {
-    const pkgContents = await resolvePackageContents(config, requestedPackageId);
-    bouquetIds = pkgContents.bouquetIds;
-    allowedOutputIds = pkgContents.allowedOutputIds;
-    if (Number(pkgContents.maxConnections) > 0) {
-      maxConnections = pkgContents.maxConnections;
-    }
-    // Override with explicit max_connections from params if provided
-    if (rawParams.max_connections && Number(rawParams.max_connections) > 0) {
-      maxConnections = String(Number(rawParams.max_connections));
-    }
-  } else {
-    console.log('[XUI] No package_id provided - creating line without bouquets/outputs');
-  }
-
-  // Build the payload
-  const bouquetJson = bouquetIds.length ? JSON.stringify(bouquetIds.map(Number)) : '[]';
-  const allowedOutputsJson = allowedOutputIds.length ? JSON.stringify(allowedOutputIds.map(Number)) : '[]';
+  const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
-  if (expDateFormatted) form.set('exp_date', expDateFormatted);
-  form.set('max_connections', maxConnections);
+  if (packageId) form.set('package_id', packageId);
   form.set('member_id', '0');
-  form.set('bouquet', bouquetJson);
-  form.set('allowed_outputs', allowedOutputsJson);
+  if (expDateFormatted) form.set('exp_date', expDateFormatted);
 
   const payload = form.toString();
-  console.log('create_line payload:', payload);
-
-  console.log(
-    `[XUI] Provisioning ${username} bouquets=${bouquetJson} allowed_outputs=${allowedOutputsJson}`,
-  );
+  console.log('CREATE LINE PAYLOAD:', payload);
 
   // POST create_line
   const baseUrl = config.url.replace(/\/+$/, '');
