@@ -538,10 +538,12 @@ async function enforceAllowedOutputsPostCreate(
 
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
+  const targetAllowedNames = toOutputFormatNames(targetAllowed);
 
   const bouquetJson = JSON.stringify(expectedBouquetNumeric);
   const bouquetCsv = expectedBouquetIds.join(',');
   const allowedJson = JSON.stringify(allowedNumeric);
+  const allowedNamesJson = targetAllowedNames.length ? JSON.stringify(targetAllowedNames) : '';
 
   const buildBaseForm = () => {
     const form = new URLSearchParams();
@@ -561,15 +563,32 @@ async function enforceAllowedOutputsPostCreate(
 
   const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
-      label: 'arrays_json',
+      label: 'arrays_json_dual',
       fill: (form) => {
         if (expectedBouquetIds.length) {
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
           form.set('bouquet', bouquetJson);
         }
         if (allowedNumeric.length) {
           form.set('allowed_outputs', allowedJson);
           form.set('output_formats', allowedJson);
+          appendArrayField(form, 'allowed_outputs', targetAllowed, true);
+        }
+      },
+    },
+    {
+      label: 'arrays_names',
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
+          form.set('bouquet', bouquetJson);
+        }
+        if (allowedNumeric.length) {
+          form.set('allowed_outputs', allowedJson);
+          if (allowedNamesJson) {
+            form.set('output_formats', allowedNamesJson);
+            appendArrayField(form, 'output_formats', targetAllowedNames, true);
+          }
         }
       },
     },
@@ -577,7 +596,7 @@ async function enforceAllowedOutputsPostCreate(
       label: 'arrays_csv',
       fill: (form) => {
         if (expectedBouquetIds.length) {
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
           form.set('bouquet', bouquetCsv);
         }
         if (allowedNumeric.length) {
@@ -589,7 +608,7 @@ async function enforceAllowedOutputsPostCreate(
       label: 'arrays_only',
       fill: (form) => {
         if (expectedBouquetIds.length) {
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
         }
       },
     },
