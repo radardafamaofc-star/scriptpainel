@@ -427,15 +427,17 @@ async function createLinePost(
   }
 
   if (allowedOutputIds.length) {
+    const allowedOutputStringIds = allowedOutputIds.map(String);
     const allowedOutputsJson = JSON.stringify(allowedOutputIds);
-    const allowedOutputNames = toOutputFormatNames(bouquetStringIds.length ? DEFAULT_ALLOWED_OUTPUT_IDS : allowedOutputIds.map(String));
+    const allowedOutputNames = toOutputFormatNames(allowedOutputStringIds);
     const allowedOutputNamesJson = allowedOutputNames.length ? JSON.stringify(allowedOutputNames) : '';
 
     form.set('allowed_outputs', allowedOutputsJson);
     form.set('output_formats', allowedOutputsJson);
     if (allowedOutputNamesJson) form.append('output_formats', allowedOutputNamesJson);
 
-    appendArrayField(form, 'allowed_outputs', allowedOutputIds.map(String), true);
+    appendArrayField(form, 'allowed_outputs', allowedOutputStringIds, true);
+    if (allowedOutputNames.length) appendArrayField(form, 'output_formats', allowedOutputNames, true);
   }
 
   console.log('create_line payload:', form.toString());
