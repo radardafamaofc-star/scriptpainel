@@ -998,6 +998,17 @@ async function provisionUserOnXui(
   finalUsername = String(confirmedRow.username || finalUsername || username).trim();
   active = isLineActive(confirmedRow);
 
+  const finalBouquetOk = hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
+  const finalOutputsOk = hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
+  const finalPackageId = String(confirmedRow?.package_id || '').replace(/\D/g, '').trim();
+  const finalPackageOk = !packageIdForPayload || finalPackageId === packageIdForPayload;
+
+  if (!finalBouquetOk || !finalOutputsOk || !finalPackageOk) {
+    throw new Error(
+      `XUI não persistiu bouquet/access corretamente (bouquet=${confirmedRow?.bouquet || '[]'} outputs=${confirmedRow?.allowed_outputs || '[]'} package_id=${finalPackageId || 'none'})`
+    );
+  }
+
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
 
   return {
