@@ -1059,9 +1059,14 @@ Deno.serve(async (req) => {
 
       try {
         if (xui_action === 'user_create') {
-          // XUI 1.5.12 requirement: force member_id=0 for create/edit line flows
-          const xuiMemberId = '0';
-          console.log('[XUI] Provisioning with forced member_id=0');
+          const profileLabel = String(
+            user.user_metadata?.display_name ||
+            user.user_metadata?.name ||
+            user.email ||
+            `user_${user.id.slice(0, 8)}`
+          );
+          const xuiMemberId = await getOrCreateXuiMemberId(config, user.id, profileLabel, serviceClient);
+          console.log(`[XUI] Provisioning with member_id=${xuiMemberId || 'owner'}`);
 
           await appendSystemLog(serviceClient, {
             type: 'info', action: 'XUI provisioning iniciado',
