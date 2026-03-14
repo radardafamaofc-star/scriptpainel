@@ -918,10 +918,15 @@ async function provisionUserOnXui(
   let bouquetIds: string[];
   let allowedOutputIds: string[];
 
+  // Resolve package contents once if needed
+  let pkgContents = { bouquetIds: [] as string[], allowedOutputIds: [] as string[] };
+  if (packageIdForPayload && (!explicitBouquets.length || !explicitAllowedOutputs.length)) {
+    pkgContents = await resolvePackageContents(config, packageIdForPayload);
+  }
+
   if (explicitBouquets.length) {
     bouquetIds = explicitBouquets;
   } else if (packageIdForPayload) {
-    const pkgContents = await resolvePackageContents(config, packageIdForPayload);
     bouquetIds = pkgContents.bouquetIds.length ? pkgContents.bouquetIds : DEFAULT_BOUQUET_IDS;
   } else {
     bouquetIds = DEFAULT_BOUQUET_IDS;
@@ -930,7 +935,6 @@ async function provisionUserOnXui(
   if (explicitAllowedOutputs.length) {
     allowedOutputIds = explicitAllowedOutputs;
   } else if (packageIdForPayload) {
-    const pkgContents = await resolvePackageContents(config, packageIdForPayload);
     allowedOutputIds = pkgContents.allowedOutputIds.length ? pkgContents.allowedOutputIds : DEFAULT_ALLOWED_OUTPUT_IDS;
   } else {
     allowedOutputIds = DEFAULT_ALLOWED_OUTPUT_IDS;
