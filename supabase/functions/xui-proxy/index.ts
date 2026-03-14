@@ -365,6 +365,64 @@ async function xuiRequestGetOnly(
   return JSON.parse(text);
 }
 
+function normalizeUniqueNumericIds(values: string[]): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((v) => String(v).replace(/\D/g, '').trim())
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => Number(a) - Number(b));
+}
+
+function applyLineAccessFields(form: URLSearchParams, bouquetIds: string[], allowedOutputIds: string[]): void {
+  const normalizedBouquets = normalizeUniqueNumericIds(bouquetIds);
+  if (normalizedBouquets.length) {
+    const bouquetJson = JSON.stringify(normalizedBouquets.map(Number));
+
+    // Send both keys for compatibility across XUI 1.5.x builds
+    for (const bid of normalizedBouquets) {
+      form.append('bouquets_selected[]', bid);
+      form.append('bouquets_selected', bid);
+    }
+    form.set('bouquet', bouquetJson);
+  }
+
+  const normalizedOutputs = normalizeUniqueNumericIds(allowedOutputIds);
+  if (normalizedOutputs.length) {
+    const outputNumbers = normalizedOutputs.map(Number).filter((id) => Number.isFinite(id));
+    const outputJson = JSON.stringify(outputNumbers);
+    const outputCsv = outputNumbers.join(',');
+
+    // Multiple aliases used by different XUI 1.5.x builds
+    form.set('allowed_outputs', outputJson);
+    form.set('output_formats', outputJson);
+    form.set('allowed_output', outputCsv);
+  }
+}
+
+function applyLineAccessQueryParams(
+  params: Record<string, string | string[]>,
+  bouquetIds: string[],
+  allowedOutputIds: string[],
+): void {
+  const normalizedBouquets = normalizeUniqueNumericIds(bouquetIds);
+  if (normalizedBouquets.length) {
+    params['bouquets_selected[]'] = normalizedBouquets;
+    params.bouquets_selected = normalizedBouquets;
+    params.bouquet = JSON.stringify(normalizedBouquets.map(Number));
+  }
+
+  const normalizedOutputs = normalizeUniqueNumericIds(allowedOutputIds);
+  if (normalizedOutputs.length) {
+    const outputNumbers = normalizedOutputs.map(Number).filter((id) => Number.isFinite(id));
+    const outputJson = JSON.stringify(outputNumbers);
+    params.allowed_outputs = outputJson;
+    params.output_formats = outputJson;
+    params.allowed_output = outputNumbers.join(',');
+  }
+}
+
 // Single-step create_line focused on explicit credentials + package fields
 async function createLinePost(
   config: XuiServerConfig,
@@ -392,19 +450,10 @@ async function createLinePost(
   // XUI 1.5.12 with disabled packages overrides bouquet/allowed_outputs to []
   // when package_id is present. We set it AFTER bouquets are confirmed.
 
-  const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
-  const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
+  const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id)).map(String);
+  const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id)).map(String);
 
-  const bouquetStringIds = bouquetIds.map((id) => String(id));
-  if (bouquetStringIds.length) {
-    // XUI API spec: bouquets_selected[]
-    for (const bid of bouquetStringIds) form.append('bouquets_selected[]', bid);
-  }
-
-  if (allowedOutputIds.length) {
-    // XUI API spec: allowed_outputs as JSON array string
-    form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
-  }
+  applyLineAccessFields(form, bouquetIds, allowedOutputIds);
 
   console.log('create_line payload:', form.toString());
   return postXuiForm(config, 'create_line', form, 'create_line');
