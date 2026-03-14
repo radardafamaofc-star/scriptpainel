@@ -347,25 +347,28 @@ async function provisionUserOnXui(
   }
   if (!createdLineId) throw new Error('Não foi possível resolver o line_id após criação');
 
-  // 5. STEP 2: Apply bouquets and outputs via edit_line
+  // 5. STEP 2: Apply bouquets and outputs via direct SQL (edit_line doesn't work on XUIOne 1.5.12)
   if (bouquets.length || outputs.length) {
-    const editParams: Record<string, string | string[]> = {
-      username,
-    };
-    if (bouquets.length) {
-      editParams['bouquets'] = JSON.stringify(bouquets);
-    }
-    if (outputs.length) {
-      editParams['output_formats'] = JSON.stringify(outputs);
-    }
+    const bouquetJson = JSON.stringify(bouquets.map(Number));
+    const outputJson = outputs.length ? JSON.stringify(outputs.map(Number)) : '[]';
 
-    console.log('EDIT_LINE_PAYLOAD:', JSON.stringify(editParams));
-    const editResult = await xuiRequest(config, 'edit_line', editParams);
-    console.log('EDIT_LINE_RESPONSE:', JSON.stringify(editResult));
+    const setClauses: string[] = [];
+    if (bouquets.length) setClauses.push(`bouquet='${bouquetJson}'`);
+    if (outputs.length) setClauses.push(`allowed_outputs='${outputJson}'`);
 
-    const editErr = getXuiError(editResult);
-    if (editErr) {
-      console.log(`[XUI] WARNING: edit_line failed: ${editErr} — line created but bouquets not applied`);
+    const sql = `UPDATE lines SET ${setClauses.join(', ')} WHERE username='${username}'`;
+
+    console.log('SQL_UPDATE_BOUQUETS:', sql);
+    try {
+      const sqlResult = await xuiRequest(config, 'mysql_query', { query: sql });
+      console.log('SQL_UPDATE_RESPONSE:', JSON.stringify(sqlResult));
+
+      const sqlErr = getXuiError(sqlResult);
+      if (sqlErr) {
+        console.log(`[XUI] WARNING: mysql_query failed: ${sqlErr} — line created but bouquets not applied`);
+      }
+    } catch (e: any) {
+      console.log(`[XUI] WARNING: mysql_query exception: ${e.message} — line created but bouquets not applied`);
     }
   }
 
