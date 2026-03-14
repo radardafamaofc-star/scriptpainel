@@ -225,19 +225,29 @@ async function provisionUserOnXui(
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
   const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
-  // XUI create_line expects exp_date as YYYY-MM-DD, not Unix timestamp
+  // XUI expects exp_date as "YYYY-MM-DD HH:MM:SS"; dates without time are treated as 00:00:00 causing instant expiry
   let expDateFormatted = '';
   if (rawExpDate) {
     const raw = String(rawExpDate).trim();
+    let d: Date | null = null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      expDateFormatted = raw;
+      // Date-only string: append end-of-day
+      expDateFormatted = `${raw} 23:59:59`;
     } else if (/^\d+$/.test(raw)) {
       const ts = Number(raw);
-      const d = new Date(ts > 1e12 ? ts : ts * 1000);
-      expDateFormatted = d.toISOString().slice(0, 10);
+      d = new Date(ts > 1e12 ? ts : ts * 1000);
     } else {
       const parsed = Date.parse(raw);
-      if (!Number.isNaN(parsed)) expDateFormatted = new Date(parsed).toISOString().slice(0, 10);
+      if (!Number.isNaN(parsed)) d = new Date(parsed);
+    }
+    if (d && !expDateFormatted) {
+      expDateFormatted =
+        d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0') + ' ' +
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0') + ':' +
+        String(d.getSeconds()).padStart(2, '0');
     }
   }
 
@@ -294,8 +304,11 @@ async function provisionUserOnXui(
       const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
 
       if (pkg) {
-        bouquet = typeof pkg.bouquet === 'string' ? pkg.bouquet : JSON.stringify(pkg.bouquet || []);
-        allowedOutputs = typeof pkg.allowed_outputs === 'string' ? pkg.allowed_outputs : JSON.stringify(pkg.allowed_outputs || []);
+        // XUI expects comma-separated IDs, NOT JSON arrays
+        const toBouquetIds = parseIdList(pkg.bouquet);
+        bouquet = toBouquetIds.join(',');
+        const toOutputIds = parseIdList(pkg.allowed_outputs);
+        allowedOutputs = toOutputIds.join(',');
         maxConnections = String(pkg.max_connections || '').trim();
         console.log(`[XUI] Package ${packageId} found: bouquet=${bouquet} allowed_outputs=${allowedOutputs} max_connections=${maxConnections}`);
       } else {
