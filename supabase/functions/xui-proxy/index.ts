@@ -420,22 +420,13 @@ async function createLinePost(
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
   if (bouquetStringIds.length) {
-    appendArrayField(form, 'bouquets_selected', bouquetStringIds, true);
-    form.set('bouquet', JSON.stringify(bouquetIds));
+    // XUI API spec: bouquets_selected[]
+    for (const bid of bouquetStringIds) form.append('bouquets_selected[]', bid);
   }
 
   if (allowedOutputIds.length) {
-    const allowedOutputStringIds = allowedOutputIds.map(String);
-    const allowedOutputsJson = JSON.stringify(allowedOutputIds);
-    const allowedOutputNames = toOutputFormatNames(allowedOutputStringIds);
-    const allowedOutputNamesJson = allowedOutputNames.length ? JSON.stringify(allowedOutputNames) : '';
-
-    form.set('allowed_outputs', allowedOutputsJson);
-    form.set('output_formats', allowedOutputsJson);
-    if (allowedOutputNamesJson) form.append('output_formats', allowedOutputNamesJson);
-
-    appendArrayField(form, 'allowed_outputs', allowedOutputStringIds, true);
-    if (allowedOutputNames.length) appendArrayField(form, 'output_formats', allowedOutputNames, true);
+    // XUI API spec: allowed_outputs as JSON array string
+    form.set('allowed_outputs', JSON.stringify(allowedOutputIds));
   }
 
   console.log('create_line payload:', form.toString());
