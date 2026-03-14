@@ -309,30 +309,54 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-// XUI allowed_outputs use string format names, not numeric IDs
+// XUI outputs can appear as numeric IDs (1,2,3) or names (m3u8,ts,rtmp)
 const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
-
-// Map between numeric IDs and format names
 const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
+const OUTPUT_NAME_TO_ID: Record<string, string> = { m3u8: '1', ts: '2', rtmp: '3' };
 
 function normalizeOutputFormats(raw: string[]): string[] {
   if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
   const result: string[] = [];
   for (const v of raw) {
     const trimmed = String(v).trim().toLowerCase();
-    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) { result.push(trimmed); continue; }
+    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) {
+      result.push(trimmed);
+      continue;
+    }
     const mapped = OUTPUT_ID_TO_NAME[trimmed];
     if (mapped) result.push(mapped);
   }
   return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_FORMAT_NAMES;
 }
 
+function normalizeOutputIds(raw: string[] = []): string[] {
+  return Array.from(new Set(
+    normalizeOutputFormats(raw)
+      .map((name) => OUTPUT_NAME_TO_ID[name])
+      .filter(Boolean),
+  ));
+}
+
+function buildBouquetPayload(bouquetIds: string[] = []): Record<string, string | string[]> {
+  const ids = sanitizeSelectionIds(bouquetIds);
+  const numericJson = JSON.stringify(ids.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+  return {
+    ...(ids.length > 0 ? { 'bouquets_selected[]': ids } : {}),
+    ...(ids.length > 0 ? { 'bouquet[]': ids } : {}),
+    ...(ids.length > 0 ? { bouquets_selected: numericJson } : {}),
+    ...(ids.length > 0 ? { bouquet: numericJson } : {}),
+  };
+}
+
 function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
   const formats = normalizeOutputFormats(outputFormats);
+  const outputIds = normalizeOutputIds(formats);
+  const numericJson = JSON.stringify(outputIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
   return {
-    // Keep array syntax only (no JSON/csv/object), as required by XUI
+    // Send both array-style (QPanel-like) and canonical JSON field used by some XUI builds
     'allowed_outputs[]': formats,
     'output_formats[]': formats,
+    ...(outputIds.length > 0 ? { allowed_outputs: numericJson } : {}),
   };
 }
 
