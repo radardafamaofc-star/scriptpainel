@@ -855,6 +855,7 @@ async function provisionUserOnXui(
 
   const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
   const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
+  const explicitAllowedOutputs = toNumericIdList(rawParams.allowed_outputs, []);
   const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
 
   let resolvedPackageFromPlan = '';
@@ -866,23 +867,26 @@ async function provisionUserOnXui(
     });
   }
 
+  // Quando estamos em modo package_id, não forçamos bouquet/outputs default;
+  // só enviamos listas se vieram explicitamente no payload.
+  const packageIdForPayload = requestedPackageId || resolvedPackageFromPlan;
+
   const bouquetIds = explicitBouquets.length
     ? explicitBouquets
-    : requestedPackageId
-      ? [requestedPackageId]
-      : resolvedPackageFromPlan
-        ? [resolvedPackageFromPlan]
-        : DEFAULT_BOUQUET_IDS;
+    : packageIdForPayload
+      ? []
+      : DEFAULT_BOUQUET_IDS;
 
-  const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
+  const allowedOutputIds = explicitAllowedOutputs.length
+    ? explicitAllowedOutputs
+    : packageIdForPayload
+      ? []
+      : DEFAULT_ALLOWED_OUTPUT_IDS;
+
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
 
   const requestedMemberId = String(memberId || rawParams.member_id || '').replace(/\D/g, '').trim();
   const effectiveMemberId = requestedMemberId || await getOwnerMemberId(config);
-
-  // Para XUI 1.5.x precisamos enviar package_id também quando ele foi resolvido pelo nome do plano
-  // (senão alguns servidores ignoram bouquets/outputs explícitos e salvam a linha sem acesso).
-  const packageIdForPayload = requestedPackageId || resolvedPackageFromPlan;
 
   console.log(
     `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageIdForPayload || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
