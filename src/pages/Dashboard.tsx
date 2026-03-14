@@ -13,7 +13,6 @@ import { Label } from "@/components/ui/label";
 
 import { useToast } from "@/hooks/use-toast";
 import { renderTemplate, DEFAULT_TEMPLATE } from "@/lib/template";
-import { extractGeneratedUsername } from "@/lib/xui";
 
 const chartStyle = { fontSize: 10, fill: "hsl(215, 15%, 55%)" };
 const tooltipStyle = {
@@ -184,7 +183,7 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { id: string; serverId: string | null; durationHours: number; packageId: string; planName: string }) => {
+    mutationFn: async (plan: { serverId: string | null; durationHours: number; packageId: string; planName: string }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
       const totalHours = Math.max(1, plan.durationHours || 0);
@@ -199,8 +198,6 @@ export default function Dashboard() {
       }).select("id").single();
       if (error) throw error;
 
-      let finalUsername = username;
-
       // Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
@@ -214,7 +211,6 @@ export default function Dashboard() {
               password,
               max_connections: "1",
               exp_date: String(expTimestamp),
-              plan_id: plan.id,
               package_id: plan.packageId && plan.packageId !== "0" ? plan.packageId : "",
               plan_name: plan.planName || "",
             },
@@ -225,17 +221,6 @@ export default function Dashboard() {
         if (xuiMessage) {
           await supabase.from("test_lines").delete().eq("id", createdTest.id);
           throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
-        }
-
-        const generatedUsername = extractGeneratedUsername(xuiRes);
-        if (generatedUsername && generatedUsername !== username) {
-          const { error: updateUsernameError } = await supabase
-            .from("test_lines")
-            .update({ username: generatedUsername })
-            .eq("id", createdTest.id);
-
-          if (updateUsernameError) throw updateUsernameError;
-          finalUsername = generatedUsername;
         }
       }
 
@@ -256,11 +241,11 @@ export default function Dashboard() {
       }
       const tpl = srv?.template || DEFAULT_TEMPLATE;
       const rendered = renderTemplate(tpl, {
-        username: finalUsername, password, dns, dns_host: dnsHost,
+        username, password, dns, dns_host: dnsHost,
         expires_at: format(expiresAt, "dd/MM/yyyy HH:mm"),
         package: "Teste", plan_price: "Grátis", pay_url: "", connections: "1",
       });
-      return { username: finalUsername, password, template: rendered };
+      return { username, password, template: rendered };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["test-lines"] });
@@ -471,7 +456,7 @@ export default function Dashboard() {
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={() => {
                         if (!testPlan) return;
-                        createTestMutation.mutate({ id: testPlan.id, serverId: testPlan.serverId, durationHours: testPlan.durationHours, packageId: testPlan.packageId, planName: testPlan.name });
+                        createTestMutation.mutate({ serverId: testPlan.serverId, durationHours: testPlan.durationHours, packageId: testPlan.packageId, planName: testPlan.name });
                       }}
                       disabled={createTestMutation.isPending || !testPlan}
                     >

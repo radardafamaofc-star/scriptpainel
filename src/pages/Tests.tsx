@@ -12,7 +12,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { generateUsername, generatePassword } from "@/lib/credentials";
-import { extractGeneratedUsername } from "@/lib/xui";
 
 async function generateTestCredentials() {
   const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
@@ -22,7 +21,6 @@ async function generateTestCredentials() {
 export default function Tests() {
   const [open, setOpen] = useState(false);
   const [serverId, setServerId] = useState("");
-  const [planId, setPlanId] = useState("");
   const [duration, setDuration] = useState("4");
   const { toast } = useToast();
   const { user } = useAuth();
@@ -49,17 +47,6 @@ export default function Tests() {
     },
   });
 
-  const { data: plans = [] } = useQuery({
-    queryKey: ["plans"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("plans").select("id, name, package_id, server_id, is_test").order("name");
-      if (error) throw error;
-      return data;
-    },
-  });
-
-  const filteredPlans = plans.filter(p => p.server_id === serverId && p.is_test);
-
   const createMutation = useMutation({
     mutationFn: async () => {
       const creds = await generateTestCredentials();
@@ -78,30 +65,21 @@ export default function Tests() {
       }).select("id").single();
       if (error) throw error;
 
-      let finalUsername = creds.username;
-
       // 2. Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
-        const selectedPlan = plans.find(p => p.id === planId);
-        const xuiParams: Record<string, string> = {
-          username: creds.username,
-          password: creds.password,
-          max_connections: "1",
-          exp_date: String(expTimestamp),
-          plan_id: planId,
-        };
-        if (selectedPlan?.package_id) {
-          xuiParams.package_id = selectedPlan.package_id;
-        }
-        console.log("TEST CREATE XUI PARAMS:", xuiParams);
-
         const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
           body: {
             action: "xui_command",
             server_id: serverId,
             xui_action: "user_create",
-            xui_params: xuiParams,
+            xui_params: {
+              username: creds.username,
+              password: creds.password,
+              max_connections: "1",
+              exp_date: String(expTimestamp),
+              bouquet: "",
+            },
           },
         });
 
@@ -110,26 +88,14 @@ export default function Tests() {
           await supabase.from("test_lines").delete().eq("id", createdTest.id);
           throw new Error(`Falha ao criar no XUI: ${xuiMessage}`);
         }
-
-        const generatedUsername = extractGeneratedUsername(xuiRes);
-        if (generatedUsername && generatedUsername !== creds.username) {
-          const { error: updateUsernameError } = await supabase
-            .from("test_lines")
-            .update({ username: generatedUsername })
-            .eq("id", createdTest.id);
-
-          if (updateUsernameError) throw updateUsernameError;
-          finalUsername = generatedUsername;
-        }
       }
 
-      return { ...creds, username: finalUsername };
+      return creds;
     },
     onSuccess: (creds) => {
       queryClient.invalidateQueries({ queryKey: ["test-lines"] });
       toast({ title: "Teste criado!", description: `Usuário: ${creds.username}` });
       setOpen(false);
-      setPlanId("");
     },
     onError: (err: Error) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
@@ -184,21 +150,6 @@ export default function Tests() {
                   <SelectContent>
                     {servers.filter(s => s.status === "online").map(s => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-muted-foreground text-xs">Plano (com package)</Label>
-                <Select value={planId} onValueChange={setPlanId} disabled={!serverId}>
-                  <SelectTrigger className="bg-secondary border-border">
-                    <SelectValue placeholder={serverId ? "Selecione um plano" : "Selecione o servidor primeiro"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filteredPlans.map(p => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.name} {p.package_id ? `(pkg: ${p.package_id})` : "(sem package)"}
-                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
