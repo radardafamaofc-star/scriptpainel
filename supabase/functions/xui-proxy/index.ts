@@ -276,16 +276,15 @@ async function provisionUserOnXui(
     }
   }
 
-  // Build create_line payload — send package directly, let XUI apply bouquets/outputs
+  // Build create_line payload
   const createParams: Record<string, string | string[]> = {
     username,
     password,
     member_id: '1',
+    max_connections: maxConnections,
   };
   if (expDateFormatted) createParams.exp_date = expDateFormatted;
-  if (packageId && /^\d+$/.test(packageId)) {
-    createParams.package = packageId;
-  }
+  if (packageId) createParams.package = packageId;
 
   console.log('CREATE_LINE PAYLOAD:', JSON.stringify(createParams));
 
