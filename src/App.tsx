@@ -18,6 +18,7 @@ import Reports from "./pages/Reports";
 import Logs from "./pages/Logs";
 import SettingsPage from "./pages/SettingsPage";
 import Estilo from "./pages/Estilo";
+import Notices from "./pages/Notices";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
@@ -45,6 +46,7 @@ const App = () => (
               <Route path="/logs" element={<ProtectedRoute allowedRoles={["admin"]}><Logs /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute allowedRoles={["admin"]}><SettingsPage /></ProtectedRoute>} />
               <Route path="/estilo" element={<ProtectedRoute allowedRoles={["admin"]}><Estilo /></ProtectedRoute>} />
+              <Route path="/notices" element={<ProtectedRoute allowedRoles={["admin"]}><Notices /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </AuthProvider>

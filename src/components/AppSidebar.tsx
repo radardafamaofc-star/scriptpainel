@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Server, Users, UserPlus, CreditCard, Wifi, ScrollText, Settings, LogOut,
-  DollarSign, BarChart3, Tag, Palette, Sun, Moon } from
+  DollarSign, BarChart3, Tag, Palette, Sun, Moon, Megaphone } from
 "lucide-react";
 import { useTheme } from "next-themes";
 import { NavLink } from "@/components/NavLink";
@@ -30,6 +30,7 @@ const financeItems = [
 
 
 const systemItems = [
+{ title: "Avisos", url: "/notices", icon: Megaphone, roles: ["admin"] },
 { title: "Logs", url: "/logs", icon: ScrollText, roles: ["admin"] },
 { title: "Estilo", url: "/estilo", icon: Palette, roles: ["admin"] },
 { title: "Configurações", url: "/settings", icon: Settings, roles: ["admin"] }];

@@ -1,5 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
+import { NoticeAlertModal } from "@/components/NoticeAlertModal";
 import { Bell } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -38,6 +39,7 @@ export function Layout({ children }: LayoutProps) {
           <main className="flex-1 p-3 sm:p-6 overflow-auto">
             {children}
           </main>
+          <NoticeAlertModal />
         </div>
       </div>
     </SidebarProvider>);
