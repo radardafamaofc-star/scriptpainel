@@ -237,15 +237,16 @@ async function resolveXuiPackageId(serviceClient: any, packageOrPlanId: string):
   return resolved;
 }
 
-async function xuiPanelLogin(baseUrl: string, panelUser: string, panelPass: string): Promise<string> {
-  const resp = await tryFetch(`${baseUrl}/post.php`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `action=login&username=${encodeURIComponent(panelUser)}&password=${encodeURIComponent(panelPass)}`,
+// Login to XUI panel using API key to get a session cookie
+async function xuiPanelLogin(baseUrl: string, apiKey: string): Promise<string> {
+  // Try authenticating via the API key - XUI may set a session
+  const resp = await tryFetch(`${baseUrl}/?api_key=${encodeURIComponent(apiKey)}&action=user_info`, {
+    method: 'GET',
+    redirect: 'manual',
   });
   const raw = resp.headers.get('set-cookie') || '';
   const cookies = raw.split(/,(?=\s*\w+=)/).map(c => c.split(';')[0].trim()).filter(Boolean);
-  console.log(`[XUI] Panel login: status=${resp.status} cookies=${cookies.length > 0 ? 'YES' : 'NO'}`);
+  console.log(`[XUI] Panel auth via API key: status=${resp.status} cookies=${cookies.length > 0 ? 'YES' : 'NO'}`);
   return cookies.join('; ');
 }
 
