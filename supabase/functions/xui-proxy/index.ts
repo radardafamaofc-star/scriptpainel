@@ -281,11 +281,35 @@ async function provisionUserOnXui(
     || await resolveLineIdByUsername(config, username);
   if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
 
-  // Step 2: edit_line to apply package (bouquets, allowed_outputs, max_connections)
+  // Step 2: Fetch package details and apply bouquets/outputs via edit_line
   if (packageId) {
+    let bouquet = '';
+    let allowedOutputs = '';
+    let maxConnections = '';
+
+    try {
+      const pkgData = await xuiRequest(config, 'get_packages');
+      const packages = pkgData?.data || pkgData;
+      const pkgList = Array.isArray(packages) ? packages : (packages && typeof packages === 'object' ? Object.values(packages) : []);
+      const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
+
+      if (pkg) {
+        bouquet = typeof pkg.bouquet === 'string' ? pkg.bouquet : JSON.stringify(pkg.bouquet || []);
+        allowedOutputs = typeof pkg.allowed_outputs === 'string' ? pkg.allowed_outputs : JSON.stringify(pkg.allowed_outputs || []);
+        maxConnections = String(pkg.max_connections || '').trim();
+        console.log(`[XUI] Package ${packageId} found: bouquet=${bouquet} allowed_outputs=${allowedOutputs} max_connections=${maxConnections}`);
+      } else {
+        console.log(`[XUI] WARNING: Package ${packageId} not found in get_packages response`);
+      }
+    } catch (e: any) {
+      console.log(`[XUI] WARNING: Failed to fetch packages: ${e.message}`);
+    }
+
     const editForm = new URLSearchParams();
     editForm.set('line_id', createdLineId);
-    editForm.set('package', packageId);
+    if (bouquet) editForm.set('bouquet', bouquet);
+    if (allowedOutputs) editForm.set('allowed_outputs', allowedOutputs);
+    if (maxConnections) editForm.set('max_connections', maxConnections);
     const editPayload = editForm.toString();
     console.log('EDIT LINE PAYLOAD:', editPayload);
 
