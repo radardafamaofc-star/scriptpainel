@@ -49,6 +49,17 @@ export default function Tests() {
     },
   });
 
+  const { data: plans = [] } = useQuery({
+    queryKey: ["plans"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("plans").select("id, name, package_id, server_id, is_test").order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const filteredPlans = plans.filter(p => p.server_id === serverId && p.is_test);
+
   const createMutation = useMutation({
     mutationFn: async () => {
       const creds = await generateTestCredentials();
