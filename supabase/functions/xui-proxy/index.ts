@@ -747,7 +747,7 @@ async function getPackageAssignments(config: XuiServerConfig, packageId: string)
 
     const bouquetIds = sanitizeSelectionIds(parseIdList((pkg as any).bouquets));
     const rawOutputs = parseIdList((pkg as any).allowed_outputs || (pkg as any).output_formats || '');
-    const outputIds = normalizeOutputFormats(rawOutputs);
+    const outputIds = normalizeOutputIds(rawOutputs);
 
     console.log(`[XUI] Package ${packageId} bouquets=${JSON.stringify(bouquetIds)} allowed_outputs=${JSON.stringify(outputIds)}`);
 
