@@ -742,7 +742,7 @@ async function getPackageAssignments(config: XuiServerConfig, packageId: string)
 
     if (!pkg) {
       console.log(`[XUI] Package ${packageId} not found`);
-      return { bouquetIds: [], outputIds: OUTPUT_FORMAT_NAMES };
+      return { bouquetIds: [], outputIds: OUTPUT_ALL_IDS };
     }
 
     const bouquetIds = sanitizeSelectionIds(parseIdList((pkg as any).bouquets));
