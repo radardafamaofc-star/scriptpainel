@@ -958,34 +958,30 @@ async function provisionUserOnXui(
     );
   }
 
-  // NOW set package_id AFTER bouquets are confirmed saved
-  // This avoids XUI 1.5.12 overriding bouquets when package_id is present
-  if (packageIdForPayload) {
+  // Set package_id only when bouquet/output are already confirmed
+  // (prevents XUI from clearing fields when package inheritance is broken)
+  if (packageIdForPayload && finalBouquetOk && finalOutputsOk) {
     try {
       const pkgForm = new URLSearchParams();
       pkgForm.set('id', finalLineId);
       pkgForm.set('line_id', finalLineId);
       pkgForm.set('package_id', packageIdForPayload);
       pkgForm.set('package', packageIdForPayload);
-      // Re-send bouquets to prevent XUI from clearing them
-      if (bouquetIds.length) {
-        appendArrayField(pkgForm, 'bouquets_selected', bouquetIds, true);
-        pkgForm.set('bouquet', JSON.stringify(bouquetIds.map(Number)));
-      }
-      if (allowedOutputIds.length) {
-        pkgForm.set('allowed_outputs', JSON.stringify(allowedOutputIds.map(Number)));
-      }
+
+      for (const bid of bouquetIds) pkgForm.append('bouquets_selected[]', bid);
+      if (allowedOutputIds.length) pkgForm.set('allowed_outputs', JSON.stringify(allowedOutputIds.map(Number)));
       if (finalUsername) pkgForm.set('username', finalUsername);
       if (password) pkgForm.set('password', password);
       if (expDateFormatted) pkgForm.set('exp_date', expDateFormatted);
       pkgForm.set('max_connections', maxConnections);
-      if (effectiveMemberId) pkgForm.set('member_id', effectiveMemberId);
 
       await postXuiForm(config, 'edit_line', pkgForm, 'edit_line(set_package)');
       console.log(`[XUI] Package ${packageIdForPayload} associated to line ${finalLineId}`);
     } catch (e: any) {
       console.log(`[XUI] WARNING: Failed to set package_id: ${e.message}`);
     }
+  } else if (packageIdForPayload) {
+    console.log('[XUI] Skipping set_package because bouquet/output are not confirmed yet.');
   }
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
