@@ -83,17 +83,24 @@ export default function Tests() {
       // 2. Provision on XUI server
       if (serverId) {
         const expTimestamp = Math.floor(expiresAt.getTime() / 1000);
+        const selectedPlan = plans.find(p => p.id === planId);
+        const xuiParams: Record<string, string> = {
+          username: creds.username,
+          password: creds.password,
+          max_connections: "1",
+          exp_date: String(expTimestamp),
+        };
+        if (selectedPlan?.package_id) {
+          xuiParams.package_id = selectedPlan.package_id;
+        }
+        console.log("TEST CREATE XUI PARAMS:", xuiParams);
+
         const { data: xuiRes, error: xuiErr } = await supabase.functions.invoke("xui-proxy", {
           body: {
             action: "xui_command",
             server_id: serverId,
             xui_action: "user_create",
-            xui_params: {
-              username: creds.username,
-              password: creds.password,
-              max_connections: "1",
-              exp_date: String(expTimestamp),
-            },
+            xui_params: xuiParams,
           },
         });
 
