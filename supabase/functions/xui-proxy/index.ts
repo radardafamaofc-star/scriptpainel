@@ -237,15 +237,16 @@ async function resolveXuiPackageId(serviceClient: any, packageOrPlanId: string):
   return resolved;
 }
 
-async function xuiPanelLogin(baseUrl: string, panelUser: string, panelPass: string): Promise<string> {
-  const resp = await tryFetch(`${baseUrl}/post.php`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `action=login&username=${encodeURIComponent(panelUser)}&password=${encodeURIComponent(panelPass)}`,
+// Login to XUI panel using API key to get a session cookie
+async function xuiPanelLogin(baseUrl: string, apiKey: string): Promise<string> {
+  // Try authenticating via the API key - XUI may set a session
+  const resp = await tryFetch(`${baseUrl}/?api_key=${encodeURIComponent(apiKey)}&action=user_info`, {
+    method: 'GET',
+    redirect: 'manual',
   });
   const raw = resp.headers.get('set-cookie') || '';
   const cookies = raw.split(/,(?=\s*\w+=)/).map(c => c.split(';')[0].trim()).filter(Boolean);
-  console.log(`[XUI] Panel login: status=${resp.status} cookies=${cookies.length > 0 ? 'YES' : 'NO'}`);
+  console.log(`[XUI] Panel auth via API key: status=${resp.status} cookies=${cookies.length > 0 ? 'YES' : 'NO'}`);
   return cookies.join('; ');
 }
 
@@ -334,21 +335,15 @@ async function provisionUserOnXui(
     }
   }
 
-  // 4. Login to XUI panel
-  const panelUser = server.username || '';
-  const panelPass = server.password || '';
-  if (!panelUser || !panelPass) {
-    throw new Error('Username/password do painel XUI não configurados no servidor');
-  }
-  const sessionCookie = await xuiPanelLogin(baseUrl, panelUser, panelPass);
-  if (!sessionCookie) {
-    throw new Error('Falha no login do painel XUI. Verifique username/password do servidor.');
-  }
+  // 4. Authenticate with XUI panel via API key
+  const sessionCookie = await xuiPanelLogin(baseUrl, apiKey);
 
   // 5. Build form data for POST /post.php (replicating browser behavior)
+  // Include api_key in form data as fallback auth
   const formParts: string[] = [
     'action=line',
     'referer=lines',
+    `api_key=${encodeURIComponent(apiKey)}`,
     `username=${encodeURIComponent(username)}`,
     `password=${encodeURIComponent(password)}`,
     'member_id=1',
