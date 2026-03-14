@@ -139,10 +139,26 @@ function hasSameNumericIds(current: unknown, expected: string[]): boolean {
   return currentNorm.every((id, idx) => id === expectedNorm[idx]);
 }
 
-function appendArrayField(form: URLSearchParams, key: string, values: string[]) {
+const OUTPUT_NAME_BY_ID: Record<string, string> = {
+  '1': 'mpegts',
+  '2': 'hls',
+  '3': 'rtmp',
+};
+
+function toOutputFormatNames(values: string[]): string[] {
+  return Array.from(new Set(
+    values
+      .map((value) => OUTPUT_NAME_BY_ID[String(value).replace(/\D/g, '').trim()])
+      .filter(Boolean)
+  ));
+}
+
+function appendArrayField(form: URLSearchParams, key: string, values: string[], includePlainKey = true) {
   for (const value of values) {
     const normalized = String(value || '').trim();
-    if (normalized) form.append(`${key}[]`, normalized);
+    if (!normalized) continue;
+    form.append(`${key}[]`, normalized);
+    if (includePlainKey) form.append(key, normalized);
   }
 }
 
@@ -406,14 +422,22 @@ async function createLinePost(
 
   const bouquetStringIds = bouquetIds.map((id) => String(id));
   if (bouquetStringIds.length) {
-    appendArrayField(form, 'bouquets_selected', bouquetStringIds);
+    appendArrayField(form, 'bouquets_selected', bouquetStringIds, true);
     form.set('bouquet', JSON.stringify(bouquetIds));
   }
 
   if (allowedOutputIds.length) {
+    const allowedOutputStringIds = allowedOutputIds.map(String);
     const allowedOutputsJson = JSON.stringify(allowedOutputIds);
+    const allowedOutputNames = toOutputFormatNames(allowedOutputStringIds);
+    const allowedOutputNamesJson = allowedOutputNames.length ? JSON.stringify(allowedOutputNames) : '';
+
     form.set('allowed_outputs', allowedOutputsJson);
     form.set('output_formats', allowedOutputsJson);
+    if (allowedOutputNamesJson) form.append('output_formats', allowedOutputNamesJson);
+
+    appendArrayField(form, 'allowed_outputs', allowedOutputStringIds, true);
+    if (allowedOutputNames.length) appendArrayField(form, 'output_formats', allowedOutputNames, true);
   }
 
   console.log('create_line payload:', form.toString());
@@ -514,10 +538,12 @@ async function enforceAllowedOutputsPostCreate(
 
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
+  const targetAllowedNames = toOutputFormatNames(targetAllowed);
 
   const bouquetJson = JSON.stringify(expectedBouquetNumeric);
   const bouquetCsv = expectedBouquetIds.join(',');
   const allowedJson = JSON.stringify(allowedNumeric);
+  const allowedNamesJson = targetAllowedNames.length ? JSON.stringify(targetAllowedNames) : '';
 
   const buildBaseForm = () => {
     const form = new URLSearchParams();
@@ -537,15 +563,32 @@ async function enforceAllowedOutputsPostCreate(
 
   const attempts: Array<{ label: string; fill: (form: URLSearchParams) => void }> = [
     {
-      label: 'arrays_json',
+      label: 'arrays_json_dual',
       fill: (form) => {
         if (expectedBouquetIds.length) {
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
           form.set('bouquet', bouquetJson);
         }
         if (allowedNumeric.length) {
           form.set('allowed_outputs', allowedJson);
           form.set('output_formats', allowedJson);
+          appendArrayField(form, 'allowed_outputs', targetAllowed, true);
+        }
+      },
+    },
+    {
+      label: 'arrays_names',
+      fill: (form) => {
+        if (expectedBouquetIds.length) {
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
+          form.set('bouquet', bouquetJson);
+        }
+        if (allowedNumeric.length) {
+          form.set('allowed_outputs', allowedJson);
+          if (allowedNamesJson) {
+            form.set('output_formats', allowedNamesJson);
+            appendArrayField(form, 'output_formats', targetAllowedNames, true);
+          }
         }
       },
     },
@@ -553,7 +596,7 @@ async function enforceAllowedOutputsPostCreate(
       label: 'arrays_csv',
       fill: (form) => {
         if (expectedBouquetIds.length) {
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
           form.set('bouquet', bouquetCsv);
         }
         if (allowedNumeric.length) {
@@ -565,7 +608,7 @@ async function enforceAllowedOutputsPostCreate(
       label: 'arrays_only',
       fill: (form) => {
         if (expectedBouquetIds.length) {
-          appendArrayField(form, 'bouquets_selected', expectedBouquetIds);
+          appendArrayField(form, 'bouquets_selected', expectedBouquetIds, true);
         }
       },
     },
@@ -619,11 +662,17 @@ async function enforceAllowedOutputsPostCreate(
       if (targetUsername) getParams.username = targetUsername;
       if (targetExpDate) getParams.exp_date = targetExpDate;
 
-      if (attempt.label === 'arrays_json') {
+      if (attempt.label === 'arrays_json_dual') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
         if (allowedNumeric.length) {
           getParams.allowed_outputs = allowedJson;
           getParams.output_formats = allowedJson;
+        }
+      } else if (attempt.label === 'arrays_names') {
+        if (expectedBouquetIds.length) getParams.bouquet = bouquetJson;
+        if (allowedNumeric.length) {
+          getParams.allowed_outputs = allowedJson;
+          if (allowedNamesJson) getParams.output_formats = allowedNamesJson;
         }
       } else if (attempt.label === 'arrays_csv') {
         if (expectedBouquetIds.length) getParams.bouquet = bouquetCsv;
@@ -634,6 +683,11 @@ async function enforceAllowedOutputsPostCreate(
 
       if (expectedBouquetIds.length) {
         getParams['bouquets_selected[]'] = expectedBouquetIds;
+        getParams.bouquets_selected = expectedBouquetIds;
+      }
+
+      if (targetAllowed.length && (attempt.label === 'arrays_json_dual' || attempt.label === 'arrays_names')) {
+        getParams['allowed_outputs[]'] = targetAllowed;
       }
 
       console.log(`[XUI] edit_line GET sync (${attempt.label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
@@ -801,12 +855,24 @@ async function provisionUserOnXui(
 
   const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
   const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
+  const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
+
+  let resolvedPackageFromPlan = '';
+  if (!requestedPackageId && planName) {
+    resolvedPackageFromPlan = await resolvePackageIdFromBouquets(config, {
+      requestedPackageId,
+      planName,
+      bouquetIds: explicitBouquets,
+    });
+  }
 
   const bouquetIds = explicitBouquets.length
     ? explicitBouquets
     : requestedPackageId
       ? [requestedPackageId]
-      : DEFAULT_BOUQUET_IDS;
+      : resolvedPackageFromPlan
+        ? [resolvedPackageFromPlan]
+        : DEFAULT_BOUQUET_IDS;
 
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
@@ -814,18 +880,11 @@ async function provisionUserOnXui(
   const requestedMemberId = String(memberId || rawParams.member_id || '').replace(/\D/g, '').trim();
   const effectiveMemberId = requestedMemberId || await getOwnerMemberId(config);
 
-  const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
-  let effectivePackageId = requestedPackageId;
-  if (!effectivePackageId && planName) {
-    effectivePackageId = await resolvePackageIdFromBouquets(config, {
-      requestedPackageId,
-      planName,
-      bouquetIds,
-    });
-  }
+  // Só envia package_id quando veio explícito; para planos sem package_id usamos bouquets explícitos
+  const packageIdForPayload = requestedPackageId;
 
   console.log(
-    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
+    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageIdForPayload || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
   );
 
   let createData: any = null;
@@ -835,7 +894,7 @@ async function provisionUserOnXui(
       password,
       ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
       memberId: effectiveMemberId,
-      ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
+      ...(packageIdForPayload ? { packageId: packageIdForPayload } : {}),
       maxConnections: Number(maxConnections),
       bouquetIds: bouquetIds.map(Number),
       allowedOutputIds: allowedOutputIds.map(Number),
@@ -883,7 +942,7 @@ async function provisionUserOnXui(
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
     const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs ?? finalRow?.output_formats, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
-    const needsPackageSync = !!effectivePackageId && currentPackageId !== effectivePackageId;
+    const needsPackageSync = !!packageIdForPayload && currentPackageId !== packageIdForPayload;
 
     if (needsBouquetSync || needsOutputSync || needsUsernameSync || needsPackageSync) {
       console.log(
@@ -897,7 +956,7 @@ async function provisionUserOnXui(
         expectedUsername: username,
         expectedPassword: password,
         expectedMemberId: effectiveMemberId,
-        expectedPackageId: effectivePackageId,
+        expectedPackageId: packageIdForPayload,
         expDate: expDateFormatted,
         maxConnections,
       });
@@ -938,6 +997,17 @@ async function provisionUserOnXui(
   finalLineId = String(confirmedRow.id || confirmedRow.line_id || finalLineId).trim();
   finalUsername = String(confirmedRow.username || finalUsername || username).trim();
   active = isLineActive(confirmedRow);
+
+  const finalBouquetOk = hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
+  const finalOutputsOk = hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
+  const finalPackageId = String(confirmedRow?.package_id || '').replace(/\D/g, '').trim();
+  const finalPackageOk = !packageIdForPayload || finalPackageId === packageIdForPayload;
+
+  if (!finalBouquetOk || !finalOutputsOk || !finalPackageOk) {
+    throw new Error(
+      `XUI não persistiu bouquet/access corretamente (bouquet=${confirmedRow?.bouquet || '[]'} outputs=${confirmedRow?.allowed_outputs || '[]'} package_id=${finalPackageId || 'none'})`
+    );
+  }
 
   console.log(`[XUI] Final state: line_id=${finalLineId} username=${finalUsername} active=${active}`);
 
