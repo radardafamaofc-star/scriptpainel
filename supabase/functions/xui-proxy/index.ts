@@ -779,7 +779,7 @@ function buildCreateLineUrl(
   config: XuiServerConfig,
   params: Record<string, string>,
   bouquetIds: string[],
-  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  outputFormats: string[] = OUTPUT_ALL_IDS,
 ): string {
   const baseUrl = config.url.replace(/\/+$/, '');
   const parts: string[] = [
