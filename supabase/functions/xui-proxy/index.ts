@@ -158,11 +158,20 @@ async function resolveLineIdByUsername(config: XuiServerConfig, username: string
   return '';
 }
 
-function formatLocalDateString(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+function normalizeUnixTimestamp(value: string): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  if (/^\d+$/.test(raw)) {
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric) || numeric <= 0) return '';
+    return String(Math.floor(numeric > 1e12 ? numeric / 1000 : numeric));
+  }
+
+  const parsed = Date.parse(raw);
+  if (!Number.isNaN(parsed) && parsed > 0) return String(Math.floor(parsed / 1000));
+
+  return '';
 }
 
 async function getLineRowById(config: XuiServerConfig, lineId: string): Promise<any | null> {
@@ -200,11 +209,9 @@ async function waitForLinePresence(
 }
 
 // ============================================================
-// SIMPLIFIED create_line for XUIOne 1.5.12
-// XUI applies bouquets/outputs automatically from package_id
+// create_line provisioning for IPTV lines
 // - POST application/x-www-form-urlencoded
-// - Only: username, password, package_id, member_id, exp_date
-// - NO bouquet, NO allowed_outputs, NO edit_line
+// - Fields: username, password, package, member_id, exp_date(unix)
 // ============================================================
 async function provisionUserOnXui(
   config: XuiServerConfig,
@@ -215,34 +222,23 @@ async function provisionUserOnXui(
   const password = rawParams.password?.trim();
   if (!username || !password) throw new Error('username e password são obrigatórios');
 
-  // Format expiry date
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
-  let expDateFormatted = '';
-  if (rawExpDate) {
-    const ts = Number(rawExpDate);
-    if (!isNaN(ts) && ts > 1_000_000_000) {
-      expDateFormatted = formatLocalDateString(new Date(ts > 1e10 ? ts : ts * 1000));
-    } else if (/^\d{4}-\d{2}-\d{2}/.test(rawExpDate)) {
-      expDateFormatted = rawExpDate.substring(0, 10);
-    }
-  }
-
+  const expDateUnix = normalizeUnixTimestamp(rawExpDate);
   const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
   const form = new URLSearchParams();
   form.set('username', username);
   form.set('password', password);
-  if (packageId) form.set('group_id', packageId);
+  if (packageId) form.set('package', packageId);
   form.set('member_id', '0');
-  if (expDateFormatted) form.set('exp_date', expDateFormatted);
+  if (expDateUnix) form.set('exp_date', expDateUnix);
 
   const payload = form.toString();
-  console.log('CREATE USER PAYLOAD:', payload);
+  console.log('CREATE LINE PAYLOAD:', payload);
 
-  // POST create_user (applies bouquets + outputs from package automatically)
   const baseUrl = config.url.replace(/\/+$/, '');
   const apiKey = encodeURIComponent(config.api_key);
-  const url = `${baseUrl}/?api_key=${apiKey}&action=create_user`;
+  const url = `${baseUrl}/?api_key=${apiKey}&action=create_line`;
 
   console.log(`[XUI] POST: ${url.replace(config.api_key, '***')}`);
   console.log(`[XUI] POST body: ${payload}`);
@@ -259,17 +255,16 @@ async function provisionUserOnXui(
   }
 
   const createData = JSON.parse(text);
-  console.log('create_user response:', JSON.stringify(createData).substring(0, 1000));
+  console.log('create_line response:', JSON.stringify(createData).substring(0, 1000));
 
   const createStatus = String(createData?.status || '').toUpperCase();
   const createError = getXuiError(createData);
   if (createStatus.includes('EXISTS_USERNAME')) throw new Error(`Username já existe no XUI: ${username}`);
   if (createError && !createStatus.includes('SUCCESS')) throw new Error(createError);
 
-  // Resolve line_id
   const createdLineId = String(createData?.data?.id || createData?.id || '').trim()
     || await resolveLineIdByUsername(config, username);
-  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_user');
+  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
 
   // Verify final state via get_line
   const finalRow = await waitForLinePresence(config, createdLineId, username, 2, 500);
@@ -282,7 +277,7 @@ async function provisionUserOnXui(
   );
 
   return {
-    action: 'create_user' as const,
+    action: 'create_line' as const,
     data: {
       ...createData,
       data: {
