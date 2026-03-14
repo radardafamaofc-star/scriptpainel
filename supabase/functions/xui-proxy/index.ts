@@ -304,11 +304,11 @@ async function provisionUserOnXui(
       const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
 
       if (pkg) {
-        // XUI expects comma-separated IDs, NOT JSON arrays
+        // XUI stores bouquet/allowed_outputs as JSON arrays in DB: [1,2,3]
         const toBouquetIds = parseIdList(pkg.bouquet);
-        bouquet = toBouquetIds.join(',');
+        bouquet = `[${toBouquetIds.join(',')}]`;
         const toOutputIds = parseIdList(pkg.allowed_outputs);
-        allowedOutputs = toOutputIds.join(',');
+        allowedOutputs = `[${toOutputIds.join(',')}]`;
         maxConnections = String(pkg.max_connections || '').trim();
         console.log(`[XUI] Package ${packageId} found: bouquet=${bouquet} allowed_outputs=${allowedOutputs} max_connections=${maxConnections}`);
       } else {
