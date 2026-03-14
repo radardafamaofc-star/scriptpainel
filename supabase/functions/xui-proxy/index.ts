@@ -304,8 +304,11 @@ async function provisionUserOnXui(
       const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
 
       if (pkg) {
-        bouquet = typeof pkg.bouquet === 'string' ? pkg.bouquet : JSON.stringify(pkg.bouquet || []);
-        allowedOutputs = typeof pkg.allowed_outputs === 'string' ? pkg.allowed_outputs : JSON.stringify(pkg.allowed_outputs || []);
+        // XUI expects comma-separated IDs, NOT JSON arrays
+        const toBouquetIds = parseIdList(pkg.bouquet);
+        bouquet = toBouquetIds.join(',');
+        const toOutputIds = parseIdList(pkg.allowed_outputs);
+        allowedOutputs = toOutputIds.join(',');
         maxConnections = String(pkg.max_connections || '').trim();
         console.log(`[XUI] Package ${packageId} found: bouquet=${bouquet} allowed_outputs=${allowedOutputs} max_connections=${maxConnections}`);
       } else {
