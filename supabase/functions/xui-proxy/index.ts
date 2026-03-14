@@ -411,11 +411,9 @@ async function createLinePost(
   const memberId = String(params.memberId || '').replace(/\D/g, '').trim();
   if (memberId) form.set('member_id', memberId);
 
-  const packageId = String(params.packageId || '').replace(/\D/g, '').trim();
-  if (packageId && packageId !== '0') {
-    form.set('package_id', packageId);
-    form.set('package', packageId);
-  }
+  // NOTE: Do NOT send package_id/package in create_line.
+  // XUI 1.5.12 with disabled packages overrides bouquet/allowed_outputs to []
+  // when package_id is present. We set it AFTER bouquets are confirmed.
 
   const bouquetIds = params.bouquetIds.map(Number).filter((id) => Number.isFinite(id));
   const allowedOutputIds = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
