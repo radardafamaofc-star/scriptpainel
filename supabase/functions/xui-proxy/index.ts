@@ -344,7 +344,7 @@ function buildOutputPayload(outputFormats: string[] = OUTPUT_ALL_IDS): Record<st
   // Always send numeric IDs only — XUI uses access_output_id (1,2,3)
   const ids = normalizeOutputIds(outputFormats);
   return {
-    'allowed_outputs[]': ids,
+    'access_output[]': ids,
   };
 }
 
