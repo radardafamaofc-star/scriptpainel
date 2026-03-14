@@ -825,12 +825,24 @@ async function provisionUserOnXui(
 
   const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
   const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
+  const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
+
+  let resolvedPackageFromPlan = '';
+  if (!requestedPackageId && planName) {
+    resolvedPackageFromPlan = await resolvePackageIdFromBouquets(config, {
+      requestedPackageId,
+      planName,
+      bouquetIds: explicitBouquets,
+    });
+  }
 
   const bouquetIds = explicitBouquets.length
     ? explicitBouquets
     : requestedPackageId
       ? [requestedPackageId]
-      : DEFAULT_BOUQUET_IDS;
+      : resolvedPackageFromPlan
+        ? [resolvedPackageFromPlan]
+        : DEFAULT_BOUQUET_IDS;
 
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
@@ -838,18 +850,11 @@ async function provisionUserOnXui(
   const requestedMemberId = String(memberId || rawParams.member_id || '').replace(/\D/g, '').trim();
   const effectiveMemberId = requestedMemberId || await getOwnerMemberId(config);
 
-  const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
-  let effectivePackageId = requestedPackageId;
-  if (!effectivePackageId && planName) {
-    effectivePackageId = await resolvePackageIdFromBouquets(config, {
-      requestedPackageId,
-      planName,
-      bouquetIds,
-    });
-  }
+  // Só envia package_id quando veio explícito; para planos sem package_id usamos bouquets explícitos
+  const packageIdForPayload = requestedPackageId;
 
   console.log(
-    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${effectivePackageId || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
+    `[XUI] Provisioning ${username} member_id=${effectiveMemberId} package_id=${packageIdForPayload || 'none'} bouquets=${bouquetIds.join(',')} allowed_outputs=${allowedOutputIds.join(',')}`,
   );
 
   let createData: any = null;
