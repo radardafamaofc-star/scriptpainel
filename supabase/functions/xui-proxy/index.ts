@@ -846,7 +846,7 @@ async function syncLineAssignments(
 ): Promise<boolean> {
   const bouquetIds = sanitizeSelectionIds(expected.bouquetIds || []);
   const packageIds = sanitizeSelectionIds(expected.packageIds || []);
-  const normalizedOutputs = normalizeOutputFormats(outputFormats);
+  const normalizedOutputs = normalizeOutputIds(outputFormats);
 
   if (!lineId) return false;
 
