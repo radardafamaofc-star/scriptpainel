@@ -184,7 +184,7 @@ export default function Dashboard() {
   });
 
   const createTestMutation = useMutation({
-    mutationFn: async (plan: { serverId: string | null; durationHours: number; packageId: string; planName: string }) => {
+    mutationFn: async (plan: { id: string; serverId: string | null; durationHours: number; packageId: string; planName: string }) => {
       const { generateUsername, generatePassword } = await import("@/lib/credentials");
       const [username, password] = await Promise.all([generateUsername(), generatePassword()]);
       const totalHours = Math.max(1, plan.durationHours || 0);
