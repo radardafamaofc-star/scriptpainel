@@ -206,11 +206,9 @@ export default function Notices() {
             </div>
             <div>
               <Label>Conteúdo</Label>
-              <Textarea
-                value={form.content}
-                onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                placeholder="Escreva o aviso que será exibido..."
-                rows={6}
+              <RichTextEditor
+                content={form.content}
+                onChange={(html) => setForm((f) => ({ ...f, content: html }))}
               />
             </div>
           </div>
