@@ -551,7 +551,6 @@ async function enforceAllowedOutputsPostCreate(
 
   const allowedNumeric = params.allowedOutputIds.map(Number).filter((id) => Number.isFinite(id));
   const targetAllowed = allowedNumeric.map((id) => String(id));
-  const allowedJson = JSON.stringify(allowedNumeric);
 
   const checkSynced = async (label: string) => {
     const refreshed = await getLineRowById(config, lineId);
