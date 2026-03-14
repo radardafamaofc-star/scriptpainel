@@ -754,7 +754,7 @@ async function getPackageAssignments(config: XuiServerConfig, packageId: string)
     return { bouquetIds, outputIds };
   } catch (e: any) {
     console.log(`[XUI] Failed to get package assignments: ${e.message}`);
-    return { bouquetIds: [], outputIds: OUTPUT_FORMAT_NAMES };
+    return { bouquetIds: [], outputIds: OUTPUT_ALL_IDS };
   }
 }
 
