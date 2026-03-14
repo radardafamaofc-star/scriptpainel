@@ -580,8 +580,7 @@ async function enforceAllowedOutputsPostCreate(
       if (targetExpDate) form.set('exp_date', targetExpDate);
       if (includeMemberId && targetMemberId) form.set('member_id', targetMemberId);
 
-      for (const bid of expectedBouquetIds) form.append('bouquets_selected[]', bid);
-      if (allowedNumeric.length) form.set('allowed_outputs', allowedJson);
+      applyLineAccessFields(form, expectedBouquetIds, targetAllowed);
 
       const label = includeMemberId ? 'spec_with_member' : 'spec_without_member';
       console.log(`[XUI] edit_line sync (${label}) payload: ${form.toString()}`);
@@ -597,17 +596,17 @@ async function enforceAllowedOutputsPostCreate(
       const synced = await checkSynced(`edit_line(${label})`);
       if (synced) return synced;
 
-      // GET fallback with exactly same API-spec fields
+      // GET fallback with exactly same credentials + access fields
       const getParams: Record<string, string | string[]> = {
         id: lineId,
         line_id: lineId,
         max_connections: targetMaxConnections,
       };
       if (targetUsername) getParams.username = targetUsername;
+      if (targetPassword) getParams.password = targetPassword;
       if (targetExpDate) getParams.exp_date = targetExpDate;
       if (includeMemberId && targetMemberId) getParams.member_id = targetMemberId;
-      if (expectedBouquetIds.length) getParams['bouquets_selected[]'] = expectedBouquetIds;
-      if (allowedNumeric.length) getParams.allowed_outputs = allowedJson;
+      applyLineAccessQueryParams(getParams, expectedBouquetIds, targetAllowed);
 
       console.log(`[XUI] edit_line GET sync (${label}) params: ${JSON.stringify(getParams).substring(0, 1000)}`);
       const editGetData = await xuiRequestGetOnly(config, 'edit_line', getParams);
