@@ -335,18 +335,11 @@ async function provisionUserOnXui(
     }
   }
 
-  // 4. Login to XUI panel
-  const panelUser = server.username || '';
-  const panelPass = server.password || '';
-  if (!panelUser || !panelPass) {
-    throw new Error('Username/password do painel XUI não configurados no servidor');
-  }
-  const sessionCookie = await xuiPanelLogin(baseUrl, panelUser, panelPass);
-  if (!sessionCookie) {
-    throw new Error('Falha no login do painel XUI. Verifique username/password do servidor.');
-  }
+  // 4. Authenticate with XUI panel via API key
+  const sessionCookie = await xuiPanelLogin(baseUrl, apiKey);
 
   // 5. Build form data for POST /post.php (replicating browser behavior)
+  // Include api_key in form data as fallback auth
   const formParts: string[] = [
     'action=line',
     'referer=lines',
