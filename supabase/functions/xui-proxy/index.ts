@@ -864,7 +864,7 @@ async function provisionUserOnXui(
       password,
       ...(expDateFormatted ? { expDate: expDateFormatted } : {}),
       memberId: effectiveMemberId,
-      ...(effectivePackageId ? { packageId: effectivePackageId } : {}),
+      ...(packageIdForPayload ? { packageId: packageIdForPayload } : {}),
       maxConnections: Number(maxConnections),
       bouquetIds: bouquetIds.map(Number),
       allowedOutputIds: allowedOutputIds.map(Number),
@@ -912,7 +912,7 @@ async function provisionUserOnXui(
     const needsBouquetSync = !hasSameNumericIds(finalRow?.bouquet, bouquetIds);
     const needsOutputSync = !hasSameNumericIds(finalRow?.allowed_outputs ?? finalRow?.output_formats, allowedOutputIds);
     const needsUsernameSync = String(finalRow?.username || '').trim() !== username;
-    const needsPackageSync = !!effectivePackageId && currentPackageId !== effectivePackageId;
+    const needsPackageSync = !!packageIdForPayload && currentPackageId !== packageIdForPayload;
 
     if (needsBouquetSync || needsOutputSync || needsUsernameSync || needsPackageSync) {
       console.log(
@@ -926,7 +926,7 @@ async function provisionUserOnXui(
         expectedUsername: username,
         expectedPassword: password,
         expectedMemberId: effectiveMemberId,
-        expectedPackageId: effectivePackageId,
+        expectedPackageId: packageIdForPayload,
         expDate: expDateFormatted,
         maxConnections,
       });
