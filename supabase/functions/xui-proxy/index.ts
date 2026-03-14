@@ -805,7 +805,7 @@ function buildEditLineUrl(
   config: XuiServerConfig,
   lineId: string,
   bouquetIds: string[],
-  outputFormats: string[] = OUTPUT_FORMAT_NAMES,
+  outputFormats: string[] = OUTPUT_ALL_IDS,
   packageId: string = '',
   username: string = '',
   password: string = '',
