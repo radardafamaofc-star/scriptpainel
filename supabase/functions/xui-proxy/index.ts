@@ -203,8 +203,8 @@ async function waitForLinePresence(
 async function resolvePackageContents(
   config: XuiServerConfig,
   packageId: string,
-): Promise<{ bouquetIds: string[]; allowedOutputIds: string[] }> {
-  const result = { bouquetIds: [] as string[], allowedOutputIds: [] as string[] };
+): Promise<{ bouquetIds: string[]; allowedOutputIds: string[]; maxConnections: string; rawPackage: any }> {
+  const result = { bouquetIds: [] as string[], allowedOutputIds: [] as string[], maxConnections: '1', rawPackage: null as any };
   const pid = String(packageId || '').replace(/\D/g, '').trim();
   if (!pid || pid === '0') return result;
 
@@ -224,13 +224,22 @@ async function resolvePackageContents(
       return result;
     }
 
+    result.rawPackage = pkg;
+    console.log('PACKAGE DATA:', JSON.stringify(pkg).substring(0, 2000));
+
+    // Extract bouquets
     const rawBouquets = pkg.bouquets ?? pkg.bouquet ?? pkg.bouquet_ids ?? pkg.bouquets_selected ?? '';
     result.bouquetIds = parseIdList(rawBouquets).map((v) => v.replace(/\D/g, '').trim()).filter(Boolean);
 
+    // Extract allowed_outputs / output_formats
     const rawOutputs = pkg.allowed_outputs ?? pkg.output_formats ?? pkg.allowed_output ?? '';
     result.allowedOutputIds = parseIdList(rawOutputs).map((v) => v.replace(/\D/g, '').trim()).filter(Boolean);
 
-    console.log(`[XUI] Package ${pid} contents: bouquets=[${result.bouquetIds.join(',')}] outputs=[${result.allowedOutputIds.join(',')}]`);
+    // Extract max_connections from package
+    const pkgMaxConn = String(pkg.max_connections || pkg.max_connection || '').trim();
+    if (pkgMaxConn && Number(pkgMaxConn) > 0) result.maxConnections = pkgMaxConn;
+
+    console.log(`[XUI] Package ${pid} resolved: bouquets=[${result.bouquetIds.join(',')}] outputs=[${result.allowedOutputIds.join(',')}] max_connections=${result.maxConnections}`);
   } catch (e: any) {
     console.log(`[XUI] Failed to resolve package contents: ${e.message}`);
   }
@@ -238,14 +247,12 @@ async function resolvePackageContents(
   return result;
 }
 
-const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
-const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
-
 // ============================================================
 // SIMPLIFIED create_line for XUIOne 1.5.12
 // - POST application/x-www-form-urlencoded
-// - bouquet and allowed_outputs as JSON strings
-// - NO bouquets_selected[], NO edit_line
+// - bouquet and allowed_outputs as JSON strings from package
+// - NO hardcoded defaults - everything comes from the package
+// - NO edit_line
 // - member_id=0 (admin context)
 // ============================================================
 async function provisionUserOnXui(
@@ -270,32 +277,30 @@ async function provisionUserOnXui(
   }
 
   const requestedPackageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
-  const explicitBouquets = toNumericIdList(rawParams.bouquets ?? rawParams.bouquet, []);
-  const explicitAllowedOutputs = toNumericIdList(rawParams.allowed_outputs, []);
 
-  // Resolve package contents if needed
-  let pkgContents = { bouquetIds: [] as string[], allowedOutputIds: [] as string[] };
-  if (requestedPackageId && (!explicitBouquets.length || !explicitAllowedOutputs.length)) {
-    pkgContents = await resolvePackageContents(config, requestedPackageId);
+  // Fetch package data from XUI server
+  let bouquetIds: string[] = [];
+  let allowedOutputIds: string[] = [];
+  let maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
+
+  if (requestedPackageId) {
+    const pkgContents = await resolvePackageContents(config, requestedPackageId);
+    bouquetIds = pkgContents.bouquetIds;
+    allowedOutputIds = pkgContents.allowedOutputIds;
+    if (Number(pkgContents.maxConnections) > 0) {
+      maxConnections = pkgContents.maxConnections;
+    }
+    // Override with explicit max_connections from params if provided
+    if (rawParams.max_connections && Number(rawParams.max_connections) > 0) {
+      maxConnections = String(Number(rawParams.max_connections));
+    }
+  } else {
+    console.log('[XUI] No package_id provided - creating line without bouquets/outputs');
   }
 
-  const bouquetIds = explicitBouquets.length
-    ? explicitBouquets
-    : pkgContents.bouquetIds.length
-      ? pkgContents.bouquetIds
-      : DEFAULT_BOUQUET_IDS;
-
-  const allowedOutputIds = explicitAllowedOutputs.length
-    ? explicitAllowedOutputs
-    : pkgContents.allowedOutputIds.length
-      ? pkgContents.allowedOutputIds
-      : DEFAULT_ALLOWED_OUTPUT_IDS;
-
-  const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-
-  // Build the payload exactly as the user specified
-  const bouquetJson = JSON.stringify(bouquetIds.map(Number));
-  const allowedOutputsJson = JSON.stringify(allowedOutputIds.map(Number));
+  // Build the payload
+  const bouquetJson = bouquetIds.length ? JSON.stringify(bouquetIds.map(Number)) : '[]';
+  const allowedOutputsJson = allowedOutputIds.length ? JSON.stringify(allowedOutputIds.map(Number)) : '[]';
 
   const form = new URLSearchParams();
   form.set('username', username);
