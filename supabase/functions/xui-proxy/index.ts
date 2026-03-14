@@ -209,9 +209,9 @@ async function waitForLinePresence(
 }
 
 // ============================================================
-// create_line provisioning for IPTV lines
-// - POST application/x-www-form-urlencoded
-// - Fields: username, password, package, member_id, exp_date(unix)
+// Provision IPTV line via POST /post.php (XUI panel form endpoint)
+// Fields: action=line, referer=lines, username, password, member_id,
+//         exp_date, max_connections, bouquets_selected, access_output[]
 // ============================================================
 async function provisionUserOnXui(
   config: XuiServerConfig,
@@ -225,14 +225,13 @@ async function provisionUserOnXui(
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
   const packageId = String(rawParams.package_id || rawParams.package || '').replace(/\D/g, '').trim();
 
-  // XUI expects exp_date as "YYYY-MM-DD HH:MM:SS"; dates without time are treated as 00:00:00 causing instant expiry
+  // Format exp_date as "YYYY-MM-DD HH:MM"
   let expDateFormatted = '';
   if (rawExpDate) {
     const raw = String(rawExpDate).trim();
     let d: Date | null = null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
-      // Date-only string: append end-of-day
-      expDateFormatted = `${raw} 23:59:59`;
+      expDateFormatted = `${raw} 23:59`;
     } else if (/^\d+$/.test(raw)) {
       const ts = Number(raw);
       d = new Date(ts > 1e12 ? ts : ts * 1000);
@@ -246,94 +245,113 @@ async function provisionUserOnXui(
         String(d.getMonth() + 1).padStart(2, '0') + '-' +
         String(d.getDate()).padStart(2, '0') + ' ' +
         String(d.getHours()).padStart(2, '0') + ':' +
-        String(d.getMinutes()).padStart(2, '0') + ':' +
-        String(d.getSeconds()).padStart(2, '0');
+        String(d.getMinutes()).padStart(2, '0');
     }
   }
 
-  // Build create_line payload — include package if numeric XUI ID provided
+  // Fetch bouquets and outputs from the XUI package
+  let bouquetsSelected: string[] = [];
+  let accessOutputs: string[] = [];
+  let maxConnections = rawParams.max_connections || '1';
+
+  if (packageId && /^\d+$/.test(packageId)) {
+    try {
+      const pkgData = await xuiRequest(config, 'get_packages');
+      const packages = pkgData?.data || pkgData;
+      const pkgList = Array.isArray(packages) ? packages : Object.values(packages || {}).filter(i => i && typeof i === 'object');
+      const pkg = pkgList.find((p: any) => String(p?.id || '').trim() === packageId);
+      if (pkg) {
+        bouquetsSelected = parseIdList(pkg.bouquet).filter(Boolean);
+        accessOutputs = parseIdList(pkg.allowed_outputs).filter(Boolean);
+        if (pkg.max_connections) maxConnections = String(pkg.max_connections);
+        console.log(`[XUI] Package ${packageId}: bouquets=${JSON.stringify(bouquetsSelected)} outputs=${JSON.stringify(accessOutputs)} max_conn=${maxConnections}`);
+      } else {
+        console.log(`[XUI] WARNING: Package ${packageId} not found in get_packages`);
+      }
+    } catch (e: any) {
+      console.log(`[XUI] WARNING: Failed to fetch packages: ${e.message}`);
+    }
+  }
+
+  // Build POST /post.php payload
+  const baseUrl = config.url.replace(/\/+$/, '');
   const form = new URLSearchParams();
+  form.set('action', 'line');
+  form.set('referer', 'lines');
   form.set('username', username);
   form.set('password', password);
-  form.set('member_id', '0');
+  form.set('member_id', '1');
+  form.set('max_connections', maxConnections);
   if (expDateFormatted) form.set('exp_date', expDateFormatted);
 
-  // Only send package if it's a valid numeric XUI package ID
-  if (packageId && /^\d+$/.test(packageId)) {
-    form.set('package', packageId);
-    console.log(`[XUI] Including package=${packageId} in create_line`);
-  } else if (packageId) {
-    console.log(`[XUI] WARNING: package_id "${packageId}" is not a numeric XUI ID — skipping package param`);
+  // bouquets_selected as JSON array string
+  if (bouquetsSelected.length > 0) {
+    form.set('bouquets_selected', JSON.stringify(bouquetsSelected.map(String)));
+  }
+
+  // access_output[] as multiple fields
+  for (const output of accessOutputs) {
+    form.append('access_output[]', String(output));
   }
 
   const payload = form.toString();
-  console.log('CREATE LINE PAYLOAD:', payload);
+  console.log('POST LINE PAYLOAD:', payload);
 
-  const baseUrl = config.url.replace(/\/+$/, '');
-  const apiKey = encodeURIComponent(config.api_key);
-  const url = `${baseUrl}/?api_key=${apiKey}&action=create_line`;
+  const postUrl = `${baseUrl}/post.php`;
+  console.log(`[XUI] POST: ${postUrl}`);
 
-  console.log(`[XUI] POST: ${url.replace(config.api_key, '***')}`);
-
-  const response = await tryFetch(url, {
+  const response = await tryFetch(postUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cookie': `api_key=${config.api_key}`,
+    },
     body: payload,
   });
 
   const text = await response.text();
-  if (!text?.trim() || text.includes('<html') || text.includes('<!DOCTYPE')) {
-    throw new Error('Resposta vazia/HTML do XUI');
+  console.log('post.php response:', text.substring(0, 1000));
+
+  // post.php may return HTML or JSON — try to extract useful info
+  let createdLineId = '';
+  let responseData: any = {};
+
+  // Try JSON parse first
+  try {
+    responseData = JSON.parse(text);
+    createdLineId = String(responseData?.data?.id || responseData?.id || '').trim();
+    const status = String(responseData?.status || '').toUpperCase();
+    if (status.includes('EXISTS_USERNAME')) throw new Error(`Username já existe no XUI: ${username}`);
+    const err = getXuiError(responseData);
+    if (err && !status.includes('SUCCESS')) throw new Error(err);
+  } catch (e: any) {
+    if (e.message?.includes('já existe')) throw e;
+    // Not JSON — likely HTML redirect (success). Resolve via get_line.
+    console.log('[XUI] post.php returned non-JSON, resolving line via API...');
   }
 
-  const createData = JSON.parse(text);
-  console.log('create_line response:', JSON.stringify(createData).substring(0, 1000));
-
-  const createStatus = String(createData?.status || '').toUpperCase();
-  const createError = getXuiError(createData);
-  if (createStatus.includes('EXISTS_USERNAME')) throw new Error(`Username já existe no XUI: ${username}`);
-  if (createError && !createStatus.includes('SUCCESS')) throw new Error(createError);
-
-  const createdLineId = String(createData?.data?.id || createData?.id || '').trim()
-    || await resolveLineIdByUsername(config, username);
-  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após create_line');
-
-  // Step 2: Apply package via edit_line to ensure bouquets are inherited
-  if (packageId && /^\d+$/.test(packageId)) {
-    const editForm = new URLSearchParams();
-    editForm.set('line_id', createdLineId);
-    editForm.set('package', packageId);
-    const editPayload = editForm.toString();
-    console.log('EDIT LINE PAYLOAD:', editPayload);
-
-    const editUrl = `${baseUrl}/?api_key=${apiKey}&action=edit_line`;
-    console.log(`[XUI] POST edit_line: ${editUrl.replace(config.api_key, '***')}`);
-
-    const editResponse = await tryFetch(editUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: editPayload,
-    });
-    const editText = await editResponse.text();
-    console.log('edit_line response:', editText.substring(0, 1000));
+  // Resolve line_id if not found in response
+  if (!createdLineId) {
+    createdLineId = await resolveLineIdByUsername(config, username);
   }
+  if (!createdLineId) throw new Error('Não foi possível resolver o line_id após criação');
 
-  // Step 3: Verify final state via get_line
+  // Verify final state
   const finalRow = await waitForLinePresence(config, createdLineId, username, 2, 500);
   const finalUsername = String(finalRow?.username || username).trim();
   const finalLineId = String(finalRow?.id || finalRow?.line_id || createdLineId).trim();
   const active = finalRow ? isLineActive(finalRow) : true;
 
   console.log(
-    `[XUI] Final state: line_id=${finalLineId} username=${finalUsername} bouquet=${finalRow?.bouquet || '?'} allowed_outputs=${finalRow?.allowed_outputs || '?'} package_id=${finalRow?.package_id || '?'} active=${active}`,
+    `[XUI] Final state: line_id=${finalLineId} username=${finalUsername} bouquet=${finalRow?.bouquet || '?'} allowed_outputs=${finalRow?.allowed_outputs || '?'} active=${active}`,
   );
 
   return {
-    action: 'create_line' as const,
+    action: 'post_line' as const,
     data: {
-      ...createData,
+      ...responseData,
       data: {
-        ...(typeof createData?.data === 'object' && createData?.data ? createData.data : {}),
+        ...(typeof responseData?.data === 'object' && responseData?.data ? responseData.data : {}),
         id: finalLineId,
         username: finalUsername,
       },
