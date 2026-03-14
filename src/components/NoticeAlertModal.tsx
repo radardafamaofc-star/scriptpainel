@@ -39,9 +39,10 @@ export function NoticeAlertModal() {
         <DialogHeader>
           <DialogTitle className="text-xl">{notice.title}</DialogTitle>
         </DialogHeader>
-        <div className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-          {notice.content}
-        </div>
+        <div
+          className="text-sm text-muted-foreground leading-relaxed prose prose-sm prose-invert max-w-none [&_a]:text-primary [&_a]:underline"
+          dangerouslySetInnerHTML={{ __html: notice.content }}
+        />
         <DialogFooter>
           <Button onClick={() => setOpen(false)} className="w-full sm:w-auto">
             OK

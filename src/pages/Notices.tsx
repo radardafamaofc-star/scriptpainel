@@ -6,7 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
@@ -178,7 +178,7 @@ export default function Notices() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{n.content}</p>
+                  <div className="text-sm text-muted-foreground prose prose-sm prose-invert max-w-none [&_a]:text-primary [&_a]:underline" dangerouslySetInnerHTML={{ __html: n.content }} />
                   <p className="text-[10px] text-muted-foreground/60 mt-2">
                     Criado em {new Date(n.created_at).toLocaleDateString("pt-BR")}
                   </p>
@@ -206,11 +206,9 @@ export default function Notices() {
             </div>
             <div>
               <Label>Conteúdo</Label>
-              <Textarea
-                value={form.content}
-                onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-                placeholder="Escreva o aviso que será exibido..."
-                rows={6}
+              <RichTextEditor
+                content={form.content}
+                onChange={(html) => setForm((f) => ({ ...f, content: html }))}
               />
             </div>
           </div>
