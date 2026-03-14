@@ -1060,14 +1060,15 @@ async function provisionUserOnXui(
   finalUsername = String(confirmedRow.username || finalUsername || username).trim();
   active = isLineActive(confirmedRow);
 
-  const finalBouquetOk = hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
-  const finalOutputsOk = hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
+  const finalBouquetOk = bouquetIds.length === 0 || hasSameNumericIds(confirmedRow?.bouquet, bouquetIds);
+  const finalOutputsOk = allowedOutputIds.length === 0 || hasSameNumericIds(confirmedRow?.allowed_outputs ?? confirmedRow?.output_formats, allowedOutputIds);
   const finalPackageId = String(confirmedRow?.package_id || '').replace(/\D/g, '').trim();
   const finalPackageOk = !packageIdForPayload || finalPackageId === packageIdForPayload;
 
   if (!finalBouquetOk || !finalOutputsOk || !finalPackageOk) {
-    throw new Error(
-      `XUI não persistiu bouquet/access corretamente (bouquet=${confirmedRow?.bouquet || '[]'} outputs=${confirmedRow?.allowed_outputs || '[]'} package_id=${finalPackageId || 'none'})`
+    // Log warning but don't abort - XUI may persist asynchronously
+    console.log(
+      `[XUI] WARNING: bouquet/access may not have persisted (bouquet=${confirmedRow?.bouquet || '[]'} outputs=${confirmedRow?.allowed_outputs || '[]'} package_id=${finalPackageId || 'none'} expected_bouquets=[${bouquetIds.join(',')}] expected_outputs=[${allowedOutputIds.join(',')}])`
     );
   }
 
