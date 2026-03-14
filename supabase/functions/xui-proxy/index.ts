@@ -831,6 +831,49 @@ async function getOwnerMemberId(config: XuiServerConfig): Promise<string> {
 const DEFAULT_BOUQUET_IDS = ['1', '2', '3', '177', '178'];
 const DEFAULT_ALLOWED_OUTPUT_IDS = ['1', '2', '3'];
 
+// Resolve bouquets and allowed_outputs from a package on the XUI server
+async function resolvePackageContents(
+  config: XuiServerConfig,
+  packageId: string,
+): Promise<{ bouquetIds: string[]; allowedOutputIds: string[] }> {
+  const result = { bouquetIds: [] as string[], allowedOutputIds: [] as string[] };
+  const pid = String(packageId || '').replace(/\D/g, '').trim();
+  if (!pid || pid === '0') return result;
+
+  try {
+    const packagesPayload = await xuiRequest(config, 'get_packages');
+    const data = packagesPayload?.data ?? packagesPayload;
+    let packages: any[] = [];
+    if (Array.isArray(data)) {
+      packages = data;
+    } else if (data && typeof data === 'object') {
+      packages = Object.values(data).filter((p) => p && typeof p === 'object');
+    }
+
+    const pkg = packages.find((p: any) => String(p?.id || p?.package_id || '').replace(/\D/g, '') === pid);
+    if (!pkg) {
+      console.log(`[XUI] Package ${pid} not found in get_packages response`);
+      return result;
+    }
+
+    // Extract bouquets from package
+    const rawBouquets = pkg.bouquets ?? pkg.bouquet ?? pkg.bouquet_ids ?? pkg.bouquets_selected ?? '';
+    result.bouquetIds = parseIdList(rawBouquets).map((v) => v.replace(/\D/g, '').trim()).filter(Boolean);
+
+    // Extract allowed_outputs from package
+    const rawOutputs = pkg.allowed_outputs ?? pkg.output_formats ?? pkg.allowed_output ?? '';
+    const parsedOutputs = parseIdList(rawOutputs).map((v) => v.replace(/\D/g, '').trim()).filter(Boolean);
+    // If outputs are empty, default to all 3 (ts, hls, rtmp) - packages usually allow all
+    result.allowedOutputIds = parsedOutputs.length ? parsedOutputs : DEFAULT_ALLOWED_OUTPUT_IDS;
+
+    console.log(`[XUI] Package ${pid} contents: bouquets=[${result.bouquetIds.join(',')}] outputs=[${result.allowedOutputIds.join(',')}]`);
+  } catch (e: any) {
+    console.log(`[XUI] Failed to resolve package contents: ${e.message}`);
+  }
+
+  return result;
+}
+
 // Main provisioning for XUIOne 1.5.x: single-step create_line
 async function provisionUserOnXui(
   config: XuiServerConfig,
@@ -867,21 +910,31 @@ async function provisionUserOnXui(
     });
   }
 
-  // Quando estamos em modo package_id, não forçamos bouquet/outputs default;
-  // só enviamos listas se vieram explicitamente no payload.
   const packageIdForPayload = requestedPackageId || resolvedPackageFromPlan;
 
-  const bouquetIds = explicitBouquets.length
-    ? explicitBouquets
-    : packageIdForPayload
-      ? []
-      : DEFAULT_BOUQUET_IDS;
+  // CRITICAL: When we have a package_id but no explicit bouquets/outputs,
+  // resolve the package contents and send them explicitly.
+  // XUI 1.5.12 does NOT auto-inherit bouquets/outputs from package_id via API.
+  let bouquetIds: string[];
+  let allowedOutputIds: string[];
 
-  const allowedOutputIds = explicitAllowedOutputs.length
-    ? explicitAllowedOutputs
-    : packageIdForPayload
-      ? []
-      : DEFAULT_ALLOWED_OUTPUT_IDS;
+  if (explicitBouquets.length) {
+    bouquetIds = explicitBouquets;
+  } else if (packageIdForPayload) {
+    const pkgContents = await resolvePackageContents(config, packageIdForPayload);
+    bouquetIds = pkgContents.bouquetIds.length ? pkgContents.bouquetIds : DEFAULT_BOUQUET_IDS;
+  } else {
+    bouquetIds = DEFAULT_BOUQUET_IDS;
+  }
+
+  if (explicitAllowedOutputs.length) {
+    allowedOutputIds = explicitAllowedOutputs;
+  } else if (packageIdForPayload) {
+    const pkgContents = await resolvePackageContents(config, packageIdForPayload);
+    allowedOutputIds = pkgContents.allowedOutputIds.length ? pkgContents.allowedOutputIds : DEFAULT_ALLOWED_OUTPUT_IDS;
+  } else {
+    allowedOutputIds = DEFAULT_ALLOWED_OUTPUT_IDS;
+  }
 
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
 
