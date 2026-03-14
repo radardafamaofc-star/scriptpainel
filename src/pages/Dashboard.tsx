@@ -214,6 +214,7 @@ export default function Dashboard() {
               password,
               max_connections: "1",
               exp_date: String(expTimestamp),
+              plan_id: plan.id,
               package_id: plan.packageId && plan.packageId !== "0" ? plan.packageId : "",
               plan_name: plan.planName || "",
             },

@@ -89,6 +89,7 @@ export default function Tests() {
           password: creds.password,
           max_connections: "1",
           exp_date: String(expTimestamp),
+          plan_id: planId,
         };
         if (selectedPlan?.package_id) {
           xuiParams.package_id = selectedPlan.package_id;
