@@ -810,7 +810,8 @@ async function provisionUserOnXui(
 
   const allowedOutputIds = toNumericIdList(rawParams.allowed_outputs, DEFAULT_ALLOWED_OUTPUT_IDS);
   const maxConnections = String(Math.max(1, Number(rawParams.max_connections || '1') || 1));
-  const effectiveMemberId = String(memberId || '').replace(/\D/g, '').trim() || await getOwnerMemberId(config);
+  // XUI 1.5.12: member_id must be explicit 0 to guarantee deterministic line creation/persistence
+  const effectiveMemberId = '0';
 
   const planName = String(rawParams.plan_name || rawParams.plan || '').trim();
   let effectivePackageId = requestedPackageId;
