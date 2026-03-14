@@ -248,9 +248,28 @@ async function provisionUserOnXui(
   if (!username || !password) throw new Error('username e password são obrigatórios');
 
   const rawExpDate = rawParams.exp_date || rawParams.expiry_date || '';
-  const inputPackage = String(rawParams.package_id || rawParams.package || '').trim();
-  const packageId = serviceClient ? await resolveXuiPackageId(serviceClient, inputPackage) : inputPackage;
   const maxConnections = String(rawParams.max_connections || '1').trim() || '1';
+
+  // Always resolve package_id from the plans table using plan_id (UUID)
+  let packageId = '';
+  const planId = String(rawParams.plan_id || '').trim();
+  const fallbackPackage = String(rawParams.package_id || rawParams.package || '').trim();
+
+  if (planId && serviceClient) {
+    const { data: plan, error: planErr } = await serviceClient
+      .from('plans')
+      .select('package_id')
+      .eq('id', planId)
+      .maybeSingle();
+    console.log(`[XUI] PLAN LOOKUP: plan_id=${planId} => package_id=${plan?.package_id ?? 'null'} error=${planErr?.message || 'none'}`);
+    packageId = String(plan?.package_id || '').trim();
+  }
+
+  // Fallback: use raw package_id if plan lookup didn't resolve
+  if (!packageId && fallbackPackage) {
+    packageId = serviceClient ? await resolveXuiPackageId(serviceClient, fallbackPackage) : fallbackPackage;
+  }
+
   console.log('PACKAGE ID:', packageId);
 
   // Format exp_date as "YYYY-MM-DD HH:MM"
