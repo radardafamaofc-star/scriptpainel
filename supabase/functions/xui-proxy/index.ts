@@ -552,10 +552,7 @@ async function enforceAllowedOutputsPostCreate(
     if (targetPassword) form.set('password', targetPassword);
     if (targetExpDate) form.set('exp_date', targetExpDate);
     if (targetMemberId) form.set('member_id', targetMemberId);
-    if (targetPackageId && targetPackageId !== '0') {
-      form.set('package_id', targetPackageId);
-      form.set('package', targetPackageId);
-    }
+    // NOTE: Do NOT send package_id here - it causes XUI 1.5.12 to clear bouquets/outputs
     return form;
   };
 
