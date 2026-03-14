@@ -178,7 +178,7 @@ export default function Notices() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{n.content}</p>
+                  <div className="text-sm text-muted-foreground prose prose-sm prose-invert max-w-none [&_a]:text-primary [&_a]:underline" dangerouslySetInnerHTML={{ __html: n.content }} />
                   <p className="text-[10px] text-muted-foreground/60 mt-2">
                     Criado em {new Date(n.created_at).toLocaleDateString("pt-BR")}
                   </p>
