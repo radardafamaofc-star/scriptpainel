@@ -309,32 +309,24 @@ function sanitizeSelectionIds(ids: string[] = []): string[] {
   });
 }
 
-// XUI outputs can appear as numeric IDs (1,2,3) or names (m3u8,ts,rtmp)
-const OUTPUT_FORMAT_NAMES = ['ts', 'm3u8', 'rtmp'];
-const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'm3u8', '2': 'ts', '3': 'rtmp' };
-const OUTPUT_NAME_TO_ID: Record<string, string> = { m3u8: '1', ts: '2', rtmp: '3' };
+// XUI outputs use numeric IDs from the output_formats table:
+// 1 = HLS, 2 = MPEGTS, 3 = RTMP
+const OUTPUT_ALL_IDS = ['1', '2', '3'];
+const OUTPUT_ID_TO_NAME: Record<string, string> = { '1': 'HLS', '2': 'MPEGTS', '3': 'RTMP' };
+const OUTPUT_NAME_TO_ID: Record<string, string> = { hls: '1', m3u8: '1', mpegts: '2', ts: '2', rtmp: '3' };
 
-function normalizeOutputFormats(raw: string[]): string[] {
-  if (!raw || raw.length === 0) return OUTPUT_FORMAT_NAMES;
+function normalizeOutputIds(raw: string[] = []): string[] {
+  if (!raw || raw.length === 0) return OUTPUT_ALL_IDS;
   const result: string[] = [];
   for (const v of raw) {
     const trimmed = String(v).trim().toLowerCase();
-    if (OUTPUT_FORMAT_NAMES.includes(trimmed)) {
-      result.push(trimmed);
-      continue;
-    }
-    const mapped = OUTPUT_ID_TO_NAME[trimmed];
+    // Already a numeric ID
+    if (OUTPUT_ID_TO_NAME[trimmed]) { result.push(trimmed); continue; }
+    // Map name to ID
+    const mapped = OUTPUT_NAME_TO_ID[trimmed];
     if (mapped) result.push(mapped);
   }
-  return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_FORMAT_NAMES;
-}
-
-function normalizeOutputIds(raw: string[] = []): string[] {
-  return Array.from(new Set(
-    normalizeOutputFormats(raw)
-      .map((name) => OUTPUT_NAME_TO_ID[name])
-      .filter(Boolean),
-  ));
+  return result.length > 0 ? Array.from(new Set(result)) : OUTPUT_ALL_IDS;
 }
 
 function buildBouquetPayload(bouquetIds: string[] = []): Record<string, string | string[]> {
@@ -348,15 +340,11 @@ function buildBouquetPayload(bouquetIds: string[] = []): Record<string, string |
   };
 }
 
-function buildOutputPayload(outputFormats: string[] = OUTPUT_FORMAT_NAMES): Record<string, string | string[]> {
-  const formats = normalizeOutputFormats(outputFormats);
-  const outputIds = normalizeOutputIds(formats);
-  const numericJson = JSON.stringify(outputIds.map((id) => Number(id)).filter((n) => Number.isFinite(n)));
+function buildOutputPayload(outputFormats: string[] = OUTPUT_ALL_IDS): Record<string, string | string[]> {
+  // Always send numeric IDs only — XUI uses access_output_id (1,2,3)
+  const ids = normalizeOutputIds(outputFormats);
   return {
-    // Send both array-style (QPanel-like) and canonical JSON field used by some XUI builds
-    'allowed_outputs[]': formats,
-    'output_formats[]': formats,
-    ...(outputIds.length > 0 ? { allowed_outputs: numericJson } : {}),
+    'allowed_outputs[]': ids,
   };
 }
 
