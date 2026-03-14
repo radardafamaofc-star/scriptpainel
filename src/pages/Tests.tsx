@@ -22,6 +22,7 @@ async function generateTestCredentials() {
 export default function Tests() {
   const [open, setOpen] = useState(false);
   const [serverId, setServerId] = useState("");
+  const [planId, setPlanId] = useState("");
   const [duration, setDuration] = useState("4");
   const { toast } = useToast();
   const { user } = useAuth();
