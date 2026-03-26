@@ -46,7 +46,8 @@ export default function Servers() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === "admin";
   const queryClient = useQueryClient();
 
   const { data: servers = [], isLoading } = useQuery({
@@ -131,12 +132,11 @@ export default function Servers() {
 
   const openEdit = (server: typeof servers[0]) => {
     setEditId(server.id);
-    // Don't load sensitive fields - they stay hidden
     setForm({
       name: server.name,
-      url: "",        // Hidden - leave blank to keep current
-      dns: (server as any).dns || "",  // DNS stays visible
-      api_key: "",     // Hidden - leave blank to keep current
+      url: isAdmin ? server.host : "",
+      dns: (server as any).dns || "",
+      api_key: isAdmin ? (server.api_key || "") : "",
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
@@ -241,7 +241,7 @@ export default function Servers() {
                     value={form.url}
                     onChange={e => handleChange("url", e.target.value)}
                   />
-                  {editId && (
+                  {editId && !isAdmin && (
                     <p className="text-xs text-muted-foreground">Oculto, deixe em branco para manter o mesmo</p>
                   )}
                 </div>
@@ -261,7 +261,7 @@ export default function Servers() {
                   <div className="relative">
                     <Input
                       type={showApiKey ? "text" : "password"}
-                      placeholder={editId ? "Oculto, deixe em branco para manter o mesmo" : "Cole sua API Key aqui"}
+                      placeholder={editId && !isAdmin ? "Oculto, deixe em branco para manter o mesmo" : "Cole sua API Key aqui"}
                       className="bg-secondary border-border pr-10"
                       value={form.api_key}
                       onChange={e => handleChange("api_key", e.target.value)}
@@ -384,6 +384,8 @@ export default function Servers() {
                 <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase">
                   <th className="px-4 py-3 font-medium">Nome</th>
                   <th className="px-4 py-3 font-medium">Situação</th>
+                  {isAdmin && <th className="px-4 py-3 font-medium">URL/IP</th>}
+                  {isAdmin && <th className="px-4 py-3 font-medium">Chave API</th>}
                   <th className="px-4 py-3 font-medium">Tipo</th>
                   <th className="px-4 py-3 font-medium">Tipo de Conexão</th>
                   <th className="px-4 py-3 font-medium text-right">Ações</th>
@@ -398,6 +400,16 @@ export default function Servers() {
                         {server.status === "online" ? "Ativo" : "Inativo"}
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-foreground text-xs font-mono max-w-[200px] truncate" title={server.host}>
+                        {server.host}
+                      </td>
+                    )}
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-foreground text-xs font-mono max-w-[150px] truncate" title={server.api_key || ""}>
+                        {server.api_key || "—"}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-foreground">XUIONE</td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border border-primary/50 text-primary">IPTV</span>
