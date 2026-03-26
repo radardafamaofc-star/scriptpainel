@@ -400,6 +400,16 @@ export default function Servers() {
                         {server.status === "online" ? "Ativo" : "Inativo"}
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-foreground text-xs font-mono max-w-[200px] truncate" title={server.host}>
+                        {server.host}
+                      </td>
+                    )}
+                    {isAdmin && (
+                      <td className="px-4 py-3 text-foreground text-xs font-mono max-w-[150px] truncate" title={server.api_key || ""}>
+                        {server.api_key || "—"}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-foreground">XUIONE</td>
                     <td className="px-4 py-3">
                       <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border border-primary/50 text-primary">IPTV</span>
