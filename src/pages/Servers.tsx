@@ -384,6 +384,8 @@ export default function Servers() {
                 <tr className="border-b border-border text-left text-xs text-muted-foreground uppercase">
                   <th className="px-4 py-3 font-medium">Nome</th>
                   <th className="px-4 py-3 font-medium">Situação</th>
+                  {isAdmin && <th className="px-4 py-3 font-medium">URL/IP</th>}
+                  {isAdmin && <th className="px-4 py-3 font-medium">Chave API</th>}
                   <th className="px-4 py-3 font-medium">Tipo</th>
                   <th className="px-4 py-3 font-medium">Tipo de Conexão</th>
                   <th className="px-4 py-3 font-medium text-right">Ações</th>
