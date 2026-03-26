@@ -46,7 +46,8 @@ export default function Servers() {
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [showApiKey, setShowApiKey] = useState(false);
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const isAdmin = role === "admin";
   const queryClient = useQueryClient();
 
   const { data: servers = [], isLoading } = useQuery({
