@@ -261,7 +261,7 @@ export default function Servers() {
                   <div className="relative">
                     <Input
                       type={showApiKey ? "text" : "password"}
-                      placeholder={editId ? "Oculto, deixe em branco para manter o mesmo" : "Cole sua API Key aqui"}
+                      placeholder={editId && !isAdmin ? "Oculto, deixe em branco para manter o mesmo" : "Cole sua API Key aqui"}
                       className="bg-secondary border-border pr-10"
                       value={form.api_key}
                       onChange={e => handleChange("api_key", e.target.value)}
