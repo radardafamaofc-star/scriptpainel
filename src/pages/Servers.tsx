@@ -134,9 +134,9 @@ export default function Servers() {
     setEditId(server.id);
     setForm({
       name: server.name,
-      url: isAdmin ? server.host : "",
+      url: "",
       dns: (server as any).dns || "",
-      api_key: isAdmin ? (server.api_key || "") : "",
+      api_key: "",
       api_version: (server as any).access_code || "1",
       use_proxy: server.username === "proxy",
       max_clients: server.max_clients,
