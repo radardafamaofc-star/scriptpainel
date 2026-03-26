@@ -241,7 +241,7 @@ export default function Servers() {
                     value={form.url}
                     onChange={e => handleChange("url", e.target.value)}
                   />
-                  {editId && (
+                  {editId && !isAdmin && (
                     <p className="text-xs text-muted-foreground">Oculto, deixe em branco para manter o mesmo</p>
                   )}
                 </div>
